@@ -11,8 +11,9 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { getEmployeeDailyActivitySummary } from '@/app/actions/sessionSettings';
-import { forceLogoutSession } from '@/app/actions/audit';
+import { forceLogoutSession, forceLogoutUserSessions } from '@/app/actions/audit';
 import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
+import { parseSessionDeviceSummary } from '@/utils/deviceSessionId';
 
 const DEFAULT_ACTIVE_SESSIONS_COL_WIDTHS = {
   user_employee: 240,
@@ -25,8 +26,8 @@ const DEFAULT_ACTIVE_SESSIONS_COL_WIDTHS = {
   idle_time: 130,
   breaks_taken: 120,
   live_status: 140,
-  device_ip: 155,
-  session_action: 115
+  device_ip: 245,
+  session_action: 140
 };
 
 function getTodayDateStr() {
@@ -57,32 +58,18 @@ function getTodayReadableIST() {
 }
 
 function parseDeviceInfo(deviceStr = '') {
-  if (!deviceStr) return { os: 'Windows', browser: 'Browser', icon: Monitor };
-  const d = deviceStr.toLowerCase();
-
-  let os = 'Windows';
+  const parsed = parseSessionDeviceSummary(deviceStr);
   let icon = Monitor;
-  if (d.includes('android')) {
-    os = 'Android';
-    icon = Smartphone;
-  } else if (d.includes('iphone') || d.includes('ipad') || d.includes('ios')) {
-    os = 'iOS';
-    icon = Smartphone;
-  } else if (d.includes('macintosh') || d.includes('mac os')) {
-    os = 'macOS';
-    icon = Laptop;
-  } else if (d.includes('linux')) {
-    os = 'Linux';
-    icon = Laptop;
-  }
-
-  let browser = 'Chrome';
-  if (d.includes('edg/')) browser = 'Edge';
-  else if (d.includes('chrome')) browser = 'Chrome';
-  else if (d.includes('safari')) browser = 'Safari';
-  else if (d.includes('firefox')) browser = 'Firefox';
-
-  return { os, browser, icon };
+  if (parsed.isMobile) icon = Smartphone;
+  else if (parsed.os === 'macOS' || parsed.os === 'Linux') icon = Laptop;
+  return {
+    os: parsed.os,
+    browser: parsed.browser,
+    runtime: parsed.runtime,
+    deviceIdTag: parsed.deviceIdTag,
+    isMobile: parsed.isMobile,
+    icon
+  };
 }
 
 function formatTimeAgo(dateString) {
@@ -252,9 +239,10 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
 
   // Status counts
   const counts = useMemo(() => {
-    const c = { All: evaluatedEmployees.length, Online: 0, Present: 0, LoggedOut: 0, Absent: 0 };
+    const c = { All: evaluatedEmployees.length, Online: 0, Present: 0, MultiLogin: 0, LoggedOut: 0, Absent: 0 };
     evaluatedEmployees.forEach(e => {
       if (e.isLive) c.Online++;
+      if ((e.activeSessionCount || 0) > 1) c.MultiLogin++;
       if (e.hasActivityToday) {
         c.Present++;
         if (!e.isLive) c.LoggedOut++;
@@ -278,6 +266,8 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
 
     if (statusFilter === 'Online') {
       list = list.filter(e => e.isLive);
+    } else if (statusFilter === 'MultiLogin') {
+      list = list.filter(e => (e.activeSessionCount || 0) > 1);
     } else if (statusFilter === 'Present') {
       list = list.filter(e => e.hasActivityToday);
     } else if (statusFilter === 'LoggedOut') {
@@ -314,19 +304,28 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
     return filteredEmployees.slice(start, start + pageSize);
   }, [filteredEmployees, currentPage, pageSize]);
 
-  // Force single session termination
-  const handleForceLogout = async (emp) => {
+  // Force single session (specific device) termination
+  const handleForceLogout = async (emp, specificSession = null) => {
     const targetName = emp.empName || emp.email || 'this employee';
-    if (!window.confirm(`Are you sure you want to terminate the active session for ${targetName}? They will be immediately logged out.`)) {
+    const devLabel = specificSession ? parseDeviceInfo(specificSession.device).runtime : null;
+    const confirmText = specificSession
+      ? `Terminate ONLY the "${devLabel}" session for ${targetName}? Other logged-in devices will remain active.`
+      : `Are you sure you want to terminate the active session for ${targetName}? They will be immediately logged out.`;
+    if (!window.confirm(confirmText)) {
       return;
     }
 
-    const sessionId = emp.sessionId || emp.userId;
-    setRevokingId(emp.userId);
+    const sessionId = specificSession?.id || emp.sessionId || emp.userId;
+    const revokingKey = specificSession?.id || emp.userId;
+    setRevokingId(revokingKey);
     try {
       const res = await forceLogoutSession(sessionId);
       if (res && res.success) {
-        setSuccessMsg(`Session for ${targetName} terminated.`);
+        setSuccessMsg(
+          specificSession
+            ? `${devLabel} session for ${targetName} terminated.`
+            : `Session for ${targetName} terminated.`
+        );
         setTimeout(() => setSuccessMsg(''), 3500);
         fetchActivitySummary(false);
       } else {
@@ -334,6 +333,30 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
       }
     } catch (err) {
       alert('Error terminating session: ' + err.message);
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
+  // Force terminate ALL active sessions for a multi-device employee
+  const handleForceLogoutAllForUser = async (emp) => {
+    const targetName = emp.empName || emp.email || 'this employee';
+    const count = emp.activeSessionCount || 1;
+    if (!window.confirm(`Are you sure you want to force logout ALL ${count} active devices for ${targetName}?`)) {
+      return;
+    }
+    setRevokingId(`all_${emp.userId}`);
+    try {
+      const res = await forceLogoutUserSessions(emp.userId);
+      if (res && res.success) {
+        setSuccessMsg(`All ${count} active sessions for ${targetName} terminated.`);
+        setTimeout(() => setSuccessMsg(''), 3500);
+        fetchActivitySummary(false);
+      } else {
+        alert(res?.error || 'Failed to terminate all sessions');
+      }
+    } catch (err) {
+      alert('Error terminating sessions: ' + err.message);
     } finally {
       setRevokingId(null);
     }
@@ -608,6 +631,7 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
           {[
             { id: 'Present', label: '👥 Logged In Today', count: counts.Present },
             { id: 'Online', label: '🟢 Online Now', count: counts.Online },
+            { id: 'MultiLogin', label: '⚠️ Multi-Login', count: counts.MultiLogin },
             { id: 'LoggedOut', label: '⚪ Logged Out', count: counts.LoggedOut },
             { id: 'Absent', label: '🔴 Not Logged In', count: counts.Absent },
             { id: 'All', label: 'All Employees', count: counts.All }
@@ -881,6 +905,19 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                                   You
                                 </span>
                               )}
+                              {(emp.activeSessionCount || 0) > 1 && (
+                                <span style={{
+                                  fontSize: '0.65rem',
+                                  backgroundColor: '#fef3c7',
+                                  color: '#b45309',
+                                  border: '1px solid #fcd34d',
+                                  padding: '0.1rem 0.45rem',
+                                  borderRadius: '10px',
+                                  fontWeight: 700
+                                }}>
+                                  {emp.activeSessionCount} Logins Active
+                                </span>
+                              )}
                             </div>
                             <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3 }}>
                               {emp.empId ? <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>#{emp.empId} • </span> : null}
@@ -1042,25 +1079,129 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
 
                       {/* Device & IP */}
                       <td style={{ padding: '0.75rem 1rem', verticalAlign: 'top' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
-                          <DevIcon size={15} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
-                          <span style={{ fontSize: '0.78rem' }}>{dev.browser} on {dev.os}</span>
-                        </div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3 }}>
-                          {(!emp.ipAddress || emp.ipAddress === 'Logged via Web App' || emp.ipAddress === 'Web App') ? '127.0.0.1 (Local)' : emp.ipAddress}
-                        </div>
+                        {Array.isArray(emp.sessions) && emp.sessions.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                            {emp.sessions.map((sessItem, sIdx) => {
+                              const sDev = parseDeviceInfo(sessItem.device);
+                              const SIcon = sDev.icon;
+                              const showMultiControls = emp.sessions.length > 1;
+                              return (
+                                <div
+                                  key={sessItem.id || sIdx}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: '0.4rem',
+                                    padding: showMultiControls ? '0.3rem 0.45rem' : 0,
+                                    borderRadius: showMultiControls ? '6px' : 0,
+                                    backgroundColor: showMultiControls
+                                      ? (sessItem.isActive ? 'rgba(16, 185, 129, 0.06)' : 'rgba(100, 116, 139, 0.05)')
+                                      : 'transparent',
+                                    border: showMultiControls ? '1px solid var(--border-light)' : 'none'
+                                  }}
+                                >
+                                  <div style={{ minWidth: 0, flex: 1 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25 }}>
+                                      <span
+                                        title={sessItem.isLive ? 'Online Now' : (sessItem.isActive ? 'Signed In' : 'Logged Out')}
+                                        style={{
+                                          width: '6px',
+                                          height: '6px',
+                                          borderRadius: '50%',
+                                          flexShrink: 0,
+                                          backgroundColor: sessItem.isLive ? '#10b981' : (sessItem.isActive ? '#f59e0b' : '#94a3b8')
+                                        }}
+                                      />
+                                      <SIcon size={14} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+                                      <span style={{ fontSize: '0.76rem', fontWeight: 600 }}>{sDev.runtime}</span>
+                                      {sDev.deviceIdTag && (
+                                        <span style={{ fontSize: '0.66rem', color: '#64748b', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                          #{sDev.deviceIdTag}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div style={{ fontSize: '0.69rem', color: 'var(--text-secondary)', marginTop: '0.1rem', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.25 }}>
+                                      {sessItem.ipAddress}
+                                      {sessItem.lastActiveFormatted && sessItem.lastActiveFormatted !== '--:--' ? ` • ${sessItem.lastActiveFormatted}` : ''}
+                                      {!sessItem.isActive ? ' • Out' : ''}
+                                    </div>
+                                  </div>
+                                  {showMultiControls && sessItem.isActive && (
+                                    <button
+                                      type="button"
+                                      disabled={revokingId === sessItem.id}
+                                      onClick={() => handleForceLogout(emp, sessItem)}
+                                      title={`Force Logout ${sDev.runtime}${sDev.deviceIdTag ? ` #${sDev.deviceIdTag}` : ''}`}
+                                      style={{
+                                        padding: '0.2rem 0.38rem',
+                                        borderRadius: '5px',
+                                        border: '1px solid #fecaca',
+                                        backgroundColor: '#fef2f2',
+                                        color: '#dc2626',
+                                        fontSize: '0.68rem',
+                                        fontWeight: 600,
+                                        cursor: revokingId === sessItem.id ? 'not-allowed' : 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.2rem',
+                                        flexShrink: 0
+                                      }}
+                                    >
+                                      <LogOut size={11} />
+                                      {revokingId === sessItem.id ? '...' : 'Out'}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                              <DevIcon size={15} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+                              <span style={{ fontSize: '0.78rem' }}>{dev.runtime || `${dev.browser} on ${dev.os}`}</span>
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3 }}>
+                              {(!emp.ipAddress || emp.ipAddress === 'Logged via Web App' || emp.ipAddress === 'Web App') ? '127.0.0.1 (Local)' : emp.ipAddress}
+                            </div>
+                          </>
+                        )}
                       </td>
 
                       {/* Session Action */}
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
-                        {emp.isCurrent ? (
+                        {(emp.activeSessionCount || 0) > 1 ? (
+                          <button
+                            type="button"
+                            disabled={revokingId === `all_${emp.userId}`}
+                            onClick={() => handleForceLogoutAllForUser(emp)}
+                            title={`Force Logout all ${emp.activeSessionCount} active devices`}
+                            style={{
+                              padding: '0.3rem 0.65rem',
+                              borderRadius: '6px',
+                              border: '1px solid #fecaca',
+                              backgroundColor: '#fef2f2',
+                              color: '#dc2626',
+                              fontSize: '0.74rem',
+                              fontWeight: 600,
+                              cursor: revokingId === `all_${emp.userId}` ? 'not-allowed' : 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem'
+                            }}
+                          >
+                            <LogOut size={13} />
+                            {revokingId === `all_${emp.userId}` ? 'Revoking...' : `Logout All (${emp.activeSessionCount})`}
+                          </button>
+                        ) : emp.isCurrent ? (
                           <span style={{ fontSize: '0.74rem', color: '#10b981', fontWeight: 600 }}>
                             Active (You)
                           </span>
-                        ) : emp.isLive ? (
+                        ) : (emp.isLive || (emp.activeSessionCount || 0) === 1) ? (
                           <button
                             type="button"
-                            disabled={revokingId === emp.userId}
+                            disabled={revokingId === (emp.sessionId || emp.userId)}
                             onClick={() => handleForceLogout(emp)}
                             title="Force Logout Session"
                             style={{
@@ -1071,14 +1212,14 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                               color: '#dc2626',
                               fontSize: '0.74rem',
                               fontWeight: 600,
-                              cursor: revokingId === emp.userId ? 'not-allowed' : 'pointer',
+                              cursor: revokingId === (emp.sessionId || emp.userId) ? 'not-allowed' : 'pointer',
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: '0.35rem'
                             }}
                           >
                             <LogOut size={13} />
-                            {revokingId === emp.userId ? 'Revoking...' : 'Force Logout'}
+                            {revokingId === (emp.sessionId || emp.userId) ? 'Revoking...' : 'Force Logout'}
                           </button>
                         ) : (
                           <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>--</span>

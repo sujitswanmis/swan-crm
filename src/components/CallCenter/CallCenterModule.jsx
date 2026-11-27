@@ -56,8 +56,8 @@ const fmtDate = (d) => {
 };
 
 const directionBadge = (dir) => dir === 'inbound'
-  ? <span style={{ color: '#7c3aed', fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}><PhoneIncoming size={12} />Inbound</span>
-  : <span style={{ color: '#0369a1', fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}><PhoneOutgoing size={12} />Outbound</span>;
+  ? <span style={{ color: 'var(--spc-view-violet)', fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}><PhoneIncoming size={12} />Inbound</span>
+  : <span style={{ color: 'var(--spc-view-info)', fontSize: '0.78rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}><PhoneOutgoing size={12} />Outbound</span>;
 
 const callStatusBadge = (s) => {
   const map = {
@@ -339,37 +339,37 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
   };
 
   if (!agentData && (loading || deskError)) {
-    return <div style={{ padding: '1.5rem' }}>
-      <h1 style={{ fontSize: '1.6rem', color: '#1e293b' }}>Telecalling Desk</h1>
+    return <div data-spc-module-theme style={{ padding: '1.5rem' }}>
+      <h1 style={{ fontSize: '1.6rem', color: 'var(--spc-view-text)' }}>Telecalling Desk</h1>
       <p>My Call Logs</p>
       {deskError ? <div role="alert">{deskError} <button type="button" onClick={fetchAgentProfile}>Retry</button></div>
-        : <p role="status" style={{ color: '#64748b' }}><Loader2 size={16} className="spin" /> Loading your call records…</p>}
+        : <p role="status" style={{ color: 'var(--spc-view-muted)' }}><Loader2 size={16} className="spin" /> Loading your call records…</p>}
     </div>;
   }
 
   if (!agentData) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '80%', padding: '2rem' }}>
+      <div data-spc-module-theme style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '80%', padding: '2rem' }}>
         <div style={{
-          background: 'white',
+          background: 'var(--spc-view-surface)',
           borderRadius: '16px',
           padding: '2.5rem',
           maxWidth: '520px',
           width: '100%',
           textAlign: 'center',
           boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04)',
-          border: '1px solid #e2e8f0'
+          border: '1px solid var(--spc-view-border)'
         }}>
           <div style={{
             width: '64px',
             height: '64px',
             borderRadius: '50%',
-            background: '#eff6ff',
+            background: 'var(--spc-view-info-bg)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 1.25rem',
-            color: '#3b82f6'
+            color: 'var(--spc-view-info)'
           }}>
             <PhoneCall size={32} />
           </div>
@@ -377,8 +377,8 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
             display: 'inline-block',
             padding: '0.25rem 0.75rem',
             borderRadius: '9999px',
-            background: '#f1f5f9',
-            color: '#475569',
+            background: 'var(--spc-view-raised)',
+            color: 'var(--spc-view-muted)',
             fontSize: '0.78rem',
             fontWeight: 600,
             marginBottom: '0.75rem',
@@ -387,10 +387,10 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
           }}>
             {userCompany || 'Workspace Telecalling'}
           </span>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.5rem' }}>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--spc-view-text)', marginBottom: '0.5rem' }}>
             Telecalling Desk Activation
           </h2>
-          <p style={{ color: '#64748b', fontSize: '0.9rem', lineHeight: 1.5, marginBottom: '1.75rem' }}>
+          <p style={{ color: 'var(--spc-view-muted)', fontSize: '0.9rem', lineHeight: 1.5, marginBottom: '1.75rem' }}>
             Welcome to your workspace Telecalling Desk. Click below to activate your telecalling extension and start tracking customer calls, dialer history, and calling analytics.
           </p>
           <button
@@ -404,7 +404,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
               width: '100%',
               padding: '0.85rem 1.5rem',
               borderRadius: '10px',
-              background: '#2563eb',
+              background: 'var(--spc-view-action)',
               color: 'white',
               fontWeight: 600,
               fontSize: '0.95rem',
@@ -433,31 +433,31 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
   }
 
   return (
-    <div style={{ padding: '1rem', height: '100%', overflowY: 'auto', background: '#f8fafc' }}>
+    <div data-spc-module-theme style={{ padding: '1rem', height: '100%', overflowY: 'auto', background: 'var(--spc-view-canvas)' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--spc-view-text)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <PhoneCall size={26} color="#3b82f6" /> Telecalling Dashboard
           </h1>
-          <p style={{ color: '#64748b', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+          <p style={{ color: 'var(--spc-view-muted)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
             Agent: <strong>{agentData.display_name || 'Agent'}</strong> | SIP: {agentData.plivo_sip_uri || 'Not Assigned'}
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'white', padding: '0.45rem 1rem', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-          <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: agentStatus === 'available' ? '#10b981' : '#cbd5e1' }} />
-          <span style={{ fontWeight: 600, fontSize: '0.85rem', color: '#334155' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--spc-view-surface)', padding: '0.45rem 1rem', borderRadius: '24px', border: '1px solid var(--spc-view-border)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+          <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: agentStatus === 'available' ? 'var(--spc-view-success-fill)' : '#cbd5e1' }} />
+          <span style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--spc-view-text)' }}>
             {agentStatus === 'available' ? 'Agent Ready' : 'Offline'}
           </span>
         </div>
       </div>
 
       {/* Controls Bar: Search, Quick IST Date Presets, Excel Export, Refresh, Total Records */}
-      <div style={{ background: 'white', borderRadius: '12px', padding: '0.85rem 1rem', marginBottom: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0', display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+      <div style={{ background: 'var(--spc-view-surface)', borderRadius: '12px', padding: '0.85rem 1rem', marginBottom: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid var(--spc-view-border)', display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
         
         {/* Search */}
         <div style={{ position: 'relative', flex: 1, minWidth: '180px' }}>
-          <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+          <Search size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--spc-view-muted)' }} />
           <input
             placeholder="Search customer number..."
             value={search}
@@ -465,13 +465,13 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
               setSearch(e.target.value);
               setPage(0);
             }}
-            style={{ width: '100%', padding: '0.5rem 1rem 0.5rem 2.25rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', background: 'white', boxSizing: 'border-box' }}
+            style={{ width: '100%', padding: '0.5rem 1rem 0.5rem 2.25rem', borderRadius: '8px', border: '1px solid var(--spc-view-border)', fontSize: '0.85rem', background: 'var(--spc-view-surface)', boxSizing: 'border-box' }}
           />
         </div>
 
         {/* Quick Date Presets (Strict IST) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: '#f8fafc', padding: '0.35rem 0.6rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'var(--spc-view-canvas)', padding: '0.35rem 0.6rem', borderRadius: '8px', border: '1px solid var(--spc-view-border)' }}>
             <Calendar size={14} color="#64748b" />
             <select
               value={datePreset}
@@ -484,7 +484,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
                 background: 'transparent',
                 fontSize: '0.82rem',
                 fontWeight: 600,
-                color: '#1e293b',
+                color: 'var(--spc-view-text)',
                 cursor: 'pointer',
                 outline: 'none'
               }}
@@ -505,14 +505,14 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
                 type="date"
                 value={customStartDate}
                 onChange={(e) => { setCustomStartDate(e.target.value); setPage(0); }}
-                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem', background: 'white' }}
+                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid var(--spc-view-border)', fontSize: '0.8rem', background: 'var(--spc-view-surface)' }}
               />
-              <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>to</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--spc-view-muted)' }}>to</span>
               <input
                 type="date"
                 value={customEndDate}
                 onChange={(e) => { setCustomEndDate(e.target.value); setPage(0); }}
-                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem', background: 'white' }}
+                style={{ padding: '0.35rem 0.5rem', borderRadius: '6px', border: '1px solid var(--spc-view-border)', fontSize: '0.8rem', background: 'var(--spc-view-surface)' }}
               />
             </div>
           )}
@@ -524,7 +524,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
           disabled={exportingExcel || recentCalls.length === 0}
           style={{ 
             display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.85rem', 
-            background: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', 
+            background: 'var(--spc-view-action)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer',
             fontWeight: 600, fontSize: '0.82rem', opacity: (exportingExcel || recentCalls.length === 0) ? 0.6 : 1,
             boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
           }}
@@ -543,7 +543,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
           disabled={callsLoading}
           style={{ 
             display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.85rem', 
-            background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', 
+            background: 'var(--spc-view-action)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer',
             fontWeight: 600, fontSize: '0.82rem', boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
           }}
         >
@@ -551,20 +551,20 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
         </button>
 
         {/* Total Records Badge */}
-        <span style={{ color: '#64748b', fontSize: '0.82rem', background: '#f1f5f9', padding: '0.4rem 0.75rem', borderRadius: '6px' }}>
-          Total: <strong style={{ color: '#0f172a' }}>{totalCalls}</strong>
+        <span style={{ color: 'var(--spc-view-muted)', fontSize: '0.82rem', background: 'var(--spc-view-raised)', padding: '0.4rem 0.75rem', borderRadius: '6px' }}>
+          Total: <strong style={{ color: 'var(--spc-view-text)' }}>{totalCalls}</strong>
         </span>
       </div>
 
-      {deskError && <div role="alert" style={{ padding: 12, color: "#b91c1c" }}>{deskError}</div>}
+      {deskError && <div role="alert" style={{ padding: 12, color: "var(--spc-view-danger)" }}>{deskError}</div>}
       {/* Main Call Logs Card */}
-      <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-        <div style={{ padding: '0.85rem 1.25rem', borderBottom: '1px solid #f1f5f9', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+      <div style={{ background: 'var(--spc-view-surface)', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', border: '1px solid var(--spc-view-border)', overflow: 'hidden' }}>
+        <div style={{ padding: '0.85rem 1.25rem', borderBottom: '1px solid var(--spc-view-border)', background: 'var(--spc-view-canvas)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--spc-view-text)', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
             <Clock size={16} color="#3b82f6" /> My Call Logs
           </h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--spc-view-muted)' }}>
               Strict IST (Asia/Kolkata)
             </span>
             <TableViewToggle view={callLogView} onChange={setCallLogView} />
@@ -575,7 +575,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
         <div style={tableScroll}>
           <MobileTableView id="CallCenter/CallCenterModule-1" view={callLogView} hideToggle={true}><table style={{ width: '100%', minWidth: `${Math.max(1185, getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
             <thead style={stickyHeader}>
-              <tr style={{ fontSize: '0.76rem', textTransform: 'uppercase', color: 'var(--text-secondary, #64748b)', borderBottom: '1px solid #e2e8f0', letterSpacing: '0.04em' }}>
+              <tr style={{ fontSize: '0.76rem', textTransform: 'uppercase', color: 'var(--text-secondary, #64748b)', borderBottom: '1px solid var(--spc-view-border)', letterSpacing: '0.04em' }}>
                 <th style={{ width: `${colWidths.time}px`, padding: '0.65rem 0.75rem', fontWeight: 700, ...stickyHeader, boxSizing: 'border-box', verticalAlign: 'middle' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingRight: '8px' }}>
                     <span style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.25, fontSize: '0.78rem' }}>Calling Timestamp</span>
@@ -637,20 +637,20 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
                 <tr>
                   <td colSpan={9} style={{ padding: '3rem', textAlign: 'center' }}>
                     <Loader2 className="spin" size={24} color="#3b82f6" style={{ margin: '0 auto 0.5rem' }} />
-                    <div style={{ color: '#64748b', fontSize: '0.85rem' }}>Loading call records...</div>
+                    <div style={{ color: 'var(--spc-view-muted)', fontSize: '0.85rem' }}>Loading call records...</div>
                   </td>
                 </tr>
               ) : recentCalls.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                  <td colSpan={9} style={{ padding: '3rem', textAlign: 'center', color: 'var(--spc-view-muted)' }}>
                     No call records found for the selected criteria.
                   </td>
                 </tr>
               ) : (
                 recentCalls.map((call, idx) => (
-                  <tr key={call.id || `call-${idx}`} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? 'white' : '#fafafa' }}>
+                  <tr key={call.id || `call-${idx}`} style={{ borderBottom: '1px solid var(--spc-view-border)', background: idx % 2 === 0 ? 'var(--spc-view-surface)' : 'var(--spc-view-canvas)' }}>
                     {/* Calling Timestamp */}
-                    <td style={{ width: `${colWidths.time}px`, padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={fmtDate(call.created_at || call.start_time)}>
+                    <td style={{ width: `${colWidths.time}px`, padding: '0.75rem 1rem', color: 'var(--spc-view-muted)', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={fmtDate(call.created_at || call.start_time)}>
                       {fmtDate(call.created_at || call.start_time)}
                     </td>
 
@@ -660,7 +660,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
                     </td>
 
                     {/* Customer */}
-                    <td style={{ width: `${colWidths.customer}px`, padding: '0.75rem 1rem', fontWeight: 600, color: '#0f172a', fontFamily: 'monospace', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={call.customer_number || '—'}>
+                    <td style={{ width: `${colWidths.customer}px`, padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--spc-view-text)', fontFamily: 'monospace', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={call.customer_number || '—'}>
                       {call.customer_number || '—'}
                     </td>
 
@@ -670,22 +670,22 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
                     </td>
 
                     {/* Answer Time (IST) */}
-                    <td style={{ width: `${colWidths.answer_time}px`, padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={fmtDate(call.agent_answer_time || call.customer_answer_time)}>
+                    <td style={{ width: `${colWidths.answer_time}px`, padding: '0.75rem 1rem', color: 'var(--spc-view-muted)', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={fmtDate(call.agent_answer_time || call.customer_answer_time)}>
                       {fmtDate(call.agent_answer_time || call.customer_answer_time)}
                     </td>
 
                     {/* End Time (IST) */}
-                    <td style={{ width: `${colWidths.end_time}px`, padding: '0.75rem 1rem', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={fmtDate(call.end_time)}>
+                    <td style={{ width: `${colWidths.end_time}px`, padding: '0.75rem 1rem', color: 'var(--spc-view-muted)', whiteSpace: 'nowrap', fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={fmtDate(call.end_time)}>
                       {fmtDate(call.end_time)}
                     </td>
 
                     {/* Ringing Duration */}
-                    <td style={{ width: `${colWidths.ringing}px`, padding: '0.75rem 1rem', color: '#475569', fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={call.ringing_duration_sec != null ? `${call.ringing_duration_sec}s` : '—'}>
+                    <td style={{ width: `${colWidths.ringing}px`, padding: '0.75rem 1rem', color: 'var(--spc-view-muted)', fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={call.ringing_duration_sec != null ? `${call.ringing_duration_sec}s` : '—'}>
                       {call.ringing_duration_sec != null ? `${call.ringing_duration_sec}s` : '—'}
                     </td>
 
                     {/* Talk Duration */}
-                    <td style={{ width: `${colWidths.talk}px`, padding: '0.75rem 1rem', color: '#0f172a', fontWeight: 500, fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={call.talk_duration_sec != null ? `${call.talk_duration_sec}s` : '—'}>
+                    <td style={{ width: `${colWidths.talk}px`, padding: '0.75rem 1rem', color: 'var(--spc-view-text)', fontWeight: 500, fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box' }} title={call.talk_duration_sec != null ? `${call.talk_duration_sec}s` : '—'}>
                       {call.talk_duration_sec != null ? `${call.talk_duration_sec}s` : '—'}
                     </td>
 
@@ -703,7 +703,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
                               height: '28px',
                               borderRadius: '50%',
                               border: 'none',
-                              background: playingCallId === call.id ? '#ef4444' : '#1e3a8a',
+                              background: playingCallId === call.id ? 'var(--spc-view-danger-fill)' : '#1e3a8a',
                               color: 'white',
                               cursor: 'pointer',
                               boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
@@ -726,9 +726,9 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
                               width: '28px',
                               height: '28px',
                               borderRadius: '50%',
-                              border: '1px solid #cbd5e1',
-                              background: 'white',
-                              color: '#475569',
+                              border: '1px solid var(--spc-view-border)',
+                              background: 'var(--spc-view-surface)',
+                              color: 'var(--spc-view-muted)',
                               cursor: 'pointer',
                               boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
                               transition: 'all 0.2s'
@@ -739,7 +739,7 @@ export default function CallCenterModule({ userId, userCompany = '', tenantId = 
                           </a>
                         </div>
                       ) : (
-                        <span style={{ color: '#94a3b8' }}>—</span>
+                        <span style={{ color: 'var(--spc-view-muted)' }}>—</span>
                       )}
                     </td>
                   </tr>

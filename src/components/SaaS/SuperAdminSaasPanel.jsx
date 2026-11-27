@@ -1,11 +1,12 @@
 'use client';
 
-import MobileTableView from '@/components/common/MobileTableView';
+import MobileTableView, { TableViewToggle, useTableViewPreference } from '@/components/common/MobileTableView';
+import { CRMTabs } from '@/components/common/CRMDesignSystem';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import StandardTablePagination from '@/components/common/StandardTablePagination';
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
-import { saasDateKey, saasInvoiceTotals, SAAS_INTERNAL_KEYS } from '@/lib/saasBilling';
+import { saasDateKey, saasInvoiceTotals, calculateSaasPrice, SAAS_CYCLE_MONTHS, SAAS_INTERNAL_KEYS } from '@/lib/saasBilling';
 import {
   ShieldCheck,
   DollarSign,
@@ -49,7 +50,10 @@ import {
   LogIn,
   Key,
   User,
-  Phone
+  Phone,
+  Bell,
+  BarChart3,
+  Mail
 } from 'lucide-react';
 import {
   getSaasMasterSnapshot,
@@ -77,12 +81,14 @@ import {
   getTenantBillingHistory,
   getTenantActiveUsers,
   reduceTenantSeatsAndHoldUsers,
-  getAllMasterInvoices
+  getAllMasterInvoices,
+  createRenewalProformaInvoice,
+  cancelPendingSaasProforma
 } from '@/app/actions/saasSubscription';
 import PlanPricingCalculator from './PlanPricingCalculator';
 
 
-export function SaasDataTable({ id, children, paginate = true }) {
+export function SaasDataTable({ id, children, paginate = true, view, hideToggle = false }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(() => {
     try { const size = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}').defaultPageSize; return size === 'All' ? 100000 : (Number(size) || 25); } catch { return 25; }
@@ -92,7 +98,7 @@ export function SaasDataTable({ id, children, paginate = true }) {
   const head = sections.find(section => section.type === 'thead');
   const headerRow = React.Children.toArray(head?.props.children)[0];
   const headers = React.Children.toArray(headerRow?.props.children);
-  const defaults = Object.fromEntries(headers.map((header, index) => [String(index), Number(header.props.style?.width) || 180]));
+  const defaults = Object.fromEntries(headers.map((header, index) => [String(index), Number(header.props.style?.width) || (paginate ? 180 : 120)]));
   const { colWidths, resizingCol, handleResizeStart, resetColWidth } = useTableColumnResize('saas-columns:' + id, defaults);
   const body = sections.find(section => section.type === 'tbody');
   const rows = React.Children.toArray(body?.props.children);
@@ -100,14 +106,14 @@ export function SaasDataTable({ id, children, paginate = true }) {
   const total = empty ? 0 : rows.length;
   const currentPage = Math.min(page, Math.max(1, Math.ceil(total / pageSize)));
   const changeSize = useCallback(size => { setPageSize(size); setPage(1); }, []);
-  const rendered = React.cloneElement(table, { style: { ...table.props.style, tableLayout: 'fixed', minWidth: Object.values(colWidths).reduce((a,b) => a+b,0) } }, sections.map(section => {
+  const rendered = React.cloneElement(table, { style: { ...table.props.style, tableLayout: 'fixed', minWidth: paginate ? Object.values(colWidths).reduce((a,b) => a+b,0) : '100%' } }, sections.map(section => {
     if (section.type === 'thead') return React.cloneElement(section, { style: { ...section.props.style, position:'sticky', top:0, zIndex:10 } }, React.cloneElement(headerRow, {}, headers.map((header,index) => React.cloneElement(header, { key:index, style:{...header.props.style, width:colWidths[String(index)], minWidth:70, position:'sticky', top:0, zIndex:10, backgroundColor:'var(--bg-surface)', boxShadow:'inset 0 -1px 0 var(--border-light)' } }, header.props.children, <ColumnResizer colKey={String(index)} isResizing={resizingCol===String(index)} onResizeStart={handleResizeStart} onReset={resetColWidth} />))));
     if (section.type === 'tbody' && paginate && !empty) return React.cloneElement(section, {}, rows.slice((currentPage-1)*pageSize,currentPage*pageSize));
     return section;
   }));
   return <div data-saas-table={id}>
     <div style={{overflow:'auto',maxHeight:'calc(100vh - 310px)',minHeight:paginate?'380px':undefined}}>
-      <MobileTableView id={'SaaS/'+id}>{rendered}</MobileTableView>
+      <MobileTableView id={'SaaS/'+id} view={view} hideToggle={hideToggle}>{rendered}</MobileTableView>
     </div>
     {paginate && <StandardTablePagination currentPage={currentPage} totalRecords={total} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={changeSize} />}
   </div>;
@@ -133,19 +139,22 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
 
   const handleTabSwitch = (tab) => {
     setActiveTab(tab);
-    if (tab === 'billing') {
+    if (tab === 'billing' || tab === 'requests' || tab === 'trials') {
       loadMasterInvoices();
     }
     if (onSubTabChange) {
       onSubTabChange(tab);
     } else if (typeof window !== 'undefined') {
-      window.history.pushState(null, '', `/saas-studio/${tab}`);
+      window.history.pushState(null, '', `/saas-master/${tab}`);
     }
   };
 
   const [loading, setLoading] = useState(true);
   const [savingCode, setSavingCode] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
+  const [tenantsView, setTenantsView] = useTableViewPreference('SaaS/tenants');
+  const [pricingView, setPricingView] = useTableViewPreference('SaaS/pricing');
+  const [billingView, setBillingView] = useTableViewPreference('SaaS/billing');
 
   // Pricing & Discounts State
   const [catalog, setCatalog] = useState([]);
@@ -198,6 +207,8 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
   const [loadingMasterInvoices, setLoadingMasterInvoices] = useState(false);
   const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('ALL');
+  const [pendingReqFilter, setPendingReqFilter] = useState('ALL');
+  const [trialAuditSearch, setTrialAuditSearch] = useState('');
 
   // Create Client Tenant Modal State (Master Admin Exclusive)
   const [showCreateTenantModal, setShowCreateTenantModal] = useState(false);
@@ -216,8 +227,10 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
   // Manage Modules Modal State
   const [modulesModalTenant, setModulesModalTenant] = useState(null);
   const [selectedModuleKeys, setSelectedModuleKeys] = useState(new Set());
+  const [moduleSeatOverrides, setModuleSeatOverrides] = useState({});
   const [smtpLimitInput, setSmtpLimitInput] = useState(1);
   const [savingModules, setSavingModules] = useState(false);
+  const [modulesModalError, setModulesModalError] = useState(null);
 
   // Free Trial Modal State
   const [trialModalTenant, setTrialModalTenant] = useState(null);
@@ -233,6 +246,7 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
   const [payUtr, setPayUtr] = useState('');
   const [payMonths, setPayMonths] = useState(12);
   const [recordingPay, setRecordingPay] = useState(false);
+  const [issuingProforma, setIssuingProforma] = useState(false);
 
   // Workspace Tabs & Lifecycle States
   const [workspaceSubTab, setWorkspaceSubTab] = useState('active'); // 'active' | 'draft' | 'deleted'
@@ -664,7 +678,7 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
 
   const handleShareWhatsApp = (inv, tenant) => {
     const isNonGst = (inv?.gst_type === 'NON_GST') || (invoiceGstMode === 'NON_GST');
-    const subtotal = inv?.amount || tenant?.subscription?.amount || 0;
+    const subtotal = inv?.amount ?? (Number(payAmount) || tenant?.subscription?.amount || 0);
     const tax = isNonGst ? 0 : (inv?.tax_amount != null ? inv.tax_amount : Math.round(Number(subtotal) * 0.18));
     const total = isNonGst ? Number(subtotal) : (inv?.total_payable != null ? inv.total_payable : Math.round(Number(subtotal) * 1.18));
     const invNo = inv?.invoice_number || (invoiceType === 'tax_invoice' ? `INV-${tenant?.tenant_code || 'WS'}-PAID` : `PI-${tenant?.tenant_code || 'EST'}-01`);
@@ -673,7 +687,11 @@ export default function SuperAdminSaasPanel({ initialTab = 'pricing', activeSubT
     if (isNonGst) {
       typeLabel = invoiceType === 'tax_invoice' ? 'COMMERCIAL INVOICE (NON-GST / PAID)' : 'PROFORMA BILL (NON-GST / ESTIMATE)';
     }
-    const seatsDesc = inv?.additional_seats ? `+${inv.additional_seats} Additional Seats (Total Limit: ${inv.total_seats || tenant?.user_seat_limit} Users)` : `${tenant?.user_seat_limit || 5} User Seats`;
+    const seatsDesc = inv?.category === 'ADDON_MODULE' && inv?.requested_users
+      ? `${inv.requested_users} Module Users`
+      : inv?.additional_seats
+        ? `+${inv.additional_seats} Additional Seats (Total Limit: ${inv.total_seats || tenant?.user_seat_limit} Users)`
+        : `${tenant?.user_seat_limit || 5} User Seats`;
 
     const text = `*NEW SWAN CRM - ${typeLabel}*
 ━━━━━━━━━━━━━━━━━━━━━━
@@ -750,7 +768,13 @@ Thank you for choosing New Swan CRM!`;
 
   const handleOpenModulesModal = (t) => {
     setModulesModalTenant(t);
+    setModulesModalError(null);
     setSelectedModuleKeys(new Set((t.entitlements || []).filter(key => !SAAS_INTERNAL_KEYS.has(key) && catalog.some(p => p.process_code === key))));
+    const seatMap = {};
+    for (const det of t.entitlement_details || []) {
+      seatMap[det.module_key] = det.has_custom_seats ? det.licensed_seats : '';
+    }
+    setModuleSeatOverrides(seatMap);
     setSmtpLimitInput(t.smtp_accounts_limit || 1);
   };
 
@@ -767,20 +791,26 @@ Thank you for choosing New Swan CRM!`;
   const handleSaveModules = async () => {
     if (!modulesModalTenant) return;
     setSavingModules(true);
+    setModulesModalError(null);
     try {
       const [resEntitlements, resSmtp] = await Promise.all([
-        updateTenantEntitlements(modulesModalTenant.id, Array.from(selectedModuleKeys)),
+        updateTenantEntitlements(modulesModalTenant.id, Array.from(selectedModuleKeys), moduleSeatOverrides),
         updateTenantSmtpLimit(modulesModalTenant.id, smtpLimitInput)
       ]);
       if (resEntitlements.success && resSmtp.success) {
-        showNotification(`${resEntitlements.message} | SMTP quota updated to ${smtpLimitInput} account(s)!`);
-        setModulesModalTenant(null);
         await loadData();
+        setModulesModalTenant(null);
+        showNotification(`${resEntitlements.message} | SMTP quota updated to ${smtpLimitInput} account(s)!`);
+        window.dispatchEvent(new CustomEvent('saas-billing-updated'));
       } else {
-        showNotification(resEntitlements.error || resSmtp.error || 'Failed to update modules & SMTP quota', true);
+        const errMsg = resEntitlements.error || resSmtp.error || 'Failed to update modules & SMTP quota';
+        setModulesModalError(errMsg);
+        showNotification(errMsg, true);
       }
     } catch (err) {
-      showNotification(err.message, true);
+      const errMsg = err?.message || 'Failed to save module settings.';
+      setModulesModalError(errMsg);
+      showNotification(errMsg, true);
     } finally {
       setSavingModules(false);
     }
@@ -861,27 +891,121 @@ Thank you for choosing New Swan CRM!`;
     }
   };
 
+  const estimateTenantRenewalAmount = (tenant, months = 12) => {
+    if (!tenant) return 0;
+    const defaultMonths = SAAS_CYCLE_MONTHS[tenant.subscription?.billing_cycle] || 12;
+    if (Number(tenant.subscription?.amount) > 0 && months === defaultMonths) {
+      return Number(tenant.subscription.amount);
+    }
+    const enabledKeys = new Set(tenant.entitlements || []);
+    const hasComboLeadCalling = enabledKeys.has('LEADS_WITH_CALLING');
+    const detailMap = new Map((tenant.entitlement_details || []).map(d => [d.module_key, d]));
+    const items = (catalog || [])
+      .filter(p =>
+        enabledKeys.has(p.process_code) &&
+        p.is_active !== false &&
+        !SAAS_INTERNAL_KEYS.has(p.process_code) &&
+        !(hasComboLeadCalling && (p.process_code === 'LEADS_ONLY' || p.process_code === 'CALLING_STANDALONE'))
+      );
+    if (items.length === 0) return 0;
+    const matchedCycle = (cycles || []).find(c => (c.months_count ?? c.months) === months);
+    const disc = Number(matchedCycle?.discount_percent || 0);
+    const defaultSeats = Math.max(1, Number(tenant.user_seat_limit) || 5);
+    const total = items.reduce((sum, p) => {
+      const rate = Number(tenant.module_rates?.[p.process_code] ?? p.monthly_rate_per_user ?? 0);
+      const seats = detailMap.get(p.process_code)?.licensed_seats || defaultSeats;
+      const gross = Math.round(rate * seats * months * 100) / 100;
+      const net = Math.round(gross * (1 - disc / 100) * 100) / 100;
+      return sum + net;
+    }, 0);
+    return Math.round(total * 100) / 100;
+  };
+
   const handleOpenInvoice = (tenant, type = 'proforma') => {
+  const defaultMonths = SAAS_CYCLE_MONTHS[tenant.subscription?.billing_cycle] || 12;
+  const estimated = estimateTenantRenewalAmount(tenant, defaultMonths);
   setActiveInvoiceData(null);
   setInvoiceGstMode('IGST');
   setInvoiceTenant(tenant);
   setInvoiceType(type === 'tax_invoice' ? 'proforma' : type);
-  setPayAmount(tenant.subscription?.amount ?? 0);
+  setPayMonths(defaultMonths);
+  setPayAmount(estimated);
   setPayMode('UPI');
   setPayUtr('');
-  setPayMonths(12);
 };
+
+  const handleIssueRenewalProforma = async () => {
+    if (!invoiceTenant || issuingProforma) return;
+    const baseAmt = Number(payAmount === '' ? estimateTenantRenewalAmount(invoiceTenant, payMonths) : payAmount);
+    if (!(baseAmt > 0)) {
+      showNotification('Proforma amount must be greater than ₹0.', true);
+      return;
+    }
+    setIssuingProforma(true);
+    try {
+      const res = await createRenewalProformaInvoice({
+        tenantId: invoiceTenant.id,
+        months: payMonths,
+        amount: baseAmt,
+        gstType: invoiceGstMode,
+        requestId: requestFor('renewal_proforma', [invoiceTenant.id, payMonths, baseAmt, invoiceGstMode])
+      });
+      if (!res.success) throw new Error(res.error);
+      showNotification(res.message);
+      setActiveInvoiceData(res.invoice);
+      setInvoiceGstMode(res.invoice.gst_type);
+      setInvoiceType('proforma');
+      setPayAmount(res.invoice.amount ?? baseAmt);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('saas-billing-updated'));
+      }
+      await Promise.all([loadData(), loadMasterInvoices()]);
+    } catch (err) {
+      showNotification(err.message, true);
+    } finally {
+      setIssuingProforma(false);
+    }
+  };
+
+  const handleCancelMasterProforma = async (targetTenantId, invoiceNumber) => {
+    if (!targetTenantId || !invoiceNumber) return;
+    try {
+      const res = await cancelPendingSaasProforma(targetTenantId, invoiceNumber, 'Cancelled by Master Admin');
+      if (!res?.success) throw new Error(res?.error || 'Could not cancel proforma.');
+      showNotification(res.message);
+      if (historyModalTenant?.id === targetTenantId) {
+        const histRes = await getTenantBillingHistory(targetTenantId);
+        if (histRes?.success) setBillingHistoryList(histRes.invoices || []);
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('saas-billing-updated'));
+      }
+      await Promise.all([loadData(), loadMasterInvoices()]);
+    } catch (err) {
+      showNotification(err.message, true);
+    }
+  };
 
   const handleRecordPayment = async () => {
   if (!invoiceTenant || operationBusy.current.has('payment')) return;
+  const resolvedAmount = Number(payAmount === '' ? 0 : payAmount);
+  const cleanUtr = String(payUtr || '').trim();
+  if (!(resolvedAmount > 0)) {
+    showNotification('Paid Amount (₹) must be greater than 0 before generating a Tax Invoice.', true);
+    return;
+  }
+  if (!cleanUtr) {
+    showNotification('Enter a valid UTR / Transaction Reference ID before confirming payment.', true);
+    return;
+  }
   operationBusy.current.add('payment');
   setRecordingPay(true);
   try {
     const details = {
       tenantId: invoiceTenant.id,
-      amount: payAmount === '' ? invoiceTenant.subscription?.amount ?? 0 : payAmount,
+      amount: resolvedAmount,
       paymentMode: payMode,
-      transactionId: payUtr,
+      transactionId: cleanUtr,
       months: payMonths,
       gstType: invoiceGstMode,
       sourceInvoiceNumber: activeInvoiceData?.invoice_type === 'proforma' ? activeInvoiceData.invoice_number : null
@@ -903,7 +1027,10 @@ Thank you for choosing New Swan CRM!`;
       }
     });
     setInvoiceType('tax_invoice');
-    await loadData();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('saas-billing-updated'));
+    }
+    await Promise.all([loadData(), loadMasterInvoices()]);
   } catch (err) {
     showNotification(err.message, true);
   } finally {
@@ -1047,6 +1174,30 @@ Thank you for choosing New Swan CRM!`;
 
   return (
     <div style={{ width: '100%', color: 'var(--text-primary)' }}>
+      {/* Top Segmented Tabs Bar */}
+      {(() => {
+        const pendingCnt = masterInvoices.filter(i => String(i.status || '').toUpperCase() === 'PENDING').length;
+        const expiringCnt = tenants.filter(t => !t.is_master_hq && t.status !== 'DELETED' && t.status !== 'DRAFT' && (t.subscription?.is_expired || t.subscription?.is_expiring_soon || (t.subscription?.days_remaining != null && t.subscription.days_remaining <= 15))).length;
+        return (
+          <div style={{ marginBottom: '1.25rem' }}>
+            <CRMTabs
+              id="saas-master"
+              label="SaaS Master views"
+              value={activeTab}
+              onChange={handleTabSwitch}
+              items={[
+                { id: 'pricing', label: 'Pricing & Catalog', icon: DollarSign },
+                { id: 'tenants', label: 'Client Workspaces', icon: Building, count: tenants.length },
+                { id: 'billing', label: 'Master Invoices', icon: Receipt, count: masterInvoices.length },
+                { id: 'requests', label: 'Pending Requests', icon: Bell, count: pendingCnt },
+                { id: 'trials', label: 'Trials & Expiry Audit', icon: Clock, count: expiringCnt },
+                { id: 'analytics', label: 'Usage & Module Matrix', icon: BarChart3 }
+              ]}
+            />
+          </div>
+        );
+      })()}
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
@@ -1116,7 +1267,7 @@ Thank you for choosing New Swan CRM!`;
             <span>Active Business Modules</span>
             <Award size={18} style={{ color: '#8b5cf6' }} />
           </div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>8 Modules</div>
+          <div style={{ fontSize: '1.8rem', fontWeight: 700 }}>{catalog.filter(p => p.is_active !== false).length || 16} Modules</div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>100% Decoupled À la Carte</div>
         </div>
 
@@ -1125,63 +1276,18 @@ Thank you for choosing New Swan CRM!`;
             <span>Primary Client Workspace</span>
             <ShieldCheck size={18} style={{ color: '#10b981' }} />
           </div>
-          <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#10b981' }}>New Swan Group</div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>Branches: NSMLR & NSTLP (200 Seats)</div>
+          {(() => {
+            const primaryClient = tenants.find(t => !t.is_master_hq && t.tenant_code === 'TNT00002') || tenants.find(t => !t.is_master_hq);
+            return (
+              <>
+                <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#10b981' }}>{primaryClient?.name || 'New Swan Group'}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                  {primaryClient?.branches?.length || 8} Branches • {primaryClient?.user_seat_limit || 300} Seats
+                </div>
+              </>
+            );
+          })()}
         </div>
-      </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-light)', marginBottom: '1.5rem', gap: '1rem' }}>
-        <button
-          onClick={() => handleTabSwitch('pricing')}
-          style={{
-            padding: '0.75rem 1.25rem',
-            border: 'none',
-            background: 'none',
-            cursor: 'pointer',
-            fontSize: '0.95rem',
-            fontWeight: 600,
-            borderBottom: activeTab === 'pricing' ? '2px solid #2563eb' : '2px solid transparent',
-            color: activeTab === 'pricing' ? '#2563eb' : 'var(--text-secondary)'
-          }}
-        >
-          <DollarSign size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
-          Dynamic Pricing & Module Catalog
-        </button>
-
-        <button
-          onClick={() => handleTabSwitch('tenants')}
-          style={{
-            padding: '0.75rem 1.25rem',
-            border: 'none',
-            background: 'none',
-            cursor: 'pointer',
-            fontSize: '0.95rem',
-            fontWeight: 600,
-            borderBottom: activeTab === 'tenants' ? '2px solid #2563eb' : '2px solid transparent',
-            color: activeTab === 'tenants' ? '#2563eb' : 'var(--text-secondary)'
-          }}
-        >
-          <Building size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
-          Client Workspaces & Subscriptions ({tenants.length})
-        </button>
-
-        <button
-          onClick={() => handleTabSwitch('billing')}
-          style={{
-            padding: '0.75rem 1.25rem',
-            border: 'none',
-            background: 'none',
-            cursor: 'pointer',
-            fontSize: '0.95rem',
-            fontWeight: 600,
-            borderBottom: activeTab === 'billing' ? '2px solid #2563eb' : '2px solid transparent',
-            color: activeTab === 'billing' ? '#2563eb' : 'var(--text-secondary)'
-          }}
-        >
-          <Receipt size={16} style={{ display: 'inline', marginRight: '0.3rem', verticalAlign: 'text-bottom' }} />
-          Master Billing & Invoices ({masterInvoices.length})
-        </button>
       </div>
 
       {/* TAB 1: PRICING & DISCOUNTS */}
@@ -1199,38 +1305,41 @@ Thank you for choosing New Swan CRM!`;
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddModuleModal(true);
-                  setAddModuleError(null);
-                  setNewModCode('');
-                  setNewModName('');
-                  setNewModCategory('OPERATIONS');
-                  setNewModDesc('');
-                  setNewModRate(99);
-                }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.45rem',
-                  backgroundColor: '#4338ca',
-                  color: '#ffffff',
-                  padding: '0.55rem 1.15rem',
-                  borderRadius: '8px',
-                  border: 'none',
-                  fontWeight: 700,
-                  fontSize: '0.86rem',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(67, 56, 202, 0.25)'
-                }}
-              >
-                <PlusCircle size={16} /> + Add New Business Module
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddModuleModal(true);
+                    setAddModuleError(null);
+                    setNewModCode('');
+                    setNewModName('');
+                    setNewModCategory('OPERATIONS');
+                    setNewModDesc('');
+                    setNewModRate(99);
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    backgroundColor: '#4338ca',
+                    color: '#ffffff',
+                    padding: '0.55rem 1.15rem',
+                    borderRadius: '8px',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.86rem',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 6px rgba(67, 56, 202, 0.25)'
+                  }}
+                >
+                  <PlusCircle size={16} /> + Add New Business Module
+                </button>
+                <TableViewToggle view={pricingView} onChange={setPricingView} style={{ marginLeft: 0 }} />
+              </div>
             </div>
 
             <div style={{ overflowX: 'auto' }}>
-              <SaasDataTable id="pricing"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+              <SaasDataTable id="pricing" view={pricingView} hideToggle={true}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                     <th style={{ padding: '0.75rem 1rem' }}>Code</th>
@@ -1370,35 +1479,38 @@ Thank you for choosing New Swan CRM!`;
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setShowCreateTenantModal(true);
-                setCreateStep(1);
-                setCreateError(null);
-                setCreateSuccess(null);
-              }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.45rem',
-                backgroundColor: '#4338ca',
-                color: '#ffffff',
-                padding: '0.6rem 1.15rem',
-                borderRadius: '8px',
-                border: 'none',
-                fontWeight: 700,
-                fontSize: '0.88rem',
-                cursor: 'pointer',
-                boxShadow: '0 2px 6px rgba(67, 56, 202, 0.25)'
-              }}
-            >
-              <PlusCircle size={16} /> + Create Client Workspace
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreateTenantModal(true);
+                  setCreateStep(1);
+                  setCreateError(null);
+                  setCreateSuccess(null);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  backgroundColor: '#4338ca',
+                  color: '#ffffff',
+                  padding: '0.6rem 1.15rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(67, 56, 202, 0.25)'
+                }}
+              >
+                <PlusCircle size={16} /> + Create Client Workspace
+              </button>
+              <TableViewToggle view={tenantsView} onChange={setTenantsView} style={{ marginLeft: 0 }} />
+            </div>
           </div>
 
           {/* Sub-tab switcher */}
-          <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
             <button
               type="button"
               onClick={() => setWorkspaceSubTab('active')}
@@ -1461,7 +1573,7 @@ Thank you for choosing New Swan CRM!`;
           </div>
 
           <div style={{ overflowX: 'auto' }}>
-            <SaasDataTable id="tenants" key={workspaceSubTab}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+            <SaasDataTable id="tenants" key={workspaceSubTab} view={tenantsView} hideToggle={true}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-light)', textAlign: 'left', color: 'var(--text-secondary)' }}>
                   <th style={{ padding: '0.75rem 1rem' }}>Company / Workspace</th>
@@ -1582,12 +1694,26 @@ Thank you for choosing New Swan CRM!`;
 
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                          {isDefault ? (
-                            <span style={{ fontSize: '0.75rem', background: '#ecfdf5', color: '#047857', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 600 }}>
-                              All 8 Modules
-                            </span>
+                          {(t.entitlement_details && t.entitlement_details.length > 0) ? (
+                            t.entitlement_details.map(det => (
+                              <span
+                                key={det.module_key}
+                                title={det.included_in_combo ? 'Included inside Lead + Direct Calling Combo (not double-billed)' : `Licensed for ${det.licensed_seats} users @ ₹${det.monthly_rate_per_user}/user/mo`}
+                                style={{
+                                  fontSize: '0.71rem',
+                                  background: det.included_in_combo ? '#f8fafc' : det.has_custom_seats ? '#eef2ff' : '#ecfdf5',
+                                  color: det.included_in_combo ? '#64748b' : det.has_custom_seats ? '#3730a3' : '#047857',
+                                  padding: '0.16rem 0.45rem',
+                                  borderRadius: '4px',
+                                  border: `1px solid ${det.included_in_combo ? '#e2e8f0' : det.has_custom_seats ? '#c7d2fe' : '#a7f3d0'}`,
+                                  fontWeight: 600
+                                }}
+                              >
+                                {det.display_name} • {det.included_in_combo ? 'Combo Incl.' : `${det.licensed_seats}u (₹${det.monthly_rate_per_user})`}
+                              </span>
+                            ))
                           ) : (
-                            t.entitlements.map(mod => (
+                            (t.entitlements || []).map(mod => (
                               <span key={mod} style={{ fontSize: '0.72rem', background: 'var(--bg-muted)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
                                 {mod}
                               </span>
@@ -1616,41 +1742,75 @@ Thank you for choosing New Swan CRM!`;
                             ⚙️ Edit
                           </button>
                         </div>
+                        {Array.isArray(t.pending_requests) && t.pending_requests.length > 0 && (
+                          <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', marginTop: '0.4rem' }}>
+                            {t.pending_requests.map(req => (
+                              <span
+                                key={req.invoice_number}
+                                title={req.description}
+                                style={{
+                                  fontSize: '0.69rem',
+                                  background: '#fffbeb',
+                                  color: '#b45309',
+                                  border: '1px solid #fde68a',
+                                  padding: '0.14rem 0.45rem',
+                                  borderRadius: '4px',
+                                  fontWeight: 700
+                                }}
+                              >
+                                ⏳ {req.category === 'ADDON_MODULE'
+                                  ? `Req: ${req.module_name || req.module_key || 'Module'} (${req.requested_users || t.user_seat_limit}u)`
+                                  : req.category === 'ADDON_SEATS'
+                                    ? `Req: +${req.additional_seats} Seats`
+                                    : 'Renewal PI'} • ₹{Number(req.total_payable || req.amount || 0).toLocaleString('en-IN')}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </td>
 
                       <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          <span style={{ fontWeight: 600 }}>{expiryFormatted}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditValidity(t)}
-                            style={{
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              border: '1px solid #c7d2fe',
-                              background: '#eff6ff',
-                              color: '#3730a3',
-                              cursor: 'pointer',
-                              fontSize: '0.72rem',
-                              fontWeight: 600,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '2px'
-                            }}
-                            title="Edit exact validity date or revert accidental +1M/+6M/+1Y clicks"
-                          >
-                            <Edit3 size={11} /> Edit Date
-                          </button>
-                        </div>
-                        {sub && sub.days_remaining != null && (
-                          <div style={{ fontSize: '0.75rem', color: sub.days_remaining <= 7 ? '#dc2626' : 'var(--text-secondary)', marginTop: '2px' }}>
-                            {sub.days_remaining > 0 ? `(${sub.days_remaining} days left)` : '(Expired)'}
+                        {t.is_master_hq || sub?.never_expires ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                            <span style={{ fontWeight: 700, color: '#059669' }}>Lifetime (Master HQ)</span>
+                            <span style={{ fontSize: '0.73rem', color: '#047857', fontWeight: 600 }}>Never Expires</span>
                           </div>
-                        )}
-                        {sub?.billing_cycle && (
-                          <div style={{ fontSize: '0.7rem', color: '#6366f1', fontWeight: 600, marginTop: '2px' }}>
-                            {sub.billing_cycle}
-                          </div>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                              <span style={{ fontWeight: 600 }}>{expiryFormatted}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditValidity(t)}
+                                style={{
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  border: '1px solid #c7d2fe',
+                                  background: '#eff6ff',
+                                  color: '#3730a3',
+                                  cursor: 'pointer',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 600,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '2px'
+                                }}
+                                title="Edit exact validity date or revert accidental +1M/+6M/+1Y clicks"
+                              >
+                                <Edit3 size={11} /> Edit Date
+                              </button>
+                            </div>
+                            {sub && sub.days_remaining != null && (
+                              <div style={{ fontSize: '0.75rem', color: sub.days_remaining <= 7 ? '#dc2626' : 'var(--text-secondary)', marginTop: '2px' }}>
+                                {sub.days_remaining > 0 ? `(${sub.days_remaining} days left)` : '(Expired)'}
+                              </div>
+                            )}
+                            {sub?.billing_cycle && (
+                              <div style={{ fontSize: '0.7rem', color: '#6366f1', fontWeight: 600, marginTop: '2px' }}>
+                                {sub.billing_cycle}
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
 
@@ -2023,18 +2183,21 @@ Thank you for choosing New Swan CRM!`;
                 />
               </div>
 
-              {/* Status Filter Pills */}
-              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+              {/* Status Filter Pills & View Toggle */}
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
                 {[
                   { id: 'ALL', label: 'All Invoices' },
                   { id: 'PAID', label: 'Paid Tax Invoices' },
                   { id: 'PENDING', label: 'Pending Proforma' },
+                  { id: 'TRIAL_LOGS', label: 'Trial & Expiry Logs' },
                   { id: 'ADDON_SEATS', label: 'Seat Expansions' },
                   { id: 'SEAT_REDUCTION', label: 'Downgrades' },
-                  { id: 'NON_GST', label: 'Non-GST Bills' }
+                  { id: 'NON_GST', label: 'Non-GST Bills' },
+                  { id: 'VOID_CANCELLED', label: 'Void / Cancelled' }
                 ].map(f => (
                   <button
                     key={f.id}
+                    type="button"
                     onClick={() => setInvoiceStatusFilter(f.id)}
                     style={{
                       padding: '0.35rem 0.75rem',
@@ -2051,6 +2214,7 @@ Thank you for choosing New Swan CRM!`;
                     {f.label}
                   </button>
                 ))}
+                <TableViewToggle view={billingView} onChange={setBillingView} style={{ marginLeft: '0.25rem' }} />
               </div>
             </div>
 
@@ -2060,9 +2224,11 @@ Thank you for choosing New Swan CRM!`;
               const filteredInvoices = masterInvoices.filter(inv => {
                 if (invoiceStatusFilter === 'PAID' && inv.status !== 'PAID') return false;
                 if (invoiceStatusFilter === 'PENDING' && inv.status !== 'PENDING') return false;
+                if (invoiceStatusFilter === 'TRIAL_LOGS' && !['TRIAL_GRANT', 'MANUAL_EXTENSION', 'VALIDITY_ADJUSTMENT'].includes(inv.category || inv.operation)) return false;
                 if (invoiceStatusFilter === 'ADDON_SEATS' && inv.category !== 'ADDON_SEATS') return false;
                 if (invoiceStatusFilter === 'SEAT_REDUCTION' && inv.category !== 'SEAT_REDUCTION') return false;
                 if (invoiceStatusFilter === 'NON_GST' && inv.gst_type !== 'NON_GST') return false;
+                if (invoiceStatusFilter === 'VOID_CANCELLED' && !['VOID', 'CANCELLED'].includes(String(inv.status || '').toUpperCase())) return false;
 
                 if (!q) return true;
                 const matchName = (inv.tenant_name || '').toLowerCase().includes(q);
@@ -2075,7 +2241,7 @@ Thank you for choosing New Swan CRM!`;
 
               return (
                 <div style={{ overflowX: 'auto' }}>
-                  <SaasDataTable id="billing" key={invoiceSearchQuery+":"+invoiceStatusFilter}><table className="data-table" style={{ width: '100%', fontSize: '0.85rem' }}>
+                  <SaasDataTable id="billing" key={invoiceSearchQuery+":"+invoiceStatusFilter} view={billingView} hideToggle={true}><table className="data-table" style={{ width: '100%', fontSize: '0.85rem' }}>
                     <thead>
                       <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                         <th style={{ padding: '0.75rem', textAlign: 'left' }}>Invoice # & Date</th>
@@ -2097,12 +2263,15 @@ Thank you for choosing New Swan CRM!`;
                         </tr>
                       ) : (
                         filteredInvoices.map((inv, idx) => {
-                          const isPaid = inv.status === 'PAID';
+                          const statusUpper = String(inv.status || '').toUpperCase();
+                          const isPaid = statusUpper === 'PAID';
+                          const isVoid = statusUpper === 'VOID' || statusUpper === 'CANCELLED';
+                          const isTrialOrLog = ['TRIAL_LOG', 'LOGGED', 'COMPLETED'].includes(statusUpper);
                           const isReduction = inv.category === 'SEAT_REDUCTION';
-                          const tenantObj = tenants.find(t => t.id === inv.tenant_id) || { name: inv.tenant_name, tenant_code: inv.tenant_code };
+                          const tenantObj = tenants.find(t => t.id === inv.tenant_id) || { id: inv.tenant_id, name: inv.tenant_name, tenant_code: inv.tenant_code };
 
                           return (
-                            <tr key={inv.id || idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <tr key={inv.id || idx} style={{ borderBottom: '1px solid #f1f5f9', opacity: isVoid ? 0.65 : 1 }}>
                               <td style={{ padding: '0.75rem' }}>
                                 <div style={{ fontWeight: 700, color: '#1e1b4b', fontFamily: 'monospace' }}>
                                   {inv.invoice_number}
@@ -2120,12 +2289,27 @@ Thank you for choosing New Swan CRM!`;
                               </td>
 
                               <td style={{ padding: '0.75rem' }}>
-                                <div style={{ fontWeight: 600, color: isReduction ? '#dc2626' : '#334155', fontSize: '0.82rem' }}>
-                                  {inv.description || inv.category}
-                                </div>
-                                <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                                  {inv.gst_type === 'NON_GST' ? '🏷️ Non-GST Commercial Bill' : (inv.gst_type || 'IGST 18%')}
-                                </div>
+                                {(() => {
+                                  const rawDesc = String(inv.description || '');
+                                  const modCode = inv.module_key || (rawDesc.startsWith('Module add-on request:') ? rawDesc.replace('Module add-on request:', '').trim() : '');
+                                  const matchedMod = modCode ? catalog.find(c => c.process_code === modCode) : null;
+                                  const displayDesc = matchedMod && rawDesc.startsWith('Module add-on request:')
+                                    ? `${matchedMod.display_name} (${inv.requested_users || inv.total_seats || 'Workspace'} Users)`
+                                    : (rawDesc || inv.category);
+                                  return (
+                                    <>
+                                      <div style={{ fontWeight: 600, color: isReduction ? '#dc2626' : '#334155', fontSize: '0.82rem' }}>
+                                        {displayDesc}
+                                      </div>
+                                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                        {inv.gst_type === 'NON_GST' ? '🏷️ Non-GST Commercial Bill' : (inv.gst_type || 'IGST 18%')}
+                                      </div>
+                                      {isVoid && inv.void_reason && (
+                                        <div style={{ fontSize: '0.7rem', color: '#dc2626', marginTop: '2px' }}>{inv.void_reason}</div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
                               </td>
 
                               <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 600 }}>
@@ -2146,16 +2330,16 @@ Thank you for choosing New Swan CRM!`;
                                   borderRadius: '12px',
                                   fontSize: '0.72rem',
                                   fontWeight: 800,
-                                  background: isPaid ? '#dcfce7' : isReduction ? '#f1f5f9' : '#fef3c7',
-                                  color: isPaid ? '#15803d' : isReduction ? '#475569' : '#b45309'
+                                  background: isVoid ? '#fef2f2' : isPaid ? '#dcfce7' : (isReduction || isTrialOrLog) ? '#f1f5f9' : '#fef3c7',
+                                  color: isVoid ? '#dc2626' : isPaid ? '#15803d' : (isReduction || isTrialOrLog) ? '#475569' : '#b45309'
                                 }}>
-                                  {isPaid ? 'PAID' : isReduction ? 'ADJUSTMENT' : 'PENDING'}
+                                  {statusUpper === 'CANCELLED' ? 'CANCELLED' : isVoid ? 'VOID / REVERSED' : isPaid ? 'PAID' : isReduction ? 'ADJUSTMENT' : statusUpper === 'TRIAL_LOG' ? 'TRIAL LOG' : isTrialOrLog ? 'LOGGED' : 'PENDING'}
                                 </span>
                               </td>
 
                               <td style={{ padding: '0.75rem', textAlign: 'center' }}>
                                 <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
-                                  {!isReduction && (
+                                  {!isReduction && !isTrialOrLog && (
                                     <>
                                       <button
                                         type="button"
@@ -2164,6 +2348,9 @@ Thank you for choosing New Swan CRM!`;
                                           setInvoiceTenant(tenantObj);
                                           setInvoiceType(inv.invoice_type || (isPaid ? 'tax_invoice' : 'proforma'));
                                           setInvoiceGstMode(inv.gst_type || (inv.tax_amount === 0 ? 'NON_GST' : 'IGST'));
+                                          setPayAmount(inv.amount ?? 0);
+                                          setPayMonths(inv.months_added || 12);
+                                          setPayUtr('');
                                         }}
                                         style={{
                                           padding: '0.3rem 0.6rem',
@@ -2183,26 +2370,51 @@ Thank you for choosing New Swan CRM!`;
                                         <Eye size={13} /> View
                                       </button>
 
-                                      <button
-                                        type="button"
-                                        onClick={() => handleShareWhatsApp(inv, tenantObj)}
-                                        style={{
-                                          padding: '0.3rem 0.55rem',
-                                          borderRadius: '6px',
-                                          border: '1px solid #86efac',
-                                          background: '#f0fdf4',
-                                          fontSize: '0.75rem',
-                                          fontWeight: 600,
-                                          cursor: 'pointer',
-                                          color: '#16a34a',
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '3px'
-                                        }}
-                                        title="Share on WhatsApp"
-                                      >
-                                        <MessageCircle size={13} />
-                                      </button>
+                                      {!isVoid && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleShareWhatsApp(inv, tenantObj)}
+                                          style={{
+                                            padding: '0.3rem 0.55rem',
+                                            borderRadius: '6px',
+                                            border: '1px solid #86efac',
+                                            background: '#f0fdf4',
+                                            fontSize: '0.75rem',
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                            color: '#16a34a',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '3px'
+                                          }}
+                                          title="Share on WhatsApp"
+                                        >
+                                          <MessageCircle size={13} />
+                                        </button>
+                                      )}
+
+                                      {statusUpper === 'PENDING' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCancelMasterProforma(inv.tenant_id, inv.invoice_number)}
+                                          style={{
+                                            padding: '0.3rem 0.55rem',
+                                            borderRadius: '6px',
+                                            border: '1px solid #fecaca',
+                                            background: '#fef2f2',
+                                            fontSize: '0.73rem',
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                            color: '#dc2626',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '2px'
+                                          }}
+                                          title="Cancel pending proforma request"
+                                        >
+                                          <X size={12} /> Cancel
+                                        </button>
+                                      )}
                                     </>
                                   )}
                                 </div>
@@ -2217,6 +2429,661 @@ Thank you for choosing New Swan CRM!`;
               );
             })()}
           </div>
+        </div>
+      )}
+
+      {/* TAB 4: PENDING APPROVALS & REQUESTS QUEUE */}
+      {activeTab === 'requests' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Bell size={20} style={{ color: '#d97706' }} /> Pending Approvals &amp; Client Requests
+              </h2>
+              <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
+                Actionable queue of unpaid Add-on Module requests, Extra Seat expansions, and Renewal Proformas awaiting payment confirmation.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => Promise.all([loadData(), loadMasterInvoices()])}
+              disabled={loadingMasterInvoices}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.5rem 1rem',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
+                background: '#fff',
+                fontSize: '0.84rem',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              <RefreshCw size={15} className={loadingMasterInvoices ? 'spin' : ''} /> Refresh Queue
+            </button>
+          </div>
+
+          {(() => {
+            const allPending = masterInvoices.filter(inv => String(inv.status || '').toUpperCase() === 'PENDING');
+            const moduleReqs = allPending.filter(inv => inv.category === 'ADDON_MODULE');
+            const seatReqs = allPending.filter(inv => inv.category === 'ADDON_SEATS');
+            const renewalReqs = allPending.filter(inv => inv.category === 'RENEWAL_PROFORMA');
+            const totalPendingSum = allPending.reduce((acc, i) => acc + (Number(i.total_payable) || Number(i.amount) || 0), 0);
+
+            const filteredReqs = allPending.filter(inv => {
+              if (pendingReqFilter !== 'ALL' && inv.category !== pendingReqFilter) return false;
+              const q = (invoiceSearchQuery || '').trim().toLowerCase();
+              if (!q) return true;
+              return (
+                (inv.tenant_name || '').toLowerCase().includes(q) ||
+                (inv.tenant_code || '').toLowerCase().includes(q) ||
+                (inv.invoice_number || '').toLowerCase().includes(q) ||
+                (inv.description || '').toLowerCase().includes(q)
+              );
+            });
+
+            return (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+                  <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #d97706' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Total Pending Queue</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#d97706', marginTop: '0.2rem' }}>{allPending.length}</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Pipeline: ₹{totalPendingSum.toLocaleString('en-IN')}</div>
+                  </div>
+                  <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #4f46e5' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Module Add-on Requests</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#4f46e5', marginTop: '0.2rem' }}>{moduleReqs.length}</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Per-user module activations</div>
+                  </div>
+                  <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #0284c7' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Extra Seat Requests</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0284c7', marginTop: '0.2rem' }}>{seatReqs.length}</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Workspace capacity expansions</div>
+                  </div>
+                  <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #059669' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Renewal Proformas</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#059669', marginTop: '0.2rem' }}>{renewalReqs.length}</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Auto &amp; manual renewal PIs</div>
+                  </div>
+                </div>
+
+                <div className="card" style={{ padding: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+                    <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
+                      <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                      <input
+                        type="text"
+                        placeholder="Search pending PI #, tenant name, module..."
+                        value={invoiceSearchQuery}
+                        onChange={(e) => setInvoiceSearchQuery(e.target.value)}
+                        style={{ width: '100%', padding: '0.45rem 0.75rem 0.45rem 2.1rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.84rem' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                      {[
+                        { id: 'ALL', label: `All Pending (${allPending.length})` },
+                        { id: 'ADDON_MODULE', label: `Modules (${moduleReqs.length})` },
+                        { id: 'ADDON_SEATS', label: `Extra Seats (${seatReqs.length})` },
+                        { id: 'RENEWAL_PROFORMA', label: `Renewals (${renewalReqs.length})` }
+                      ].map(f => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setPendingReqFilter(f.id)}
+                          style={{
+                            padding: '0.35rem 0.75rem',
+                            borderRadius: '20px',
+                            border: '1px solid',
+                            borderColor: pendingReqFilter === f.id ? '#4338ca' : '#cbd5e1',
+                            background: pendingReqFilter === f.id ? '#eef2ff' : '#fff',
+                            color: pendingReqFilter === f.id ? '#4338ca' : '#475569',
+                            fontSize: '0.76rem',
+                            fontWeight: pendingReqFilter === f.id ? 700 : 500,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                      <TableViewToggle view={billingView} onChange={setBillingView} />
+                    </div>
+                  </div>
+
+                  <SaasDataTable id="requests" key={`req:${pendingReqFilter}:${invoiceSearchQuery}`} view={billingView} hideToggle={true}>
+                    <table className="data-table" style={{ width: '100%', fontSize: '0.84rem' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                          <th style={{ padding: '0.75rem', textAlign: 'left', width: 185 }}>Proforma # &amp; Date (IST)</th>
+                          <th style={{ padding: '0.75rem', textAlign: 'left', width: 175 }}>Client Workspace</th>
+                          <th style={{ padding: '0.75rem', textAlign: 'left', width: 120 }}>Request Type</th>
+                          <th style={{ padding: '0.75rem', textAlign: 'left', width: 250 }}>Details &amp; Calculation Basis</th>
+                          <th style={{ padding: '0.75rem', textAlign: 'right', width: 125 }}>Total Payable</th>
+                          <th style={{ padding: '0.75rem', textAlign: 'center', width: 220 }}>Quick Approval</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredReqs.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>
+                              🎉 No pending approval requests in this queue!
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredReqs.map(inv => {
+                            const tenantObj = tenants.find(t => t.id === inv.tenant_id) || { id: inv.tenant_id, name: inv.tenant_name, tenant_code: inv.tenant_code };
+                            return (
+                              <tr key={inv.invoice_number} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '0.75rem' }}>
+                                  <div style={{ fontWeight: 700, fontFamily: 'monospace', color: '#3730a3' }}>{inv.invoice_number}</div>
+                                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                                    {inv.created_at ? new Date(inv.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '0.75rem' }}>
+                                  <div style={{ fontWeight: 700, color: '#0f172a' }}>{inv.tenant_name}</div>
+                                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}><code>{inv.tenant_code}</code></div>
+                                </td>
+                                <td style={{ padding: '0.75rem' }}>
+                                  <span style={{
+                                    padding: '2px 8px',
+                                    borderRadius: '999px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    background: inv.category === 'ADDON_MODULE' ? '#eef2ff' : inv.category === 'ADDON_SEATS' ? '#e0f2fe' : '#ecfdf5',
+                                    color: inv.category === 'ADDON_MODULE' ? '#4338ca' : inv.category === 'ADDON_SEATS' ? '#0369a1' : '#047857'
+                                  }}>
+                                    {inv.category === 'ADDON_MODULE' ? 'Module Add-on' : inv.category === 'ADDON_SEATS' ? 'Extra Seats' : 'Renewal PI'}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '0.75rem' }}>
+                                  <div style={{ fontWeight: 600, color: '#1e293b' }}>{inv.description}</div>
+                                  {inv.pricing_basis && (
+                                    <div style={{ fontSize: '0.71rem', color: '#4338ca', marginTop: '2px' }}>{inv.pricing_basis}</div>
+                                  )}
+                                </td>
+                                <td style={{ padding: '0.75rem', textAlign: 'right' }}>
+                                  <div style={{ fontWeight: 800, color: '#0f172a' }}>₹{Number(inv.total_payable || inv.amount || 0).toLocaleString('en-IN')}</div>
+                                  <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Base: ₹{Number(inv.amount || 0).toLocaleString('en-IN')}</div>
+                                </td>
+                                <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                                  <div style={{ display: 'inline-flex', gap: '0.35rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActiveInvoiceData(inv);
+                                        setInvoiceTenant(tenantObj);
+                                        setInvoiceType('proforma');
+                                        setInvoiceGstMode(inv.gst_type || 'IGST');
+                                        setPayAmount(inv.amount ?? 0);
+                                        setPayMonths(inv.months_added || 12);
+                                        setPayUtr('');
+                                      }}
+                                      style={{
+                                        padding: '0.35rem 0.65rem',
+                                        borderRadius: '6px',
+                                        border: 'none',
+                                        background: '#059669',
+                                        color: '#fff',
+                                        fontSize: '0.74rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '3px'
+                                      }}
+                                      title="Open Invoice & Record UTR Payment to Activate"
+                                    >
+                                      <CheckCircle2 size={13} /> Confirm Paid
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCancelMasterProforma(inv.tenant_id, inv.invoice_number)}
+                                      style={{
+                                        padding: '0.35rem 0.6rem',
+                                        borderRadius: '6px',
+                                        border: '1px solid #fecaca',
+                                        background: '#fef2f2',
+                                        color: '#dc2626',
+                                        fontSize: '0.74rem',
+                                        fontWeight: 600,
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </SaasDataTable>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* TAB 5: TRIALS, RENEWALS & EXPIRY AUDIT */}
+      {activeTab === 'trials' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Clock size={20} style={{ color: '#b45309' }} /> Trials, Renewals &amp; Expiry Audit
+              </h2>
+              <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
+                Track expiring/expired workspaces and inspect the complete platform history of Free Trials, Manual Extensions, and Validity Edits (IST).
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => Promise.all([loadData(), loadMasterInvoices()])}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.84rem', fontWeight: 600, cursor: 'pointer' }}
+            >
+              <RefreshCw size={15} /> Refresh Audit
+            </button>
+          </div>
+
+          {(() => {
+            const clientTenants = tenants.filter(t => !t.is_master_hq && t.status !== 'DELETED' && t.status !== 'DRAFT');
+            const expiringSoon = clientTenants.filter(t => t.subscription?.is_expiring_soon || (t.subscription?.days_remaining != null && t.subscription.days_remaining <= 15 && !t.subscription.is_expired));
+            const expired = clientTenants.filter(t => t.subscription?.is_expired || t.status === 'EXPIRED');
+            const onTrial = clientTenants.filter(t => t.status === 'TRIAL' || t.subscription?.status === 'TRIAL');
+            const auditEvents = masterInvoices.filter(inv =>
+              ['TRIAL_GRANT', 'MANUAL_EXTENSION', 'VALIDITY_ADJUSTMENT'].includes(inv.category || inv.operation) &&
+              (!trialAuditSearch.trim() ||
+                (inv.tenant_name || '').toLowerCase().includes(trialAuditSearch.trim().toLowerCase()) ||
+                (inv.tenant_code || '').toLowerCase().includes(trialAuditSearch.trim().toLowerCase()) ||
+                (inv.invoice_number || '').toLowerCase().includes(trialAuditSearch.trim().toLowerCase()) ||
+                (inv.description || '').toLowerCase().includes(trialAuditSearch.trim().toLowerCase()))
+            );
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                  <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #d97706' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Expiring Within 15 Days</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#d97706', marginTop: '0.2rem' }}>{expiringSoon.length}</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Workspaces needing renewal</div>
+                  </div>
+                  <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #dc2626' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Expired Workspaces</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#dc2626', marginTop: '0.2rem' }}>{expired.length}</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Locked pending payment/trial</div>
+                  </div>
+                  <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #2563eb' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Active Trial Accounts</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#2563eb', marginTop: '0.2rem' }}>{onTrial.length}</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Currently evaluating CRM</div>
+                  </div>
+                  <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #7c3aed' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Trial &amp; Extension Logs</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#7c3aed', marginTop: '0.2rem' }}>{auditEvents.length}</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Recorded non-payment grants</div>
+                  </div>
+                </div>
+
+                {/* Expiry & Renewal Radar */}
+                <div className="card" style={{ padding: '1.25rem' }}>
+                  <h3 style={{ margin: '0 0 0.85rem 0', fontSize: '1rem', fontWeight: 700 }}>
+                    Client Expiry &amp; Renewal Radar ({clientTenants.length})
+                  </h3>
+                  <SaasDataTable id="trials-radar" hideToggle={true}>
+                    <table className="data-table" style={{ width: '100%', fontSize: '0.84rem' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                          <th style={{ padding: '0.7rem', textAlign: 'left', width: 200 }}>Client Workspace</th>
+                          <th style={{ padding: '0.7rem', textAlign: 'left', width: 120 }}>Status</th>
+                          <th style={{ padding: '0.7rem', textAlign: 'left', width: 150 }}>Expiry Date (IST)</th>
+                          <th style={{ padding: '0.7rem', textAlign: 'right', width: 145 }}>Est. Renewal Base</th>
+                          <th style={{ padding: '0.7rem', textAlign: 'center', width: 260 }}>Quick Lifecycle Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {clientTenants.length === 0 ? (
+                          <tr><td colSpan={5} style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>No client workspaces found.</td></tr>
+                        ) : (
+                          clientTenants.map(t => {
+                            const sub = t.subscription;
+                            const dLeft = sub?.days_remaining;
+                            const estRenewal = estimateTenantRenewalAmount(t, SAAS_CYCLE_MONTHS[sub?.billing_cycle] || 12);
+                            const expiryText = sub?.valid_until ? new Date(sub.valid_until).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A';
+                            return (
+                              <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '0.7rem' }}>
+                                  <div style={{ fontWeight: 700 }}>{t.name}</div>
+                                  <div style={{ fontSize: '0.72rem', color: '#64748b' }}><code>{t.tenant_code}</code> • {t.user_seat_limit} Seats</div>
+                                </td>
+                                <td style={{ padding: '0.7rem' }}>
+                                  <span style={{
+                                    padding: '2px 8px',
+                                    borderRadius: '12px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    background: sub?.is_expired ? '#fee2e2' : sub?.is_expiring_soon ? '#fef3c7' : t.status === 'TRIAL' ? '#eff6ff' : '#dcfce7',
+                                    color: sub?.is_expired ? '#dc2626' : sub?.is_expiring_soon ? '#b45309' : t.status === 'TRIAL' ? '#1d4ed8' : '#15803d'
+                                  }}>
+                                    {sub?.is_expired ? 'EXPIRED' : sub?.is_expiring_soon ? 'EXPIRING SOON' : t.status}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '0.7rem' }}>
+                                  <div style={{ fontWeight: 600 }}>{expiryText}</div>
+                                  <div style={{ fontSize: '0.72rem', color: dLeft != null && dLeft <= 7 ? '#dc2626' : '#64748b', fontWeight: 600 }}>
+                                    {dLeft == null ? '—' : dLeft <= 0 ? 'Expired' : `${dLeft} Day${dLeft === 1 ? '' : 's'} Left`}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '0.7rem', textAlign: 'right', fontWeight: 700 }}>
+                                  ₹{estRenewal.toLocaleString('en-IN')}
+                                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 400 }}>{sub?.billing_cycle || 'YEARLY'}</div>
+                                </td>
+                                <td style={{ padding: '0.7rem', textAlign: 'center' }}>
+                                  <div style={{ display: 'inline-flex', gap: '0.35rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => { setTrialModalTenant(t); setTrialDaysInput(7); setCustomTrialInput(''); }}
+                                      style={{ padding: '0.28rem 0.55rem', borderRadius: '6px', border: '1px solid #f59e0b', background: '#fffbeb', color: '#b45309', fontSize: '0.73rem', fontWeight: 600, cursor: 'pointer' }}
+                                    >
+                                      🎁 Trial
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleExtend(t.id, 1)}
+                                      disabled={extendingId === t.id}
+                                      style={{ padding: '0.28rem 0.55rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', fontSize: '0.73rem', fontWeight: 600, cursor: 'pointer' }}
+                                    >
+                                      +1M
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenInvoice(t, 'proforma')}
+                                      style={{ padding: '0.28rem 0.55rem', borderRadius: '6px', border: '1px solid #8b5cf6', background: '#f5f3ff', color: '#6d28d9', fontSize: '0.73rem', fontWeight: 600, cursor: 'pointer' }}
+                                    >
+                                      Invoice / PI
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenBillingHistory(t)}
+                                      style={{ padding: '0.28rem 0.55rem', borderRadius: '6px', border: '1px solid #0284c7', background: '#f0f9ff', color: '#0369a1', fontSize: '0.73rem', fontWeight: 600, cursor: 'pointer' }}
+                                    >
+                                      Ledger
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </SaasDataTable>
+                </div>
+
+                {/* Full Platform Trial & Manual Extension Log */}
+                <div className="card" style={{ padding: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.85rem' }}>
+                    <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>
+                      Trial Grants &amp; Manual Validity Audit Log ({auditEvents.length})
+                    </h3>
+                    <div style={{ position: 'relative', width: '260px' }}>
+                      <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                      <input
+                        type="text"
+                        value={trialAuditSearch}
+                        onChange={(e) => setTrialAuditSearch(e.target.value)}
+                        placeholder="Search workspace, TRL #..."
+                        style={{ width: '100%', padding: '0.4rem 0.75rem 0.4rem 2rem', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+                      />
+                    </div>
+                  </div>
+                  <SaasDataTable id="trials-audit" key={`audit:${trialAuditSearch}`} hideToggle={true}>
+                    <table className="data-table" style={{ width: '100%', fontSize: '0.83rem' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                          <th style={{ padding: '0.7rem', textAlign: 'left', width: 170 }}>Ref # &amp; Date (IST)</th>
+                          <th style={{ padding: '0.7rem', textAlign: 'left', width: 170 }}>Workspace</th>
+                          <th style={{ padding: '0.7rem', textAlign: 'left', width: 250 }}>Action Description</th>
+                          <th style={{ padding: '0.7rem', textAlign: 'left', width: 140 }}>New Expiry (IST)</th>
+                          <th style={{ padding: '0.7rem', textAlign: 'center', width: 110 }}>Type</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {auditEvents.length === 0 ? (
+                          <tr><td colSpan={5} style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>No trial grant or manual validity adjustment logs recorded yet. Grants made going forward appear here automatically.</td></tr>
+                        ) : (
+                          auditEvents.map(ev => (
+                            <tr key={ev.invoice_number} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '0.65rem 0.7rem' }}>
+                                <div style={{ fontWeight: 700, fontFamily: 'monospace', color: '#334155' }}>{ev.invoice_number}</div>
+                                <div style={{ fontSize: '0.71rem', color: '#64748b' }}>
+                                  {ev.created_at ? new Date(ev.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                                </div>
+                              </td>
+                              <td style={{ padding: '0.65rem 0.7rem' }}>
+                                <div style={{ fontWeight: 600 }}>{ev.tenant_name}</div>
+                                <div style={{ fontSize: '0.71rem', color: '#64748b' }}><code>{ev.tenant_code}</code></div>
+                              </td>
+                              <td style={{ padding: '0.65rem 0.7rem', color: '#1e293b', fontWeight: 500 }}>{ev.description}</td>
+                              <td style={{ padding: '0.65rem 0.7rem', fontWeight: 600 }}>
+                                {ev.valid_until ? new Date(ev.valid_until).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                              </td>
+                              <td style={{ padding: '0.65rem 0.7rem', textAlign: 'center' }}>
+                                <span style={{
+                                  padding: '2px 8px',
+                                  borderRadius: '12px',
+                                  fontSize: '0.71rem',
+                                  fontWeight: 700,
+                                  background: ev.category === 'TRIAL_GRANT' ? '#fef3c7' : '#f1f5f9',
+                                  color: ev.category === 'TRIAL_GRANT' ? '#b45309' : '#475569'
+                                }}>
+                                  {ev.category === 'TRIAL_GRANT' ? 'TRIAL GRANT' : ev.category === 'MANUAL_EXTENSION' ? 'MANUAL EXT' : 'VALIDITY EDIT'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </SaasDataTable>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* TAB 6: USAGE QUOTAS & CLIENT MODULE MATRIX */}
+      {activeTab === 'analytics' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <BarChart3 size={20} style={{ color: '#4338ca' }} /> Usage Quotas &amp; Client Module Matrix
+              </h2>
+              <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
+                Compare active seats, calling quotas, SMTP accounts, estimated recurring revenue, and per-module licensed user counts across all workspaces.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={loadData}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.84rem', fontWeight: 600, cursor: 'pointer' }}
+            >
+              <RefreshCw size={15} /> Refresh Matrix
+            </button>
+          </div>
+
+          {(() => {
+            const clientTenants = tenants.filter(t => !t.is_master_hq && t.status !== 'DELETED' && t.status !== 'DRAFT');
+            const totalActiveUsers = clientTenants.reduce((s, t) => s + (Number(t.active_users_count) || 0), 0);
+            const totalSeatLimit = clientTenants.reduce((s, t) => s + (Number(t.user_seat_limit) || 0), 0);
+            const totalCallingSeats = clientTenants.reduce((s, t) => s + (Number(t.calling_seats_limit) || 0), 0);
+            const totalSmtpAccounts = clientTenants.reduce((s, t) => s + (Number(t.smtp_accounts_limit) || 0), 0);
+            const estArr = clientTenants.reduce((s, t) => {
+              const months = SAAS_CYCLE_MONTHS[t.subscription?.billing_cycle] || 12;
+              const cycleVal = estimateTenantRenewalAmount(t, months);
+              return s + Math.round((cycleVal / months) * 12);
+            }, 0);
+            const estMrr = Math.round(estArr / 12);
+            const matrixMods = (catalog || []).filter(p => p.is_active !== false && !SAAS_INTERNAL_KEYS.has(p.process_code));
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem' }}>
+                  <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #16a34a' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Est. Monthly Run Rate (MRR)</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#16a34a', marginTop: '0.2rem' }}>₹{estMrr.toLocaleString('en-IN')}</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Est. ARR: ₹{estArr.toLocaleString('en-IN')} / yr</div>
+                  </div>
+                  <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #2563eb' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>User Seat Utilization</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#2563eb', marginTop: '0.2rem' }}>{totalActiveUsers} / {totalSeatLimit}</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{totalSeatLimit > 0 ? Math.round((totalActiveUsers / totalSeatLimit) * 100) : 0}% active across {clientTenants.length} clients</div>
+                  </div>
+                  <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #0284c7' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Total Calling Quotas</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0284c7', marginTop: '0.2rem' }}>{totalCallingSeats} Seats</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Managed + BYOC client agents</div>
+                  </div>
+                  <div className="card" style={{ padding: '1rem', borderLeft: '4px solid #7c3aed' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>SMTP Server Quotas</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#7c3aed', marginTop: '0.2rem' }}>{totalSmtpAccounts}</div>
+                    <div style={{ fontSize: '0.74rem', color: '#64748b' }}>Outbound client email limits</div>
+                  </div>
+                </div>
+
+                {/* Workspace Quotas & Utilization */}
+                <div className="card" style={{ padding: '1.25rem' }}>
+                  <h3 style={{ margin: '0 0 0.85rem 0', fontSize: '1rem', fontWeight: 700 }}>Workspace Seat, Calling &amp; Revenue Summary</h3>
+                  <SaasDataTable id="usage-quotas" hideToggle={true}>
+                    <table className="data-table" style={{ width: '100%', fontSize: '0.84rem' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                          <th style={{ padding: '0.7rem', textAlign: 'left', width: 200 }}>Client Workspace</th>
+                          <th style={{ padding: '0.7rem', textAlign: 'center', width: 150 }}>Active / Limit Seats</th>
+                          <th style={{ padding: '0.7rem', textAlign: 'center', width: 160 }}>Calling Quota</th>
+                          <th style={{ padding: '0.7rem', textAlign: 'center', width: 95 }}>SMTP Limit</th>
+                          <th style={{ padding: '0.7rem', textAlign: 'center', width: 115 }}>Active Modules</th>
+                          <th style={{ padding: '0.7rem', textAlign: 'right', width: 150 }}>Est. Yearly Value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {clientTenants.map(t => {
+                          const pct = t.user_seat_limit > 0 ? Math.min(100, Math.round((t.active_users_count / t.user_seat_limit) * 100)) : 0;
+                          const nonRedundantCount = (t.entitlement_details || []).filter(d => !d.included_in_combo).length;
+                          const yearlyVal = estimateTenantRenewalAmount(t, 12);
+                          return (
+                            <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '0.7rem' }}>
+                                <div style={{ fontWeight: 700 }}>{t.name}</div>
+                                <div style={{ fontSize: '0.72rem', color: '#64748b' }}><code>{t.tenant_code}</code> • {t.branches?.length || 1} Branches</div>
+                              </td>
+                              <td style={{ padding: '0.7rem', textAlign: 'center' }}>
+                                <div style={{ fontWeight: 700 }}>{t.active_users_count} / {t.user_seat_limit} ({pct}%)</div>
+                                <div style={{ height: '5px', background: '#e2e8f0', borderRadius: '99px', overflow: 'hidden', marginTop: '4px' }}>
+                                  <div style={{ width: `${pct}%`, height: '100%', background: pct > 90 ? '#dc2626' : '#2563eb' }} />
+                                </div>
+                              </td>
+                              <td style={{ padding: '0.7rem', textAlign: 'center' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600, color: '#0369a1' }}>
+                                  <Phone size={12} /> {t.calling_seats_limit || 5} ({t.calling_mode === 'byoc' ? 'BYOC' : 'Managed'})
+                                </span>
+                              </td>
+                              <td style={{ padding: '0.7rem', textAlign: 'center', fontWeight: 700 }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#92400e' }}>
+                                  <Mail size={12} /> {t.smtp_accounts_limit || 1}
+                                </span>
+                              </td>
+                              <td style={{ padding: '0.7rem', textAlign: 'center', fontWeight: 700, color: '#4338ca' }}>
+                                {nonRedundantCount || (t.entitlements || []).length}
+                              </td>
+                              <td style={{ padding: '0.7rem', textAlign: 'right', fontWeight: 800, color: '#15803d' }}>
+                                ₹{yearlyVal.toLocaleString('en-IN')}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </SaasDataTable>
+                </div>
+
+                {/* Module Licensing Matrix */}
+                <div className="card" style={{ padding: '1.25rem' }}>
+                  <h3 style={{ margin: '0 0 0.85rem 0', fontSize: '1rem', fontWeight: 700 }}>Client × Business Module Licensing Matrix</h3>
+                  <SaasDataTable id="module-matrix" hideToggle={true}>
+                    <table className="data-table" style={{ width: '100%', fontSize: '0.78rem' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                          <th style={{ padding: '0.65rem', textAlign: 'left', width: 185 }}>Client Workspace</th>
+                          {matrixMods.map(m => (
+                            <th key={m.process_code} style={{ padding: '0.55rem', textAlign: 'center', width: 115 }} title={m.display_name}>
+                              <div style={{ fontWeight: 700, lineHeight: 1.2 }}>{m.display_name}</div>
+                              <div style={{ fontSize: '0.66rem', color: '#64748b', fontWeight: 500 }}>₹{m.monthly_rate_per_user}/u</div>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {clientTenants.map(t => {
+                          const detailMap = new Map((t.entitlement_details || []).map(d => [d.module_key, d]));
+                          const pendMap = new Map((t.pending_requests || []).filter(r => r.category === 'ADDON_MODULE' && r.module_key).map(r => [r.module_key, r]));
+                          return (
+                            <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                              <td style={{ padding: '0.65rem' }}>
+                                <div style={{ fontWeight: 700 }}>{t.name}</div>
+                                <div style={{ fontSize: '0.68rem', color: '#64748b' }}><code>{t.tenant_code}</code></div>
+                              </td>
+                              {matrixMods.map(m => {
+                                const det = detailMap.get(m.process_code);
+                                const pend = pendMap.get(m.process_code);
+                                return (
+                                  <td key={m.process_code} style={{ padding: '0.55rem', textAlign: 'center' }}>
+                                    {det ? (
+                                      <span style={{
+                                        display: 'inline-block',
+                                        padding: '2px 7px',
+                                        borderRadius: '6px',
+                                        fontSize: '0.71rem',
+                                        fontWeight: 700,
+                                        background: det.included_in_combo ? '#f1f5f9' : det.has_custom_seats ? '#eef2ff' : '#dcfce7',
+                                        color: det.included_in_combo ? '#64748b' : det.has_custom_seats ? '#3730a3' : '#15803d'
+                                      }}>
+                                        {det.included_in_combo ? 'Combo' : `${det.licensed_seats}u`}
+                                      </span>
+                                    ) : pend ? (
+                                      <span style={{
+                                        display: 'inline-block',
+                                        padding: '2px 7px',
+                                        borderRadius: '6px',
+                                        fontSize: '0.7rem',
+                                        fontWeight: 700,
+                                        background: '#fef3c7',
+                                        color: '#b45309'
+                                      }} title={`Pending ${pend.invoice_number}`}>
+                                        ⏳ {pend.requested_users || t.user_seat_limit}u
+                                      </span>
+                                    ) : (
+                                      <span style={{ color: '#cbd5e1', fontWeight: 700 }}>—</span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </SaasDataTable>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -3265,67 +4132,116 @@ Thank you for choosing New Swan CRM!`;
           zIndex: 100000,
           padding: '1rem'
         }}>
-          <div className="card" style={{ padding: '1.75rem', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <Sliders size={20} color="#4338ca" /> Manage Active Modules
-                </h3>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.2rem 0 0 0' }}>
-                  Company: <strong>{modulesModalTenant.name}</strong> ({modulesModalTenant.tenant_code})
-                </p>
+          <div className="card" style={{ padding: 0, width: '100%', maxWidth: '600px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* ── Sticky Header ── */}
+            <div style={{ flexShrink: 0, padding: '1.25rem 1.75rem 1rem', borderBottom: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Sliders size={20} color="#4338ca" /> Manage Active Modules
+                  </h3>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.2rem 0 0 0' }}>
+                    Company: <strong>{modulesModalTenant.name}</strong> ({modulesModalTenant.tenant_code})
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModulesModalTenant(null)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                >
+                  <X size={20} />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setModulesModalTenant(null)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
-              >
-                <X size={20} />
-              </button>
+              <p style={{ fontSize: '0.82rem', color: '#6366f1', background: '#eef2ff', padding: '0.5rem 0.75rem', borderRadius: '6px', margin: 0, lineHeight: 1.4 }}>
+                💡 <strong>Instant Access Control:</strong> Uncheck any module that this company does not require. The tab will immediately vanish from their navigation bar, and it will be excluded from their invoices.
+              </p>
+              {modulesModalError && (
+                <div style={{ marginTop: '0.6rem', padding: '0.55rem 0.75rem', borderRadius: '6px', backgroundColor: '#fee2e2', border: '1px solid #fecaca', color: '#991b1b', fontSize: '0.8rem', fontWeight: 600 }}>
+                  ⚠️ {modulesModalError}
+                </div>
+              )}
             </div>
 
-            <p style={{ fontSize: '0.82rem', color: '#6366f1', background: '#eef2ff', padding: '0.6rem 0.8rem', borderRadius: '6px', marginBottom: '1.2rem', lineHeight: 1.4 }}>
-              💡 <strong>Instant Access Control:</strong> Uncheck any module that this company does not require. The tab will immediately vanish from their navigation bar, and it will be excluded from their invoices.
-            </p>
-
+            {/* ── Scrollable Body ── */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.75rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1.5rem' }}>
               {catalog.map(mod => {
                 const isChecked = selectedModuleKeys.has(mod.process_code);
+                const maxSeats = Math.max(1, Number(modulesModalTenant?.user_seat_limit) || 5);
+                const customSeatsVal = moduleSeatOverrides[mod.process_code] ?? '';
                 return (
-                  <label
+                  <div
                     key={mod.process_code}
                     style={{
                       display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '0.75rem',
+                      flexDirection: 'column',
+                      gap: '0.5rem',
                       padding: '0.75rem 1rem',
                       borderRadius: '8px',
                       border: `1.5px solid ${isChecked ? '#4338ca' : 'var(--border-light)'}`,
                       backgroundColor: isChecked ? '#f5f3ff' : 'var(--bg-surface)',
-                      cursor: 'pointer',
                       transition: 'all 0.15s ease'
                     }}
                   >
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => handleToggleModuleKey(mod.process_code)}
-                      style={{ marginTop: '0.2rem', width: '16px', height: '16px', accentColor: '#4338ca', cursor: 'pointer' }}
-                    />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontWeight: 600, fontSize: '0.9rem', color: isChecked ? '#312e81' : 'var(--text-primary)' }}>
-                          {mod.display_name}
-                        </span>
-                        <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'var(--bg-muted)', fontWeight: 600 }}>
-                          ₹{mod.monthly_rate_per_user}/user/mo
-                        </span>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '0.75rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => handleToggleModuleKey(mod.process_code)}
+                        style={{ marginTop: '0.2rem', width: '16px', height: '16px', accentColor: '#4338ca', cursor: 'pointer' }}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.9rem', color: isChecked ? '#312e81' : 'var(--text-primary)' }}>
+                            {mod.display_name}
+                          </span>
+                          <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem', borderRadius: '4px', background: 'var(--bg-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            ₹{mod.monthly_rate_per_user}/user/mo
+                          </span>
+                        </div>
+                        <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.3 }}>
+                          {mod.description}
+                        </p>
                       </div>
-                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0', lineHeight: 1.3 }}>
-                        {mod.description}
-                      </p>
-                    </div>
-                  </label>
+                    </label>
+                    {isChecked && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', paddingLeft: '1.75rem', fontSize: '0.76rem', flexWrap: 'wrap' }}>
+                        <span style={{ color: '#4338ca', fontWeight: 600 }}>
+                          Licensed Users (leave blank = All {maxSeats} workspace users):
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <input
+                            type="number"
+                            min={1}
+                            max={maxSeats}
+                            value={customSeatsVal}
+                            placeholder={`All (${maxSeats})`}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              setModuleSeatOverrides(prev => ({ ...prev, [mod.process_code]: raw }));
+                            }}
+                            style={{ width: '96px', padding: '0.25rem 0.45rem', borderRadius: '6px', border: '1px solid #a5b4fc', fontSize: '0.78rem', fontWeight: 700, textAlign: 'center', background: '#fff' }}
+                          />
+                          {customSeatsVal !== '' && (
+                            <button
+                              type="button"
+                              onClick={() => setModuleSeatOverrides(prev => ({ ...prev, [mod.process_code]: '' }))}
+                              style={{ padding: '0.2rem 0.45rem', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.7rem', cursor: 'pointer', color: '#475569' }}
+                            >
+                              Reset All
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -3427,7 +4343,10 @@ Thank you for choosing New Swan CRM!`;
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            </div>{/* ── End Scrollable Body ── */}
+
+            {/* ── Sticky Footer ── */}
+            <div style={{ flexShrink: 0, padding: '1rem 1.75rem', borderTop: '1px solid var(--border-light)', backgroundColor: 'var(--bg-surface)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
                 {selectedModuleKeys.size} of {catalog.length} Modules Active
               </span>
@@ -3743,7 +4662,9 @@ Thank you for choosing New Swan CRM!`;
                       : (invoiceType === 'tax_invoice' ? 'TAX INVOICE' : 'PROFORMA INVOICE')}
                   </span>
                   <div style={{ fontSize: '0.82rem', fontWeight: 700, marginTop: '0.4rem', color: '#111827' }}>
-                    #{activeInvoiceData?.invoice_number || (invoiceType === 'tax_invoice' ? `INV-${invoiceTenant.tenant_code || 'WS'}-PAID` : `PI-${invoiceTenant.tenant_code || 'EST'}-01`)}
+                    {activeInvoiceData?.invoice_number
+                      ? `#${activeInvoiceData.invoice_number}`
+                      : (invoiceType === 'tax_invoice' ? `DRAFT INV (${invoiceTenant.tenant_code || 'WS'})` : `DRAFT PROFORMA (${invoiceTenant.tenant_code || 'WS'})`)}
                   </div>
                   <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
                     Date: {activeInvoiceData?.created_at
@@ -3780,9 +4701,9 @@ Thank you for choosing New Swan CRM!`;
                   </div>
                   <div style={{ color: '#4b5563' }}>
                     Valid Till: {activeInvoiceData?.valid_until
-                      ? new Date(activeInvoiceData.valid_until).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })
+                      ? new Date(activeInvoiceData.valid_until).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
                       : invoiceTenant.subscription?.valid_until
-                        ? new Date(invoiceTenant.subscription.valid_until).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })
+                        ? new Date(invoiceTenant.subscription.valid_until).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
                         : 'N/A'}
                   </div>
                   <div style={{ marginTop: '0.3rem' }}>
@@ -3794,41 +4715,138 @@ Thank you for choosing New Swan CRM!`;
               </div>
 
               {/* Itemized Table */}
-              <SaasDataTable id="invoice" paginate={false}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', marginBottom: '1.25rem', background: '#fff' }}>
+              <SaasDataTable id="invoice-v2" paginate={false} hideToggle={true}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', marginBottom: '1.25rem', background: '#fff' }}>
                 <thead>
                   <tr style={{ background: '#f3f4f6', borderBottom: '1px solid #d1d5db', textAlign: 'left' }}>
-                    <th style={{ padding: '0.6rem 0.75rem' }}>Item / Module Description</th>
-                    <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>Seats</th>
-                    <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Agreed Amount</th>
-                    <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Total</th>
+                    <th style={{ padding: '0.65rem 0.7rem', width: 235 }}>Item / Module Description</th>
+                    <th style={{ padding: '0.65rem 0.55rem', width: 75, textAlign: 'center', whiteSpace: 'nowrap' }}>Seats</th>
+                    <th style={{ padding: '0.65rem 0.65rem', width: 135, textAlign: 'right', whiteSpace: 'nowrap' }}>Agreed Amount</th>
+                    <th style={{ padding: '0.65rem 0.65rem', width: 110, textAlign: 'right', whiteSpace: 'nowrap' }}>Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {activeInvoiceData ? (
-                    <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
-                      <td style={{ padding: '0.65rem 0.75rem' }}>
-                        <div style={{ fontWeight: 700, color: '#1e1b4b' }}>
-                          {activeInvoiceData.description || 'Add-on User Seats Expansion'}
-                        </div>
-                        <div style={{ fontSize: '0.73rem', color: '#6b7280', marginTop: '2px' }}>
-                          {activeInvoiceData.category === 'RENEWAL_PAYMENT' ? 'Subscription renewal for ' + activeInvoiceData.months_added + ' months' : activeInvoiceData.billing_mode === 'EXTEND_VALIDITY'
-                            ? `Seat limit expansion (+${activeInvoiceData.additional_seats} seats) with ${activeInvoiceData.months_added || 12} months validity extension`
-                            : `Coterminous prorated seat expansion (+${activeInvoiceData.additional_seats} seats, valid till current contract expiry)`}
-                        </div>
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', fontWeight: 700, color: '#2563eb' }}>
-                        {activeInvoiceData.category === 'RENEWAL_PAYMENT' ? activeInvoiceData.total_seats : (activeInvoiceData.additional_seats > 0 ? '+' : '') + (activeInvoiceData.additional_seats || 0)} Seats
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right' }}>
-                        ₹{Number(activeInvoiceData.amount || 0).toLocaleString('en-IN')}
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right', fontWeight: 700 }}>
-                        ₹{Number(activeInvoiceData.amount || 0).toLocaleString('en-IN')}
-                      </td>
-                    </tr>
-                  ) : (
-                    <tr style={{borderBottom:'1px solid #f3f4f6'}}><td style={{padding:'0.65rem 0.75rem'}}>Subscription renewal ({payMonths} months)<div style={{fontSize:'0.72rem',color:'#6b7280'}}>{(invoiceTenant.entitlements || []).map(key => catalog.find(p => p.process_code === key)?.display_name).filter(Boolean).join(', ')}</div></td><td style={{padding:'0.65rem 0.75rem',textAlign:'center'}}>{invoiceTenant.user_seat_limit || 5}</td><td style={{padding:'0.65rem 0.75rem',textAlign:'right'}}>₹{invoiceTotals.amount.toLocaleString('en-IN')}</td><td style={{padding:'0.65rem 0.75rem',textAlign:'right'}}>₹{invoiceTotals.amount.toLocaleString('en-IN')}</td></tr>
-                  )}
+                    Array.isArray(activeInvoiceData.line_items) && activeInvoiceData.line_items.length > 0 ? (
+                      <>
+                        {activeInvoiceData.line_items.map((li, idx) => (
+                          <tr key={li.module_key || idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                            <td style={{ padding: '0.55rem 0.7rem' }}>
+                              <div style={{ fontWeight: 700, color: '#1e1b4b' }}>{li.display_name || li.module_key}</div>
+                              <div style={{ fontSize: '0.71rem', color: '#6b7280' }}>
+                                {li.days_remaining
+                                  ? `${li.seats} users × ₹${Number(li.rate_per_user || 0)}/mo × ${li.days_remaining}/30 days`
+                                  : `${li.seats} users × ₹${Number(li.rate_per_user || 0)}/mo × ${li.months || 12} mo${li.discount_percent ? ` (-${li.discount_percent}% disc)` : ''}`}
+                              </div>
+                            </td>
+                            <td style={{ padding: '0.55rem 0.55rem', textAlign: 'center', fontWeight: 700, color: '#2563eb' }}>
+                              {li.seats}
+                            </td>
+                            <td style={{ padding: '0.55rem 0.65rem', textAlign: 'right' }}>
+                              ₹{Number(li.rate_per_user || 0).toLocaleString('en-IN')}/u/mo
+                            </td>
+                            <td style={{ padding: '0.55rem 0.65rem', textAlign: 'right', fontWeight: 700 }}>
+                              ₹{Number(li.net_amount || 0).toLocaleString('en-IN')}
+                            </td>
+                          </tr>
+                        ))}
+                        {activeInvoiceData.pricing_basis && (
+                          <tr style={{ background: '#f8fafc' }}>
+                            <td colSpan={4} style={{ padding: '0.45rem 0.7rem', fontSize: '0.72rem', color: '#4338ca', fontWeight: 600 }}>
+                              Calculation Basis: {activeInvoiceData.pricing_basis}
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    ) : (
+                      <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                        <td style={{ padding: '0.65rem 0.75rem' }}>
+                          <div style={{ fontWeight: 700, color: '#1e1b4b' }}>
+                            {activeInvoiceData.description || 'Add-on User Seats Expansion'}
+                          </div>
+                          <div style={{ fontSize: '0.73rem', color: '#6b7280', marginTop: '2px' }}>
+                            {activeInvoiceData.category === 'RENEWAL_PAYMENT' || activeInvoiceData.category === 'RENEWAL_PROFORMA'
+                              ? (() => {
+                                  const tenantMatch = tenants.find(t => t.id === (activeInvoiceData.tenant_id || invoiceTenant?.id)) || invoiceTenant;
+                                  const entList = tenantMatch?.entitlements || [];
+                                  const hasCombo = entList.includes('LEADS_WITH_CALLING');
+                                  const modNames = entList
+                                    .filter(k => !(hasCombo && (k === 'LEADS_ONLY' || k === 'CALLING_STANDALONE')))
+                                    .map(k => catalog.find(p => p.process_code === k)?.display_name)
+                                    .filter(Boolean);
+                                  return `Subscription renewal for ${activeInvoiceData.months_added || 12} months${modNames.length ? ` • Modules: ${modNames.join(', ')}` : ''}`;
+                                })()
+                              : activeInvoiceData.category === 'ADDON_MODULE'
+                                ? `Add-on module license for ${activeInvoiceData.requested_users || activeInvoiceData.total_seats || invoiceTenant.user_seat_limit} user(s)`
+                                : activeInvoiceData.billing_mode === 'EXTEND_VALIDITY'
+                                  ? `Seat limit expansion (+${activeInvoiceData.additional_seats} seats) with ${activeInvoiceData.months_added || 12} months validity extension`
+                                  : `Coterminous prorated seat expansion (+${activeInvoiceData.additional_seats} seats, valid till current contract expiry)`}
+                          </div>
+                        </td>
+                        <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center', fontWeight: 700, color: '#2563eb' }}>
+                          {activeInvoiceData.category === 'RENEWAL_PAYMENT' || activeInvoiceData.category === 'RENEWAL_PROFORMA'
+                            ? `${activeInvoiceData.total_seats || invoiceTenant.user_seat_limit} Seats`
+                            : activeInvoiceData.category === 'ADDON_MODULE'
+                              ? `${activeInvoiceData.requested_users || activeInvoiceData.total_seats || invoiceTenant.user_seat_limit} Users`
+                              : `${(activeInvoiceData.additional_seats > 0 ? '+' : '') + (activeInvoiceData.additional_seats || 0)} Seats`}
+                        </td>
+                        <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right' }}>
+                          ₹{Number(activeInvoiceData.amount || 0).toLocaleString('en-IN')}
+                        </td>
+                        <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right', fontWeight: 700 }}>
+                          ₹{Number(activeInvoiceData.amount || 0).toLocaleString('en-IN')}
+                        </td>
+                      </tr>
+                    )
+                  ) : (() => {
+                    const enabledKeys = new Set(invoiceTenant.entitlements || []);
+                    const hasCombo = enabledKeys.has('LEADS_WITH_CALLING');
+                    const matchedCycle = (cycles || []).find(c => (c.months_count ?? c.months) === payMonths);
+                    const discPct = Number(matchedCycle?.discount_percent || 0);
+                    const detailMap = new Map((invoiceTenant.entitlement_details || []).map(d => [d.module_key, d]));
+                    const previewMods = (catalog || []).filter(p =>
+                      enabledKeys.has(p.process_code) &&
+                      p.is_active !== false &&
+                      !SAAS_INTERNAL_KEYS.has(p.process_code) &&
+                      !(hasCombo && (p.process_code === 'LEADS_ONLY' || p.process_code === 'CALLING_STANDALONE'))
+                    );
+                    if (previewMods.length === 0) {
+                      return (
+                        <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+                          <td style={{ padding: '0.65rem 0.75rem' }}>Subscription renewal ({payMonths} months)</td>
+                          <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center' }}>{invoiceTenant.user_seat_limit || 5}</td>
+                          <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right' }}>₹{invoiceTotals.amount.toLocaleString('en-IN')}</td>
+                          <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right' }}>₹{invoiceTotals.amount.toLocaleString('en-IN')}</td>
+                        </tr>
+                      );
+                    }
+                    return (
+                      <>
+                        {previewMods.map(p => {
+                          const rate = Number(invoiceTenant.module_rates?.[p.process_code] ?? p.monthly_rate_per_user ?? 0);
+                          const seats = detailMap.get(p.process_code)?.licensed_seats || invoiceTenant.user_seat_limit || 5;
+                          const net = Math.round(rate * seats * payMonths * (1 - discPct / 100) * 100) / 100;
+                          return (
+                            <tr key={p.process_code} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                              <td style={{ padding: '0.55rem 0.7rem' }}>
+                                <div style={{ fontWeight: 700, color: '#1e1b4b' }}>{p.display_name}</div>
+                                <div style={{ fontSize: '0.71rem', color: '#6b7280' }}>
+                                  {seats} users × ₹{rate}/mo × {payMonths} mo{discPct ? ` (-${discPct}% disc)` : ''}
+                                </div>
+                              </td>
+                              <td style={{ padding: '0.55rem 0.55rem', textAlign: 'center', fontWeight: 700, color: '#2563eb' }}>{seats}</td>
+                              <td style={{ padding: '0.55rem 0.65rem', textAlign: 'right' }}>₹{rate.toLocaleString('en-IN')}/u/mo</td>
+                              <td style={{ padding: '0.55rem 0.65rem', textAlign: 'right', fontWeight: 700 }}>₹{net.toLocaleString('en-IN')}</td>
+                            </tr>
+                          );
+                        })}
+                        <tr style={{ background: '#f8fafc' }}>
+                          <td colSpan={4} style={{ padding: '0.45rem 0.7rem', fontSize: '0.72rem', color: '#4338ca', fontWeight: 600 }}>
+                            Calculation Basis: {previewMods.length} Active Modules • {payMonths} Month{payMonths > 1 ? 's' : ''}{discPct > 0 ? ` • ${discPct}% Cycle Discount` : ''}
+                          </td>
+                        </tr>
+                      </>
+                    );
+                  })()}
                 </tbody>
               </table></SaasDataTable>
 
@@ -3909,65 +4927,119 @@ Thank you for choosing New Swan CRM!`;
               </div>
             </div>
 
-            {/* Offline Payment Confirmation Form for Super Admin */}
+            {/* Issue Saved Proforma OR Record Payment Confirmation Form for Super Admin */}
             {invoiceType === 'proforma' && (!activeInvoiceData || activeInvoiceData.status === 'PENDING') && (
-              <div style={{ marginTop: '1.25rem', padding: '1rem', background: '#ecfdf5', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
-                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#065f46', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <Sparkles size={16} /> Mark Payment Received & Generate Official Tax Invoice
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', alignItems: 'end' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#047857' }}>Paid Amount (₹)</label>
-                    <input
-                      type="number"
-                      value={payAmount}
-                      disabled={!!activeInvoiceData}
-                      onChange={(e) => setPayAmount(e.target.value)}
-                      placeholder="Amount"
-                      style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #6ee7b7', fontSize: '0.85rem' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#047857' }}>Payment Mode</label>
-                    <select
-                      value={payMode}
-                      onChange={(e) => setPayMode(e.target.value)}
-                      style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #6ee7b7', fontSize: '0.85rem' }}
+              <div style={{ marginTop: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {!activeInvoiceData && (
+                  <div style={{ padding: '0.9rem 1rem', background: '#eef2ff', borderRadius: '8px', border: '1px solid #c7d2fe', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#3730a3' }}>Renewal Duration</label>
+                        <select
+                          value={payMonths}
+                          onChange={(e) => {
+                            const nextMonths = Number(e.target.value) || 12;
+                            setPayMonths(nextMonths);
+                            setPayAmount(estimateTenantRenewalAmount(invoiceTenant, nextMonths));
+                          }}
+                          style={{ padding: '0.35rem 0.6rem', borderRadius: '6px', border: '1px solid #a5b4fc', fontSize: '0.82rem', background: '#fff', fontWeight: 600 }}
+                        >
+                          <option value={1}>1 Month (Monthly)</option>
+                          <option value={3}>3 Months (Quarterly)</option>
+                          <option value={6}>6 Months (Half-Yearly)</option>
+                          <option value={12}>12 Months (Yearly)</option>
+                        </select>
+                      </div>
+                      <div style={{ fontSize: '0.76rem', color: '#4338ca' }}>
+                        Save official <strong>Pending Proforma Invoice (PI)</strong> to client&apos;s billing ledger without extending validity yet.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleIssueRenewalProforma}
+                      disabled={issuingProforma || !(Number(payAmount) > 0)}
+                      style={{
+                        padding: '0.45rem 0.95rem',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: !(Number(payAmount) > 0) ? '#94a3b8' : '#4338ca',
+                        color: '#fff',
+                        fontWeight: 700,
+                        fontSize: '0.82rem',
+                        cursor: !(Number(payAmount) > 0) ? 'not-allowed' : 'pointer',
+                        whiteSpace: 'nowrap'
+                      }}
                     >
-                      <option value="UPI">UPI Transfer</option>
-                      <option value="NEFT">Bank NEFT / RTGS</option>
-                      <option value="Cheque">Cheque</option>
-                      <option value="Cash">Cash</option>
-                    </select>
+                      {issuingProforma ? 'Saving PI...' : 'Save & Issue Proforma Invoice (PI)'}
+                    </button>
                   </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#047857' }}>UTR / Transaction ID</label>
-                    <input
-                      type="text"
-                      value={payUtr}
-                      onChange={(e) => setPayUtr(e.target.value)}
-                      placeholder="e.g. UPI/6284910294"
-                      style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #6ee7b7', fontSize: '0.85rem' }}
-                    />
+                )}
+
+                <div style={{ padding: '1rem', background: '#ecfdf5', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
+                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: '#065f46', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <Sparkles size={16} /> Mark Payment Received & Generate Official Tax Invoice
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', alignItems: 'end' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#047857' }}>Paid Amount (₹) *</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={payAmount}
+                        disabled={!!activeInvoiceData}
+                        onChange={(e) => setPayAmount(e.target.value)}
+                        placeholder="Amount (> 0)"
+                        style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #6ee7b7', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#047857' }}>Payment Mode</label>
+                      <select
+                        value={payMode}
+                        onChange={(e) => setPayMode(e.target.value)}
+                        style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #6ee7b7', fontSize: '0.85rem' }}
+                      >
+                        <option value="UPI">UPI Transfer</option>
+                        <option value="NEFT">Bank NEFT / RTGS</option>
+                        <option value="Cheque">Cheque</option>
+                        <option value="Cash">Cash</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#047857' }}>UTR / Transaction ID *</label>
+                      <input
+                        type="text"
+                        value={payUtr}
+                        onChange={(e) => setPayUtr(e.target.value)}
+                        placeholder="e.g. UPI/6284910294"
+                        style={{ width: '100%', padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid #6ee7b7', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRecordPayment}
+                      disabled={recordingPay || !(Number(payAmount) > 0) || !payUtr.trim()}
+                      style={{
+                        padding: '0.45rem 1rem',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: (!(Number(payAmount) > 0) || !payUtr.trim()) ? '#94a3b8' : '#059669',
+                        color: '#fff',
+                        fontWeight: 700,
+                        fontSize: '0.82rem',
+                        cursor: (!(Number(payAmount) > 0) || !payUtr.trim()) ? 'not-allowed' : 'pointer',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title={!(Number(payAmount) > 0) || !payUtr.trim() ? 'Paid Amount > ₹0 and UTR / Reference are mandatory' : 'Record payment and extend validity'}
+                    >
+                      {recordingPay ? 'Processing...' : 'Confirm & Generate Tax Invoice'}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleRecordPayment}
-                    disabled={recordingPay}
-                    style={{
-                      padding: '0.45rem 1rem',
-                      borderRadius: '6px',
-                      border: 'none',
-                      background: '#059669',
-                      color: '#fff',
-                      fontWeight: 700,
-                      fontSize: '0.82rem',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {recordingPay ? 'Processing...' : 'Confirm & Generate Tax Invoice'}
-                  </button>
+                  {(!(Number(payAmount) > 0) || !payUtr.trim()) && (
+                    <div style={{ marginTop: '0.45rem', fontSize: '0.73rem', color: '#047857' }}>
+                      Safety lock: Both <strong>Paid Amount (&gt; ₹0)</strong> and a valid <strong>UTR / Transaction ID</strong> are required to mark paid and extend validity.
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -4033,23 +5105,34 @@ Thank you for choosing New Swan CRM!`;
                 </thead>
                 <tbody>
                   {billingHistoryList.map(inv => {
-                    const isPaid = inv.status === 'PAID';
+                    const statusUpper = String(inv.status || '').toUpperCase();
+                    const isPaid = statusUpper === 'PAID';
+                    const isVoid = statusUpper === 'VOID' || statusUpper === 'CANCELLED';
+                    const isLog = ['TRIAL_LOG', 'LOGGED', 'COMPLETED'].includes(statusUpper);
                     const isAddon = inv.category === 'ADDON_SEATS';
-                    const dStr = inv.created_at ? new Date(inv.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                    const dStr = inv.created_at ? new Date(inv.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
                     return (
-                      <tr key={inv.id || inv.invoice_number} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <tr key={inv.id || inv.invoice_number} style={{ borderBottom: '1px solid #f1f5f9', opacity: isVoid ? 0.65 : 1 }}>
                         <td style={{ padding: '0.65rem 0.75rem', color: '#64748b' }}>{dStr}</td>
-                        <td style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: '#0f172a' }}>
+                        <td style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: isVoid ? '#991b1b' : '#0f172a' }}>
                           <code>{inv.invoice_number}</code>
                         </td>
                         <td style={{ padding: '0.65rem 0.75rem' }}>
                           <div style={{ fontWeight: 600, color: '#334155' }}>{inv.description || (isAddon ? 'Add-on Seats Expansion' : 'Workspace Subscription')}</div>
+                          {inv.days_added > 0 && (
+                            <span style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#b45309', padding: '1px 6px', borderRadius: '4px', fontWeight: 600, marginRight: '4px' }}>
+                              +{inv.days_added} Days Trial
+                            </span>
+                          )}
                           {isAddon && (
                             <span style={{ fontSize: '0.7rem', background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
                               +{inv.additional_seats} Seats (Total: {inv.total_seats})
                             </span>
                           )}
-                          {inv.gst_type === 'NON_GST' && (
+                          {isVoid && inv.void_reason && (
+                            <div style={{ fontSize: '0.7rem', color: '#dc2626', marginTop: '2px' }}>{inv.void_reason}</div>
+                          )}
+                          {inv.gst_type === 'NON_GST' && !isLog && (
                             <span style={{ fontSize: '0.68rem', background: '#e0f2fe', color: '#0369a1', padding: '1px 5px', borderRadius: '4px', fontWeight: 700, marginLeft: '4px' }}>
                               Non-GST
                             </span>
@@ -4067,33 +5150,54 @@ Thank you for choosing New Swan CRM!`;
                             borderRadius: '12px',
                             fontSize: '0.72rem',
                             fontWeight: 700,
-                            background: isPaid ? '#dcfce7' : '#fef3c7',
-                            color: isPaid ? '#15803d' : '#b45309'
+                            background: isVoid ? '#fef2f2' : isPaid ? '#dcfce7' : isLog ? '#f1f5f9' : '#fef3c7',
+                            color: isVoid ? '#dc2626' : isPaid ? '#15803d' : isLog ? '#475569' : '#b45309'
                           }}>
-                            {isPaid ? 'PAID' : 'PENDING'}
+                            {statusUpper === 'CANCELLED' ? 'CANCELLED' : isVoid ? 'VOID' : isPaid ? 'PAID' : statusUpper === 'TRIAL_LOG' ? 'TRIAL LOG' : isLog ? 'LOGGED' : 'PENDING'}
                           </span>
                         </td>
                         <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center' }}>
-                          <button
-                            type="button"
-                            onClick={() => handleViewHistoricalInvoice(inv)}
-                            style={{
-                              padding: '3px 10px',
-                              borderRadius: '6px',
-                              border: '1px solid #cbd5e1',
-                              background: '#f8fafc',
-                              color: '#334155',
-                              fontSize: '0.74rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '3px'
-                            }}
-                            title="View printable invoice"
-                          >
-                            <Eye size={12} /> View
-                          </button>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleViewHistoricalInvoice(inv)}
+                              style={{
+                                padding: '3px 10px',
+                                borderRadius: '6px',
+                                border: '1px solid #cbd5e1',
+                                background: '#f8fafc',
+                                color: '#334155',
+                                fontSize: '0.74rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px'
+                              }}
+                              title="View printable invoice"
+                            >
+                              <Eye size={12} /> View
+                            </button>
+                            {statusUpper === 'PENDING' && (
+                              <button
+                                type="button"
+                                onClick={() => handleCancelMasterProforma(historyModalTenant?.id, inv.invoice_number)}
+                                style={{
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #fecaca',
+                                  background: '#fef2f2',
+                                  color: '#dc2626',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer'
+                                }}
+                                title="Cancel pending proforma"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );

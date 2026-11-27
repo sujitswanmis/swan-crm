@@ -444,25 +444,25 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
   const currentSelectedField = selectedFieldIdx !== null ? activeStageFields[selectedFieldIdx] : null;
 
   return (
-    <div style={{ width: '100%', minHeight: 'calc(100vh - 120px)', background: '#f8fafc', color: '#0f172a' }}>
+    <div data-spc-module-theme style={{ width: '100%', minHeight: 'calc(100vh - 120px)', background: 'var(--spc-view-canvas)', color: 'var(--spc-view-text)' }}>
 
       {/* VIEW MODE 1: FORMS CATALOG LIST */}
       {viewMode === 'list' && (
         <div style={{ padding: '24px', maxWidth: 1400, margin: '0 auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
             <div>
-              <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: 'var(--spc-view-text)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Layers size={22} color="#2563eb" />
                 Custom Form Studio & Dynamic Data Tables
               </h1>
-              <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>
+              <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--spc-view-muted)' }}>
                 TrackWick-compatible multi-stage form designer (Assignee, Start, Complete) with 36 predefined field types.
               </p>
             </div>
             <button
               onClick={() => handleOpenDesigner(null)}
               style={{
-                background: '#2563eb',
+                background: 'var(--spc-view-action)',
                 color: '#ffffff',
                 border: 'none',
                 padding: '10px 18px',
@@ -481,22 +481,22 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
           </div>
 
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '60px 0', color: '#64748b' }}>
+            <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--spc-view-muted)' }}>
               <RefreshCw size={24} style={{ animation: 'spin 1s linear infinite' }} />
               <div style={{ marginTop: 8, fontSize: 13 }}>Loading custom forms...</div>
             </div>
           ) : forms.length === 0 ? (
-            <div style={{ background: '#ffffff', borderRadius: 12, padding: '40px 20px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
+            <div style={{ background: 'var(--spc-view-surface)', borderRadius: 12, padding: '40px 20px', textAlign: 'center', border: '1px solid var(--spc-view-border)' }}>
               <FileText size={48} color="#94a3b8" style={{ margin: '0 auto 12px' }} />
-              <div style={{ fontSize: 16, fontWeight: 600, color: '#0f172a' }}>No Custom Forms Created Yet</div>
-              <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--spc-view-text)' }}>No Custom Forms Created Yet</div>
+              <div style={{ fontSize: 13, color: 'var(--spc-view-muted)', marginTop: 4 }}>
                 Design customized field visit inspection, verification, or service checklists.
               </div>
               <button
                 onClick={() => handleOpenDesigner(null)}
                 style={{
                   marginTop: 16,
-                  background: '#2563eb',
+                  background: 'var(--spc-view-action)',
                   color: '#ffffff',
                   border: 'none',
                   padding: '9px 16px',
@@ -510,10 +510,10 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
               </button>
             </div>
           ) : (
-            <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <div style={{ background: 'var(--spc-view-surface)', borderRadius: 12, border: '1px solid var(--spc-view-border)', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
                 <thead>
-                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', fontWeight: 600 }}>
+                  <tr style={{ background: 'var(--spc-view-canvas)', borderBottom: '1px solid var(--spc-view-border)', color: 'var(--spc-view-muted)', fontWeight: 600 }}>
                     <th style={{ padding: '12px 16px' }}>Form Title</th>
                     <th style={{ padding: '12px 16px' }}>Code</th>
                     <th style={{ padding: '12px 16px' }}>Target Data Type</th>
@@ -524,15 +524,15 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                 </thead>
                 <tbody>
                   {forms.map(form => (
-                    <tr key={form.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '14px 16px', fontWeight: 700, color: '#0f172a' }}>{form.title}</td>
-                      <td style={{ padding: '14px 16px', color: '#64748b', fontFamily: 'monospace' }}>{form.form_code}</td>
+                    <tr key={form.id} style={{ borderBottom: '1px solid var(--spc-view-border)' }}>
+                      <td style={{ padding: '14px 16px', fontWeight: 700, color: 'var(--spc-view-text)' }}>{form.title}</td>
+                      <td style={{ padding: '14px 16px', color: 'var(--spc-view-muted)', fontFamily: 'monospace' }}>{form.form_code}</td>
                       <td style={{ padding: '14px 16px' }}>
-                        <span style={{ padding: '3px 8px', borderRadius: 6, background: '#eff6ff', color: '#1d4ed8', fontSize: 11, fontWeight: 600 }}>
+                        <span style={{ padding: '3px 8px', borderRadius: 6, background: 'var(--spc-view-info-bg)', color: 'var(--spc-view-info)', fontSize: 11, fontWeight: 600 }}>
                           {form.data_type}
                         </span>
                       </td>
-                      <td style={{ padding: '14px 16px', color: '#334155' }}>
+                      <td style={{ padding: '14px 16px', color: 'var(--spc-view-text)' }}>
                         {form.field_count || form.fields?.length || 0} fields
                       </td>
                       <td style={{ padding: '14px 16px' }}>
@@ -541,8 +541,8 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                           borderRadius: 6,
                           fontSize: 11,
                           fontWeight: 700,
-                          background: form.status === 'PUBLISHED' ? '#dcfce7' : '#fef3c7',
-                          color: form.status === 'PUBLISHED' ? '#15803d' : '#b45309'
+                          background: form.status === 'PUBLISHED' ? 'var(--spc-view-success-bg)' : 'var(--spc-view-warning-bg)',
+                          color: form.status === 'PUBLISHED' ? 'var(--spc-view-success)' : 'var(--spc-view-warning)'
                         }}>
                           {form.status}
                         </span>
@@ -553,11 +553,11 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                             onClick={() => handleOpenDataTable(form)}
                             style={{
                               padding: '5px 10px',
-                              background: '#f1f5f9',
-                              border: '1px solid #cbd5e1',
+                              background: 'var(--spc-view-raised)',
+                              border: '1px solid var(--spc-view-border)',
                               borderRadius: 6,
                               fontSize: 12,
-                              color: '#334155',
+                              color: 'var(--spc-view-text)',
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
@@ -570,7 +570,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                             onClick={() => handleOpenDesigner(form)}
                             style={{
                               padding: '5px 10px',
-                              background: '#2563eb',
+                              background: 'var(--spc-view-action)',
                               border: 'none',
                               borderRadius: 6,
                               fontSize: 12,
@@ -600,8 +600,8 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
 
           {/* Top Form Header */}
           <header style={{
-            background: '#ffffff',
-            borderBottom: '1px solid #e2e8f0',
+            background: 'var(--spc-view-surface)',
+            borderBottom: '1px solid var(--spc-view-border)',
             padding: '10px 20px',
             display: 'flex',
             alignItems: 'center',
@@ -614,13 +614,13 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                 onClick={() => setViewMode('list')}
                 style={{
                   background: 'none',
-                  border: '1px solid #cbd5e1',
+                  border: '1px solid var(--spc-view-border)',
                   borderRadius: 6,
                   padding: '6px 10px',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  color: '#475569'
+                  color: 'var(--spc-view-muted)'
                 }}
                 title="Back to Form List"
               >
@@ -632,7 +632,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                   width: 32,
                   height: 32,
                   borderRadius: 6,
-                  background: labelColor || '#036DCE',
+                  background: labelColor || 'var(--spc-view-action)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -641,8 +641,8 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                   <FileText size={18} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 }}>Form</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>
+                  <div style={{ fontSize: 11, color: 'var(--spc-view-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Form</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--spc-view-text)', lineHeight: 1.2 }}>
                     {formTitle || 'Untitled Form'}
                   </div>
                 </div>
@@ -657,11 +657,11 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                 style={{
                   padding: '6px 10px',
                   borderRadius: 6,
-                  border: '1px solid #cbd5e1',
+                  border: '1px solid var(--spc-view-border)',
                   fontSize: 12,
                   fontWeight: 600,
-                  background: '#ffffff',
-                  color: '#0f172a'
+                  background: 'var(--spc-view-surface)',
+                  color: 'var(--spc-view-text)'
                 }}
               >
                 <option value="PUBLISHED">Status: Published</option>
@@ -674,7 +674,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                 onClick={handleSaveForm}
                 disabled={saveLoading}
                 style={{
-                  background: '#16a34a',
+                  background: 'var(--spc-view-success-fill)',
                   color: '#ffffff',
                   border: 'none',
                   padding: '7px 16px',
@@ -700,8 +700,8 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
             {/* LEFT COLUMN: PALETTE (DESIGNER) OR SETTINGS MENU */}
             <div style={{
               width: 270,
-              background: '#ffffff',
-              borderRight: '1px solid #e2e8f0',
+              background: 'var(--spc-view-surface)',
+              borderRight: '1px solid var(--spc-view-border)',
               display: 'flex',
               flexDirection: 'column',
               flexShrink: 0
@@ -710,8 +710,8 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 1fr',
-                borderBottom: '1px solid #e2e8f0',
-                background: '#f8fafc'
+                borderBottom: '1px solid var(--spc-view-border)',
+                background: 'var(--spc-view-canvas)'
               }}>
                 <button
                   type="button"
@@ -719,9 +719,9 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                   style={{
                     padding: '11px 0',
                     border: 'none',
-                    borderBottom: topStudioMode === 'setting' ? '2.5px solid #036DCE' : '2.5px solid transparent',
-                    background: topStudioMode === 'setting' ? '#ffffff' : 'transparent',
-                    color: topStudioMode === 'setting' ? '#036DCE' : '#64748b',
+                    borderBottom: topStudioMode === 'setting' ? '2.5px solid var(--spc-view-info-border)' : '2.5px solid transparent',
+                    background: topStudioMode === 'setting' ? 'var(--spc-view-surface)' : 'transparent',
+                    color: topStudioMode === 'setting' ? 'var(--spc-view-info)' : 'var(--spc-view-muted)',
                     fontWeight: 700,
                     fontSize: 13,
                     cursor: 'pointer',
@@ -740,9 +740,9 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                   style={{
                     padding: '11px 0',
                     border: 'none',
-                    borderBottom: topStudioMode === 'designer' ? '2.5px solid #036DCE' : '2.5px solid transparent',
-                    background: topStudioMode === 'designer' ? '#ffffff' : 'transparent',
-                    color: topStudioMode === 'designer' ? '#036DCE' : '#64748b',
+                    borderBottom: topStudioMode === 'designer' ? '2.5px solid var(--spc-view-info-border)' : '2.5px solid transparent',
+                    background: topStudioMode === 'designer' ? 'var(--spc-view-surface)' : 'transparent',
+                    color: topStudioMode === 'designer' ? 'var(--spc-view-info)' : 'var(--spc-view-muted)',
                     fontWeight: 700,
                     fontSize: 13,
                     cursor: 'pointer',
@@ -759,7 +759,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
               {/* IF IN SETTING MODE: LEFT NAVIGATION LIST (Details, Reminders, Filters, Workflow, Audit) */}
               {topStudioMode === 'setting' && (
                 <div style={{ padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', padding: '4px 10px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--spc-view-muted)', padding: '4px 10px' }}>
                     FORM TYPE: <b>Task</b>
                   </div>
                   {[
@@ -783,8 +783,8 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                           padding: '10px 12px',
                           borderRadius: 6,
                           border: 'none',
-                          background: isSel ? '#e0f2fe' : 'transparent',
-                          color: isSel ? '#036DCE' : '#475569',
+                          background: isSel ? 'var(--spc-view-info-bg)' : 'transparent',
+                          color: isSel ? 'var(--spc-view-info)' : 'var(--spc-view-muted)',
                           fontWeight: isSel ? 700 : 500,
                           fontSize: 13,
                           cursor: 'pointer',
@@ -803,7 +803,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
               {topStudioMode === 'designer' && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
                   {/* Search input */}
-                  <div style={{ padding: '10px 12px', borderBottom: '1px solid #f1f5f9', position: 'relative' }}>
+                  <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--spc-view-border)', position: 'relative' }}>
                     <Search size={14} color="#94a3b8" style={{ position: 'absolute', right: 20, top: 18 }} />
                     <input
                       type="text"
@@ -814,7 +814,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                         width: '100%',
                         padding: '7px 28px 7px 10px',
                         borderRadius: 6,
-                        border: '1px solid #cbd5e1',
+                        border: '1px solid var(--spc-view-border)',
                         fontSize: 12,
                         outline: 'none',
                         boxSizing: 'border-box'
@@ -848,13 +848,13 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                           alignItems: 'center',
                           gap: 6,
                           padding: '7px 8px',
-                          background: '#ffffff',
-                          border: '1px solid #cbd5e1',
+                          background: 'var(--spc-view-surface)',
+                          border: '1px solid var(--spc-view-border)',
                           borderRadius: 6,
                           cursor: 'grab',
                           fontSize: 11,
                           fontWeight: 500,
-                          color: '#334155',
+                          color: 'var(--spc-view-text)',
                           textAlign: 'left',
                           transition: 'all 0.15s ease',
                           overflow: 'hidden',
@@ -862,14 +862,14 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                           whiteSpace: 'nowrap'
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = '#036DCE';
-                          e.currentTarget.style.background = '#f0f9ff';
-                          e.currentTarget.style.color = '#036DCE';
+                          e.currentTarget.style.borderColor = 'var(--spc-view-info-border)';
+                          e.currentTarget.style.background = 'var(--spc-view-info-bg)';
+                          e.currentTarget.style.color = 'var(--spc-view-info)';
                         }}
                         onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = '#cbd5e1';
-                          e.currentTarget.style.background = '#ffffff';
-                          e.currentTarget.style.color = '#334155';
+                          e.currentTarget.style.borderColor = 'var(--spc-view-border)';
+                          e.currentTarget.style.background = 'var(--spc-view-surface)';
+                          e.currentTarget.style.color = 'var(--spc-view-text)';
                         }}
                       >
                         <span style={{ fontSize: 13, flexShrink: 0 }}>{fieldDef.icon}</span>
@@ -884,18 +884,18 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
             {/* ================================================================= */}
             {/* CENTER COLUMN: CANVAS (DESIGNER) OR SETTING DETAIL VIEW */}
             {/* ================================================================= */}
-            <div style={{ flex: 1, overflowY: 'auto', background: '#f8fafc', padding: 20 }}>
+            <div style={{ flex: 1, overflowY: 'auto', background: 'var(--spc-view-canvas)', padding: 20 }}>
 
               {/* A. DESIGNER MODE */}
               {topStudioMode === 'designer' && (
-                <div style={{ maxWidth: 800, margin: '0 auto', background: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', padding: '16px 20px' }}>
+                <div style={{ maxWidth: 800, margin: '0 auto', background: 'var(--spc-view-surface)', borderRadius: 10, border: '1px solid var(--spc-view-border)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', padding: '16px 20px' }}>
 
                   {/* 3 STAGE TABS: Complete | Start | Assignee */}
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 24,
-                    borderBottom: '1px solid #e2e8f0',
+                    borderBottom: '1px solid var(--spc-view-border)',
                     paddingBottom: 8,
                     marginBottom: 16
                   }}>
@@ -920,8 +920,8 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                             cursor: 'pointer',
                             fontSize: 14,
                             fontWeight: isAct ? 700 : 500,
-                            color: isAct ? '#036DCE' : '#64748b',
-                            borderBottom: isAct ? '2.5px solid #036DCE' : '2.5px solid transparent',
+                            color: isAct ? 'var(--spc-view-info)' : 'var(--spc-view-muted)',
+                            borderBottom: isAct ? '2.5px solid var(--spc-view-info-border)' : '2.5px solid transparent',
                             display: 'flex',
                             alignItems: 'center',
                             gap: 6
@@ -932,8 +932,8 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                             fontSize: 10,
                             padding: '1px 6px',
                             borderRadius: 10,
-                            background: isAct ? '#e0f2fe' : '#f1f5f9',
-                            color: isAct ? '#036DCE' : '#64748b',
+                            background: isAct ? 'var(--spc-view-info-bg)' : 'var(--spc-view-raised)',
+                            color: isAct ? 'var(--spc-view-info)' : 'var(--spc-view-muted)',
                             fontWeight: 700
                           }}>
                             {st.count}
@@ -957,14 +957,14 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                   >
                     {activeStageFields.length === 0 ? (
                       <div style={{
-                        border: '2px dashed #cbd5e1',
+                        border: '2px dashed var(--spc-view-border)',
                         borderRadius: 8,
                         padding: '40px 20px',
                         textAlign: 'center',
-                        color: '#94a3b8'
+                        color: 'var(--spc-view-muted)'
                       }}>
                         <Move size={32} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--spc-view-muted)' }}>
                           Drop fields here from the left palette
                         </div>
                         <div style={{ fontSize: 11, marginTop: 4 }}>
@@ -987,8 +987,8 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                             onClick={() => setSelectedFieldIdx(idx)}
                             style={{
                               padding: '10px 14px',
-                              background: isSelected ? '#f0f9ff' : '#ffffff',
-                              border: isSelected ? '1.5px solid #036DCE' : isDragOver ? '2px dashed #036DCE' : '1px solid #e2e8f0',
+                              background: isSelected ? 'var(--spc-view-info-bg)' : 'var(--spc-view-surface)',
+                              border: isSelected ? '1.5px solid var(--spc-view-info-border)' : isDragOver ? '2px dashed var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
                               borderRadius: 8,
                               cursor: 'pointer',
                               boxShadow: isSelected ? '0 2px 6px rgba(3,109,206,0.1)' : '0 1px 2px rgba(0,0,0,0.03)',
@@ -998,24 +998,24 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ cursor: 'grab', color: '#94a3b8' }} title="Drag to re-order">
+                                <span style={{ cursor: 'grab', color: 'var(--spc-view-muted)' }} title="Drag to re-order">
                                   ⋮⋮
                                 </span>
-                                <span style={{ fontWeight: 600, fontSize: 13, color: '#0f172a' }}>
+                                <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--spc-view-text)' }}>
                                   {field.label}
                                 </span>
                                 {field.required && (
-                                  <span style={{ color: '#ef4444', fontSize: 12, fontWeight: 700 }}>*</span>
+                                  <span style={{ color: 'var(--spc-view-danger)', fontSize: 12, fontWeight: 700 }}>*</span>
                                 )}
                               </div>
 
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 {field.conditional && (
-                                  <span style={{ fontSize: 10, color: '#036DCE', background: '#e0f2fe', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
+                                  <span style={{ fontSize: 10, color: 'var(--spc-view-info)', background: 'var(--spc-view-info-bg)', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
                                     Conditional
                                   </span>
                                 )}
-                                <span style={{ fontSize: 10, background: '#f1f5f9', color: '#475569', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace' }}>
+                                <span style={{ fontSize: 10, background: 'var(--spc-view-raised)', color: 'var(--spc-view-muted)', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace' }}>
                                   {field.type}
                                 </span>
                                 <button
@@ -1027,7 +1027,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                                   style={{
                                     background: 'none',
                                     border: 'none',
-                                    color: '#ef4444',
+                                    color: 'var(--spc-view-danger)',
                                     cursor: 'pointer',
                                     padding: 2
                                   }}
@@ -1041,11 +1041,11 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                             {/* Simulated Field Input Box */}
                             <div style={{
                               padding: '8px 12px',
-                              background: '#f8fafc',
-                              border: '1px solid #e2e8f0',
+                              background: 'var(--spc-view-canvas)',
+                              border: '1px solid var(--spc-view-border)',
                               borderRadius: 6,
                               fontSize: 12,
-                              color: '#64748b'
+                              color: 'var(--spc-view-muted)'
                             }}>
                               {field.placeholder || `Please select / enter ${field.label}`}
                             </div>
@@ -1059,16 +1059,16 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
 
               {/* B. SETTING MODE PANELS */}
               {topStudioMode === 'setting' && (
-                <div style={{ maxWidth: 900, margin: '0 auto', background: '#ffffff', borderRadius: 10, border: '1px solid #e2e8f0', padding: 24 }}>
+                <div style={{ maxWidth: 900, margin: '0 auto', background: 'var(--spc-view-surface)', borderRadius: 10, border: '1px solid var(--spc-view-border)', padding: 24 }}>
 
                   {/* 1. DETAILS PANEL */}
                   {settingTab === 'details' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                      <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#0f172a' }}>Form Details & Features</h3>
+                      <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--spc-view-text)' }}>Form Details & Features</h3>
 
                       {/* Title & Status */}
                       <div>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', marginBottom: 4 }}>
                           Form Title*
                         </label>
                         <input
@@ -1080,7 +1080,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                             width: '100%',
                             padding: '8px 12px',
                             borderRadius: 6,
-                            border: '1px solid #cbd5e1',
+                            border: '1px solid var(--spc-view-border)',
                             fontSize: 13,
                             boxSizing: 'border-box'
                           }}
@@ -1090,7 +1090,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                       {/* Data Type & Label Color */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                         <div>
-                          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', marginBottom: 4 }}>
                             Data Type*
                           </label>
                           <select
@@ -1100,7 +1100,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                               width: '100%',
                               padding: '8px 12px',
                               borderRadius: 6,
-                              border: '1px solid #cbd5e1',
+                              border: '1px solid var(--spc-view-border)',
                               fontSize: 13
                             }}
                           >
@@ -1111,7 +1111,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                         </div>
 
                         <div>
-                          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', marginBottom: 4 }}>
                             Label Color
                           </label>
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1125,7 +1125,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                               type="text"
                               value={labelColor}
                               onChange={(e) => setLabelColor(e.target.value)}
-                              style={{ flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12, fontFamily: 'monospace' }}
+                              style={{ flex: 1, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 12, fontFamily: 'monospace' }}
                             />
                           </div>
                         </div>
@@ -1133,7 +1133,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
 
                       {/* Comment */}
                       <div>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', marginBottom: 4 }}>
                           Comment / Instructions
                         </label>
                         <textarea
@@ -1145,7 +1145,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                             width: '100%',
                             padding: '8px 12px',
                             borderRadius: 6,
-                            border: '1px solid #cbd5e1',
+                            border: '1px solid var(--spc-view-border)',
                             fontSize: 13,
                             boxSizing: 'border-box'
                           }}
@@ -1153,8 +1153,8 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                       </div>
 
                       {/* Form Features (TrackWick Checkbox Matrix) */}
-                      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 12 }}>
+                      <div style={{ borderTop: '1px solid var(--spc-view-border)', paddingTop: 16 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--spc-view-text)', marginBottom: 12 }}>
                           Form Features
                         </div>
 
@@ -1173,7 +1173,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                             { key: 'only_mobile_app', label: 'Only Mobile App' },
                             { key: 'in_progress_reassign', label: 'In-Progress Re-assign' }
                           ].map(item => (
-                            <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', color: '#334155' }}>
+                            <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', color: 'var(--spc-view-text)' }}>
                               <input
                                 type="checkbox"
                                 checked={!!formFeatures[item.key]}
@@ -1190,7 +1190,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                   {/* 2. REMINDERS PANEL */}
                   {settingTab === 'reminders' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                      <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#0f172a' }}>Task Reminders</h3>
+                      <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--spc-view-text)' }}>Task Reminders</h3>
 
                       <div style={{ display: 'flex', gap: 8 }}>
                         {['ALL_TASKS', 'FOLLOW_UP_ONLY'].map(mode => (
@@ -1204,9 +1204,9 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                               fontSize: 12,
                               fontWeight: 600,
                               cursor: 'pointer',
-                              border: reminders.appliesTo === mode ? '1.5px solid #036DCE' : '1px solid #cbd5e1',
-                              background: reminders.appliesTo === mode ? '#e0f2fe' : '#ffffff',
-                              color: reminders.appliesTo === mode ? '#036DCE' : '#475569'
+                              border: reminders.appliesTo === mode ? '1.5px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
+                              background: reminders.appliesTo === mode ? 'var(--spc-view-info-bg)' : 'var(--spc-view-surface)',
+                              color: reminders.appliesTo === mode ? 'var(--spc-view-info)' : 'var(--spc-view-muted)'
                             }}
                           >
                             {mode === 'ALL_TASKS' ? 'All Tasks' : 'Follow Up Tasks Only'}
@@ -1216,37 +1216,37 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
 
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
                         <div>
-                          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', marginBottom: 4 }}>
                             Frequency in minutes
                           </label>
                           <input
                             type="number"
                             value={reminders.frequencyMins}
                             onChange={(e) => setReminders(r => ({ ...r, frequencyMins: Number(e.target.value) }))}
-                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 12 }}
                           />
                         </div>
 
                         <div>
-                          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', marginBottom: 4 }}>
                             Repeat Count
                           </label>
                           <input
                             type="number"
                             value={reminders.repeatCount}
                             onChange={(e) => setReminders(r => ({ ...r, repeatCount: Number(e.target.value) }))}
-                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 12 }}
                           />
                         </div>
 
                         <div>
-                          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', marginBottom: 4 }}>
                             Priority
                           </label>
                           <select
                             value={reminders.priority}
                             onChange={(e) => setReminders(r => ({ ...r, priority: e.target.value }))}
-                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 12 }}
                           >
                             <option value="URGENT">Urgent</option>
                             <option value="HIGH">High</option>
@@ -1280,24 +1280,24 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                   {/* 3. FILTERS (ASSIGNEE & AUDIENCE) PANEL */}
                   {settingTab === 'filters' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                      <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#0f172a' }}>Employee & Customer Filters</h3>
+                      <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--spc-view-text)' }}>Employee & Customer Filters</h3>
 
                       {/* Additional Employee Filters */}
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--spc-view-text)', marginBottom: 8 }}>
                           Assignee & Department Access
                         </div>
-                        <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px' }}>
+                        <p style={{ fontSize: 12, color: 'var(--spc-view-muted)', margin: '0 0 12px' }}>
                           Choose which departments and staff members are authorized to view and execute this form.
                         </p>
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                           <div>
-                            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', marginBottom: 4 }}>
                               Target Departments
                             </label>
                             <select
-                              style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+                              style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 12 }}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 if (val && !filtersConfig.departments.includes(val)) {
@@ -1314,12 +1314,12 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
 
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                               {filtersConfig.departments.map(d => (
-                                <span key={d} style={{ fontSize: 11, background: '#eff6ff', color: '#1d4ed8', padding: '2px 8px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span key={d} style={{ fontSize: 11, background: 'var(--spc-view-info-bg)', color: 'var(--spc-view-info)', padding: '2px 8px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                   {d}
                                   <button
                                     type="button"
                                     onClick={() => setFiltersConfig(f => ({ ...f, departments: f.departments.filter(x => x !== d) }))}
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 0 }}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--spc-view-danger)', padding: 0 }}
                                   >
                                     ×
                                   </button>
@@ -1329,11 +1329,11 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                           </div>
 
                           <div>
-                            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', marginBottom: 4 }}>
                               Specific Field Executives
                             </label>
                             <select
-                              style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+                              style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 12 }}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 if (val && !filtersConfig.selectedEmployees.includes(val)) {
@@ -1351,12 +1351,12 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
 
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                               {filtersConfig.selectedEmployees.map(emp => (
-                                <span key={emp} style={{ fontSize: 11, background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span key={emp} style={{ fontSize: 11, background: 'var(--spc-view-success-bg)', color: 'var(--spc-view-success)', padding: '2px 8px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                   {emp}
                                   <button
                                     type="button"
                                     onClick={() => setFiltersConfig(f => ({ ...f, selectedEmployees: f.selectedEmployees.filter(x => x !== emp) }))}
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 0 }}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--spc-view-danger)', padding: 0 }}
                                   >
                                     ×
                                   </button>
@@ -1372,15 +1372,15 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                   {/* 4. WORKFLOW PANEL */}
                   {settingTab === 'workflow' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                      <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#0f172a' }}>Attach Workflow</h3>
+                      <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--spc-view-text)' }}>Attach Workflow</h3>
                       <div>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', marginBottom: 4 }}>
                           Select Linked Workflow
                         </label>
                         <select
                           value={workflowId}
                           onChange={(e) => setWorkflowId(e.target.value)}
-                          style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                          style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 13 }}
                         >
                           <option value="">-- None / Standalone Task --</option>
                           <option value="LEAD_DATA_CONVERSION">Lead Data Conversion Workflow</option>
@@ -1394,10 +1394,10 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                   {/* 5. AUDIT HISTORY PANEL */}
                   {settingTab === 'audit_history' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                      <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#0f172a' }}>Form Audit History</h3>
+                      <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--spc-view-text)' }}>Form Audit History</h3>
                       <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12 }}>
                         <thead>
-                          <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
+                          <tr style={{ background: 'var(--spc-view-canvas)', borderBottom: '1px solid var(--spc-view-border)', color: 'var(--spc-view-muted)' }}>
                             <th style={{ padding: '8px 12px' }}>Action</th>
                             <th style={{ padding: '8px 12px' }}>Old Value</th>
                             <th style={{ padding: '8px 12px' }}>New Value</th>
@@ -1407,12 +1407,12 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                         </thead>
                         <tbody>
                           {auditHistory.map((item, i) => (
-                            <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <tr key={i} style={{ borderBottom: '1px solid var(--spc-view-border)' }}>
                               <td style={{ padding: '10px 12px', fontWeight: 600 }}>{item.action}</td>
-                              <td style={{ padding: '10px 12px', color: '#64748b' }}>{item.oldValue}</td>
-                              <td style={{ padding: '10px 12px', color: '#0f172a', fontWeight: 600 }}>{item.newValue}</td>
+                              <td style={{ padding: '10px 12px', color: 'var(--spc-view-muted)' }}>{item.oldValue}</td>
+                              <td style={{ padding: '10px 12px', color: 'var(--spc-view-text)', fontWeight: 600 }}>{item.newValue}</td>
                               <td style={{ padding: '10px 12px' }}>{item.by}</td>
-                              <td style={{ padding: '10px 12px', color: '#64748b' }}>{item.date}</td>
+                              <td style={{ padding: '10px 12px', color: 'var(--spc-view-muted)' }}>{item.date}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1431,57 +1431,57 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
             {topStudioMode === 'designer' && (
               <div style={{
                 width: 320,
-                background: '#ffffff',
-                borderLeft: '1px solid #e2e8f0',
+                background: 'var(--spc-view-surface)',
+                borderLeft: '1px solid var(--spc-view-border)',
                 padding: '16px',
                 overflowY: 'auto',
                 flexShrink: 0
               }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--spc-view-text)', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span>Field Properties</span>
                   <Sliders size={16} color="#64748b" />
                 </div>
 
                 {!currentSelectedField ? (
-                  <div style={{ textAlign: 'center', padding: '40px 10px', color: '#94a3b8', fontSize: 12 }}>
+                  <div style={{ textAlign: 'center', padding: '40px 10px', color: 'var(--spc-view-muted)', fontSize: 12 }}>
                     Click any field on the center canvas to edit its properties.
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
                     {/* GENERAL SECTION */}
-                    <div style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: 12 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+                    <div style={{ borderBottom: '1px solid var(--spc-view-border)', paddingBottom: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--spc-view-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
                         General
                       </div>
 
                       <div style={{ marginBottom: 10 }}>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#334155', marginBottom: 4 }}>
+                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--spc-view-text)', marginBottom: 4 }}>
                           Field Name*
                         </label>
                         <input
                           type="text"
                           value={currentSelectedField.label || ''}
                           onChange={(e) => handleUpdateSelectedField('label', e.target.value)}
-                          style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12, boxSizing: 'border-box' }}
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 12, boxSizing: 'border-box' }}
                         />
                       </div>
 
                       <div style={{ marginBottom: 10 }}>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#334155', marginBottom: 4 }}>
+                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--spc-view-text)', marginBottom: 4 }}>
                           Placeholder
                         </label>
                         <input
                           type="text"
                           value={currentSelectedField.placeholder || ''}
                           onChange={(e) => handleUpdateSelectedField('placeholder', e.target.value)}
-                          style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12, boxSizing: 'border-box' }}
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 12, boxSizing: 'border-box' }}
                         />
                       </div>
 
                       {/* Permissions */}
                       <div style={{ marginBottom: 10 }}>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#334155', marginBottom: 4 }}>
+                        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--spc-view-text)', marginBottom: 4 }}>
                           Field Permission
                         </label>
                         <div style={{ display: 'flex', gap: 6 }}>
@@ -1492,9 +1492,9 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                               flex: 1,
                               padding: '5px 8px',
                               borderRadius: 4,
-                              border: currentSelectedField.readAccess ? '1px solid #036DCE' : '1px solid #cbd5e1',
-                              background: currentSelectedField.readAccess ? '#e0f2fe' : '#ffffff',
-                              color: currentSelectedField.readAccess ? '#036DCE' : '#64748b',
+                              border: currentSelectedField.readAccess ? '1px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
+                              background: currentSelectedField.readAccess ? 'var(--spc-view-info-bg)' : 'var(--spc-view-surface)',
+                              color: currentSelectedField.readAccess ? 'var(--spc-view-info)' : 'var(--spc-view-muted)',
                               fontSize: 11,
                               fontWeight: 600,
                               cursor: 'pointer'
@@ -1509,9 +1509,9 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                               flex: 1,
                               padding: '5px 8px',
                               borderRadius: 4,
-                              border: currentSelectedField.writeAccess ? '1px solid #036DCE' : '1px solid #cbd5e1',
-                              background: currentSelectedField.writeAccess ? '#e0f2fe' : '#ffffff',
-                              color: currentSelectedField.writeAccess ? '#036DCE' : '#64748b',
+                              border: currentSelectedField.writeAccess ? '1px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
+                              background: currentSelectedField.writeAccess ? 'var(--spc-view-info-bg)' : 'var(--spc-view-surface)',
+                              color: currentSelectedField.writeAccess ? 'var(--spc-view-info)' : 'var(--spc-view-muted)',
                               fontSize: 11,
                               fontWeight: 600,
                               cursor: 'pointer'
@@ -1545,14 +1545,14 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
 
                     {/* FIELD SPECIFIC (Options / Tags Builder) */}
                     {(currentSelectedField.type === 'list' || currentSelectedField.type === 'dropdown' || currentSelectedField.type === 'multiple_selection') && (
-                      <div style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: 12 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+                      <div style={{ borderBottom: '1px solid var(--spc-view-border)', paddingBottom: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--spc-view-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
                           Field Specific (Values / Options)
                         </div>
 
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
                           {(currentSelectedField.options || []).map((opt, i) => (
-                            <span key={i} style={{ fontSize: 11, background: '#f1f5f9', color: '#334155', padding: '3px 8px', borderRadius: 4, border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span key={i} style={{ fontSize: 11, background: 'var(--spc-view-raised)', color: 'var(--spc-view-text)', padding: '3px 8px', borderRadius: 4, border: '1px solid var(--spc-view-border)', display: 'flex', alignItems: 'center', gap: 4 }}>
                               {opt}
                               <button
                                 type="button"
@@ -1560,7 +1560,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                                   const updated = (currentSelectedField.options || []).filter((_, idx) => idx !== i);
                                   handleUpdateSelectedField('options', updated);
                                 }}
-                                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0 }}
+                                style={{ background: 'none', border: 'none', color: 'var(--spc-view-danger)', cursor: 'pointer', padding: 0 }}
                               >
                                 ×
                               </button>
@@ -1574,7 +1574,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                             type="text"
                             id="new_opt_input"
                             placeholder="Add value (e.g. Checking)"
-                            style={{ flex: 1, padding: '5px 8px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 11 }}
+                            style={{ flex: 1, padding: '5px 8px', borderRadius: 4, border: '1px solid var(--spc-view-border)', fontSize: 11 }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();
@@ -1597,7 +1597,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                                 input.value = '';
                               }
                             }}
-                            style={{ padding: '5px 10px', background: '#036DCE', color: '#fff', border: 'none', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
+                            style={{ padding: '5px 10px', background: 'var(--spc-view-action)', color: '#fff', border: 'none', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}
                           >
                             + Add
                           </button>
@@ -1606,8 +1606,8 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                     )}
 
                     {/* APPLY CONDITION */}
-                    <div style={{ borderBottom: '1px solid #f1f5f9', paddingBottom: 12 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+                    <div style={{ borderBottom: '1px solid var(--spc-view-border)', paddingBottom: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--spc-view-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
                         Apply Condition
                       </div>
                       <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
@@ -1626,9 +1626,9 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                       onClick={() => handleRemoveField(selectedFieldIdx)}
                       style={{
                         padding: '8px',
-                        background: '#fee2e2',
-                        color: '#b91c1c',
-                        border: '1px solid #fecaca',
+                        background: 'var(--spc-view-danger-bg)',
+                        color: 'var(--spc-view-danger)',
+                        border: '1px solid var(--spc-view-danger-border)',
                         borderRadius: 6,
                         fontSize: 12,
                         fontWeight: 600,
@@ -1659,15 +1659,15 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
               <button
                 type="button"
                 onClick={() => setViewMode('list')}
-                style={{ background: 'none', border: '1px solid #cbd5e1', borderRadius: 6, padding: '6px 10px', cursor: 'pointer' }}
+                style={{ background: 'none', border: '1px solid var(--spc-view-border)', borderRadius: 6, padding: '6px 10px', cursor: 'pointer' }}
               >
                 <ArrowLeft size={16} />
               </button>
               <div>
-                <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: '#0f172a' }}>
+                <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--spc-view-text)' }}>
                   {activeForm?.title} — Data Table & Audit
                 </h1>
-                <div style={{ fontSize: 12, color: '#64748b' }}>
+                <div style={{ fontSize: 12, color: 'var(--spc-view-muted)' }}>
                   Live dynamic responses submitted by field executives from ground
                 </div>
               </div>
@@ -1698,7 +1698,7 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                 document.body.removeChild(a);
               }}
               style={{
-                background: '#2563eb',
+                background: 'var(--spc-view-action)',
                 color: '#ffffff',
                 border: 'none',
                 padding: '8px 14px',
@@ -1716,19 +1716,19 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
           </div>
 
           {loadingSubs ? (
-            <div style={{ textAlign: 'center', padding: '60px 0', color: '#64748b' }}>
+            <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--spc-view-muted)' }}>
               <RefreshCw size={24} style={{ animation: 'spin 1s linear infinite' }} />
               <div style={{ marginTop: 8, fontSize: 13 }}>Loading submissions...</div>
             </div>
           ) : submissions.length === 0 ? (
-            <div style={{ background: '#ffffff', padding: 40, textAlign: 'center', borderRadius: 8, border: '1px solid #e2e8f0', color: '#64748b' }}>
+            <div style={{ background: 'var(--spc-view-surface)', padding: 40, textAlign: 'center', borderRadius: 8, border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-muted)' }}>
               No submissions recorded yet for this form.
             </div>
           ) : (
-            <div style={{ background: '#ffffff', borderRadius: 8, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+            <div style={{ background: 'var(--spc-view-surface)', borderRadius: 8, border: '1px solid var(--spc-view-border)', overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12 }}>
                 <thead>
-                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
+                  <tr style={{ background: 'var(--spc-view-canvas)', borderBottom: '1px solid var(--spc-view-border)', color: 'var(--spc-view-muted)' }}>
                     <th style={{ padding: '10px 14px' }}>Date (IST)</th>
                     <th style={{ padding: '10px 14px' }}>Party / Client</th>
                     <th style={{ padding: '10px 14px' }}>Connectivity Mode</th>
@@ -1738,11 +1738,11 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                 </thead>
                 <tbody>
                   {submissions.map(sub => (
-                    <tr key={sub.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <tr key={sub.id} style={{ borderBottom: '1px solid var(--spc-view-border)' }}>
                       <td style={{ padding: '10px 14px' }}>
                         {new Date(sub.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
                       </td>
-                      <td style={{ padding: '10px 14px', fontWeight: 600, color: '#0f172a' }}>{sub.party_name}</td>
+                      <td style={{ padding: '10px 14px', fontWeight: 600, color: 'var(--spc-view-text)' }}>{sub.party_name}</td>
                       <td style={{ padding: '10px 14px' }}>{sub.connectivity_mode}</td>
                       <td style={{ padding: '10px 14px' }}>
                         <span style={{
@@ -1750,13 +1750,13 @@ export default function AdminFormStudio({ company = 'TNT00001', branchCode = nul
                           borderRadius: 4,
                           fontSize: 10,
                           fontWeight: 700,
-                          background: sub.is_geofence_flagged ? '#fee2e2' : '#dcfce7',
-                          color: sub.is_geofence_flagged ? '#dc2626' : '#15803d'
+                          background: sub.is_geofence_flagged ? 'var(--spc-view-danger-bg)' : 'var(--spc-view-success-bg)',
+                          color: sub.is_geofence_flagged ? 'var(--spc-view-danger)' : 'var(--spc-view-success)'
                         }}>
                           {sub.is_geofence_flagged ? 'FLAGGED' : 'VERIFIED'}
                         </span>
                       </td>
-                      <td style={{ padding: '10px 14px', fontFamily: 'monospace', color: '#64748b' }}>
+                      <td style={{ padding: '10px 14px', fontFamily: 'monospace', color: 'var(--spc-view-muted)' }}>
                         {sub.check_in_lat ? `${Number(sub.check_in_lat).toFixed(4)}, ${Number(sub.check_in_lng).toFixed(4)}` : 'N/A'}
                       </td>
                     </tr>

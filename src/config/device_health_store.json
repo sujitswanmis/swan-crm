@@ -3,10 +3,10 @@
     "user_id": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
     "tenant_id": "00000000-0000-0000-0000-000000000001",
     "tenant_code": "TNT00002",
-    "branch_code": null,
+    "branch_code": "New Swan Group",
     "company": "TNT00002",
     "platform": "Web App",
-    "platform_details": "Chrome 157 • Android 16 • Mobile Web",
+    "platform_details": "Chrome 159 • Windows",
     "app_version_code": null,
     "app_version_name": null,
     "os_version": null,
@@ -20,10 +20,10 @@
     "gps_provider_enabled": null,
     "service_running": false,
     "pending_queue_count": 0,
-    "location_mode": "browser",
-    "health_status": "BROWSER_ONLY",
-    "issue_summary": "Mobile browser session detected — install Android APK for background tracking",
-    "last_checked_at": "2026-11-11T16:18:17.567Z",
-    "updated_at": "2026-11-11T16:18:17.567Z"
+    "location_mode": "unknown",
+    "health_status": "OFFLINE",
+    "issue_summary": "Desktop Web Browser (Chrome 159 • Windows)",
+    "last_checked_at": "2026-11-26T12:53:08.611Z",
+    "updated_at": "2026-11-26T12:53:08.611Z"
   }
 }

@@ -14,8 +14,18 @@ import LeadFormModal from '@/components/LeadFormModal';
 import InstantDelegationModal from './modals/InstantDelegationModal';
 import InstantMissingPunchModal from './modals/InstantMissingPunchModal';
 import InstantLeaveModal from './modals/InstantLeaveModal';
+import QuickTaskModal from '@/components/TaskPlanner/QuickTaskModal';
+import { createTaskPlannerItem } from '@/app/actions/taskPlanner';
 import { AVAILABLE_WIDGETS, getPermittedWidgets } from './homeWidgetsConfig';
 import { getTodayAttendance, punchIn, punchOut } from '@/app/actions/attendance';
+import { canPerformOfflineAction, enqueueOfflineAction, showSyncToast } from '@/utils/offlineSync';
+
+function isOfflineNetworkError(err) {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return true;
+  const msg = String(err?.message || '');
+  if (msg.includes('Failed to find Server Action') || msg.includes('older or newer deployment')) return false;
+  return err?.name === 'TypeError' || /failed to fetch|network\s*error|load\s*failed|fetch failed|network request failed/i.test(msg);
+}
 
 // Helper to format ISO strings, UTC times, or raw time values to clean IST 12-hour format (e.g. 10:52 PM)
 function formatISTDisplayTime(timeVal) {
@@ -120,6 +130,7 @@ export default function WorkspaceHome({
   const [isDelegationModalOpen, setIsDelegationModalOpen] = useState(false);
   const [isMissingPunchModalOpen, setIsMissingPunchModalOpen] = useState(false);
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [isTaskPlannerModalOpen, setIsTaskPlannerModalOpen] = useState(false);
 
   // Attendance live status
   const [todayAttendance, setTodayAttendance] = useState(null);
@@ -167,6 +178,7 @@ export default function WorkspaceHome({
     try {
       const normEmail = userEmail.trim().toLowerCase();
       const todayDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+      let localCached = null;
 
       // 1. Try local cache first for 0ms initial render
       if (typeof window !== 'undefined') {
@@ -177,18 +189,29 @@ export default function WorkspaceHome({
         if (cached) {
           try {
             const parsed = JSON.parse(cached);
-            setTodayAttendance(parsed);
+            if (!parsed?.attendance_date || parsed.attendance_date === todayDate) {
+              localCached = parsed;
+              setTodayAttendance(parsed);
+            }
           } catch (_e) {}
         }
+      }
+
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setLoadingAttendance(false);
+        return;
       }
 
       setLoadingAttendance(true);
       const res = await getTodayAttendance(userEmail, userId, tenantId, userCompany);
       if (res?.data) {
-        setTodayAttendance(res.data);
+        const awaitingSync = (localCached?._offlinePending === 'IN' && !res.data?.in_time) ||
+          (localCached?._offlinePending === 'OUT' && !res.data?.out_time);
+        const finalRec = awaitingSync ? localCached : res.data;
+        setTodayAttendance(finalRec);
         if (typeof window !== 'undefined') {
           try {
-            localStorage.setItem(`att_today_record_${tenantId}_${normEmail}_${todayDate}`, JSON.stringify(res.data));
+            localStorage.setItem(`att_today_record_${tenantId}_${normEmail}_${todayDate}`, JSON.stringify(finalRec));
           } catch {}
         }
       } else if (res && !res.error && (res.in_time || res.punch_in_time || res.id)) {
@@ -198,6 +221,8 @@ export default function WorkspaceHome({
             localStorage.setItem(`att_today_record_${tenantId}_${normEmail}_${todayDate}`, JSON.stringify(res));
           } catch {}
         }
+      } else if (res?.success && !res.data && localCached?._offlinePending) {
+        setTodayAttendance(localCached);
       }
     } catch (err) {
       console.warn('WorkspaceHome attendance fetch warning:', err);
@@ -223,12 +248,106 @@ export default function WorkspaceHome({
     };
   }, [loadTodayAttendance]);
 
-  // Direct Punch In / Out Action
+  // Direct Punch In / Out Action (with full Offline Sync Center fallback)
   const handleDirectPunch = async (type = 'IN') => {
     if (!userEmail || punching) return;
     setPunching(true);
     setPunchNotice(null);
+
+    const saveHomeOfflinePunch = async () => {
+      const check = canPerformOfflineAction('attendancePunch');
+      if (!check.allowed) {
+        setPunchNotice({ type: 'error', message: check.reason });
+        showSyncToast(check.reason, 'error', 6000);
+        return false;
+      }
+
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const todayDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+      const normEmail = userEmail.trim().toLowerCase();
+      const isOut = type === 'OUT';
+
+      if (isOut && !todayAttendance?.in_time) {
+        setPunchNotice({ type: 'error', message: 'Punch In record missing for Punch Out.' });
+        return false;
+      }
+
+      const totalMinutes = isOut && todayAttendance?.in_time
+        ? Math.max(0, Math.round((now.getTime() - new Date(todayAttendance.in_time).getTime()) / 60000))
+        : 0;
+
+      const offlinePayload = {
+        email: normEmail,
+        userId,
+        empName: userName,
+        tenant_id: tenantId,
+        attendance_date: todayDate,
+        ...(isOut
+          ? {
+              out_time: nowIso,
+              out_location: 'Home Workspace Quick Punch',
+              out_method: 'WEB_PUNCH',
+              total_working_minutes: totalMinutes
+            }
+          : {
+              in_time: nowIso,
+              in_location: 'Home Workspace Quick Punch',
+              in_method: 'WEB_PUNCH'
+            }),
+        status: todayAttendance?.status || 'PRESENT',
+        remarks: todayAttendance?.remarks || 'Home Workspace Quick Punch (Offline)'
+      };
+
+      const queued = await enqueueOfflineAction('create', 'attendance', offlinePayload);
+      if (!queued) {
+        setPunchNotice({ type: 'error', message: 'Offline storage could not confirm this punch. Please retry.' });
+        return false;
+      }
+
+      const localRecord = {
+        ...(todayAttendance || {}),
+        id: todayAttendance?.id || `temp-${Date.now()}`,
+        tenant_id: tenantId,
+        emp_name: userName,
+        email: normEmail,
+        attendance_date: todayDate,
+        in_time: isOut ? todayAttendance.in_time : nowIso,
+        out_time: isOut ? nowIso : null,
+        total_working_minutes: isOut ? totalMinutes : 0,
+        status: offlinePayload.status,
+        remarks: offlinePayload.remarks,
+        _offlinePending: type
+      };
+
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(`att_today_record_${tenantId}_${normEmail}_${todayDate}`, JSON.stringify(localRecord));
+          window.dispatchEvent(new CustomEvent('attendance_updated'));
+        } catch {}
+      }
+      setTodayAttendance(localRecord);
+
+      const timeNow = now.toLocaleTimeString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+      setPunchNotice({
+        type: 'success',
+        message: `⚡ Offline Punch ${type.toLowerCase()} saved at ${timeNow}! Sync pending in Offline Sync Center.`
+      });
+      showSyncToast(`⚡ Offline Punch-${isOut ? 'Out' : 'In'} saved in Offline Sync Center & auto-syncing!`, 'info', 4500);
+      return true;
+    };
+
     try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await saveHomeOfflinePunch();
+        return;
+      }
+
       const punchFn = type === 'IN' ? punchIn : punchOut;
       const res = await punchFn({
         email: userEmail,
@@ -264,10 +383,14 @@ export default function WorkspaceHome({
         });
       }
     } catch (err) {
-      setPunchNotice({
-        type: 'error',
-        message: err.message || 'Error executing punch'
-      });
+      if (isOfflineNetworkError(err)) {
+        await saveHomeOfflinePunch();
+      } else {
+        setPunchNotice({
+          type: 'error',
+          message: err.message || 'Error executing punch'
+        });
+      }
     } finally {
       setPunching(false);
       setTimeout(() => {
@@ -319,6 +442,7 @@ export default function WorkspaceHome({
   const canPipeline = isAdmin || moduleAccess?.['channel_ops']?.view === true || moduleAccess?.['party']?.view === true || moduleAccess?.['orders']?.view === true;
   const canFieldForce = isAdmin || moduleAccess?.['field_force']?.view === true;
   const canRecruiter = isAdmin || moduleAccess?.['recruiter']?.view === true;
+  const canTaskPlanner = isAdmin || moduleAccess?.['task_planner']?.view !== false;
 
   // Permitted Stages as per access
   const permittedOrderStages = useMemo(() => {
@@ -390,7 +514,7 @@ export default function WorkspaceHome({
   const canRePunchIn = Boolean(attOutTime && allowMultiPunch);
 
   return (
-    <div style={{
+    <div className="spc-workspace-home" style={{
       padding: '1rem 1.25rem',
       width: '100%',
       display: 'flex',
@@ -399,7 +523,7 @@ export default function WorkspaceHome({
       color: 'var(--text-primary, #0f172a)'
     }}>
       {/* 1. Header Greeting & Status Bar */}
-      <div style={{
+      <div className="spc-home-greeting" style={{
         background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(99, 102, 241, 0.08) 50%, rgba(168, 85, 247, 0.05) 100%)',
         border: '1px solid rgba(99, 102, 241, 0.18)',
         borderRadius: '16px',
@@ -414,25 +538,23 @@ export default function WorkspaceHome({
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <span style={{ fontSize: '1.65rem' }}>👋</span>
-            <h1 style={{
+            <h1 className="spc-home-title" style={{
               fontSize: '1.55rem',
               fontWeight: 800,
               margin: 0,
               letterSpacing: '-0.02em',
-              background: 'linear-gradient(135deg, #1e293b 0%, #3b82f6 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
+              color: 'var(--spc-home-text)'
             }}>
               Namaste, {userName || 'Colleague'}!
             </h1>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', marginTop: '0.45rem', fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
+          <div className="spc-home-meta" style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', marginTop: '0.45rem', fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 500 }}>
-              <Clock size={15} color="#3b82f6" />
+              <Clock className="spc-home-accent-icon" size={15} color="#3b82f6" />
               {istTimeStr || 'IST'}
             </span>
             <span>•</span>
-            <span style={{
+            <span className="spc-home-role" style={{
               fontWeight: 650,
               color: '#4f46e5',
               background: '#e0e7ff',
@@ -471,13 +593,13 @@ export default function WorkspaceHome({
             transition: 'all 0.15s ease'
           }}
         >
-          <Sliders size={16} color="#3b82f6" />
+          <Sliders className="spc-home-accent-icon" size={16} color="#3b82f6" />
           <span>Customize Dashboard</span>
         </button>
       </div>
 
       {/* 2. Unified Quick Panels: Instant Action (Popups) + Instant Page (Direct Jump) */}
-      <div style={{
+      <div className="spc-home-quick" style={{
         background: 'var(--bg-surface, #ffffff)',
         border: '1px solid var(--border-light, #e2e8f0)',
         borderRadius: '16px',
@@ -501,11 +623,11 @@ export default function WorkspaceHome({
             marginRight: '0.4rem',
             fontSize: '0.82rem',
             fontWeight: 750,
-            color: '#d97706',
-            minWidth: '125px'
+            color: 'var(--spc-home-text)',
+            whiteSpace: 'nowrap'
           }}>
-            <Zap size={16} color="#f59e0b" />
-            <span>Instant Action:</span>
+            <Zap className="spc-home-accent-icon" size={16} color="#f59e0b" />
+            <span>Instant Action Creation:</span>
           </div>
 
           {/* Instant Lead */}
@@ -521,7 +643,7 @@ export default function WorkspaceHome({
                 borderRadius: '8px',
                 backgroundColor: '#8b5cf615',
                 border: '1px solid #8b5cf640',
-                color: '#7c3aed',
+                color: 'color-mix(in srgb, #7c3aed 40%, var(--spc-home-text))',
                 fontWeight: 650,
                 fontSize: '0.81rem',
                 cursor: 'pointer',
@@ -546,7 +668,7 @@ export default function WorkspaceHome({
                 borderRadius: '8px',
                 backgroundColor: '#2563eb15',
                 border: '1px solid #2563eb40',
-                color: '#1d4ed8',
+                color: 'color-mix(in srgb, #1d4ed8 40%, var(--spc-home-text))',
                 fontWeight: 650,
                 fontSize: '0.81rem',
                 cursor: 'pointer',
@@ -571,7 +693,7 @@ export default function WorkspaceHome({
                 borderRadius: '8px',
                 backgroundColor: '#ef444415',
                 border: '1px solid #ef444440',
-                color: '#dc2626',
+                color: 'color-mix(in srgb, #dc2626 40%, var(--spc-home-text))',
                 fontWeight: 650,
                 fontSize: '0.81rem',
                 cursor: 'pointer',
@@ -596,7 +718,7 @@ export default function WorkspaceHome({
                 borderRadius: '8px',
                 backgroundColor: '#0284c715',
                 border: '1px solid #0284c740',
-                color: '#0369a1',
+                color: 'color-mix(in srgb, #0369a1 40%, var(--spc-home-text))',
                 fontWeight: 650,
                 fontSize: '0.81rem',
                 cursor: 'pointer',
@@ -604,7 +726,33 @@ export default function WorkspaceHome({
               }}
             >
               <Users size={13} />
-              <span>+ Instant Task</span>
+              <span>+ Assign Task</span>
+            </button>
+          )}
+
+          {/* Instant Task Planner (Schedule New Daily Task) */}
+          {canTaskPlanner && (
+            <button
+              type="button"
+              onClick={() => setIsTaskPlannerModalOpen(true)}
+              title="Schedule New Daily Task"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.42rem 0.8rem',
+                borderRadius: '8px',
+                backgroundColor: '#6366f115',
+                border: '1px solid #6366f140',
+                color: 'color-mix(in srgb, #4f46e5 40%, var(--spc-home-text))',
+                fontWeight: 650,
+                fontSize: '0.81rem',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Calendar size={13} />
+              <span>+ Task Planner</span>
             </button>
           )}
 
@@ -621,7 +769,7 @@ export default function WorkspaceHome({
                 borderRadius: '8px',
                 backgroundColor: '#10b98115',
                 border: '1px solid #10b98140',
-                color: '#047857',
+                color: 'color-mix(in srgb, #047857 40%, var(--spc-home-text))',
                 fontWeight: 650,
                 fontSize: '0.81rem',
                 cursor: 'pointer',
@@ -646,7 +794,7 @@ export default function WorkspaceHome({
                 borderRadius: '8px',
                 backgroundColor: '#f9731615',
                 border: '1px solid #f9731640',
-                color: '#c2410c',
+                color: 'color-mix(in srgb, #c2410c 40%, var(--spc-home-text))',
                 fontWeight: 650,
                 fontSize: '0.81rem',
                 cursor: 'pointer',
@@ -660,7 +808,7 @@ export default function WorkspaceHome({
         </div>
 
         {/* Subtle Divider */}
-        <div style={{ height: '1px', background: 'var(--border-light, #f1f5f9)' }} />
+        <div className="spc-home-quick-divider" style={{ height: '1px', background: 'var(--border-light, #f1f5f9)' }} />
 
         {/* Tier 2: 🚀 Instant Page (1-Click Direct Page Links) */}
         <div style={{
@@ -676,10 +824,10 @@ export default function WorkspaceHome({
             marginRight: '0.4rem',
             fontSize: '0.82rem',
             fontWeight: 750,
-            color: '#2563eb',
+            color: 'var(--spc-home-text)',
             minWidth: '125px'
           }}>
-            <Navigation size={15} color="#2563eb" />
+            <Navigation className="spc-home-accent-icon" size={15} color="#2563eb" />
             <span>Instant Page:</span>
           </div>
 
@@ -694,9 +842,9 @@ export default function WorkspaceHome({
                 gap: '0.35rem',
                 padding: '0.42rem 0.75rem',
                 borderRadius: '8px',
-                backgroundColor: '#f8fafc',
+                backgroundColor: 'var(--spc-home-control-surface)',
                 border: '1px solid var(--border-light, #cbd5e1)',
-                color: 'var(--text-primary, #1e293b)',
+                color: 'var(--spc-home-text)',
                 fontWeight: 600,
                 fontSize: '0.8rem',
                 cursor: 'pointer',
@@ -704,7 +852,7 @@ export default function WorkspaceHome({
               }}
             >
               <span>📊 Lead Data</span>
-              <ArrowUpRight size={12} color="#64748b" />
+              <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
 
@@ -719,9 +867,9 @@ export default function WorkspaceHome({
                 gap: '0.35rem',
                 padding: '0.42rem 0.75rem',
                 borderRadius: '8px',
-                backgroundColor: '#f8fafc',
+                backgroundColor: 'var(--spc-home-control-surface)',
                 border: '1px solid var(--border-light, #cbd5e1)',
-                color: 'var(--text-primary, #1e293b)',
+                color: 'var(--spc-home-text)',
                 fontWeight: 600,
                 fontSize: '0.8rem',
                 cursor: 'pointer',
@@ -729,7 +877,7 @@ export default function WorkspaceHome({
               }}
             >
               <span>📦 Order Pipeline</span>
-              <ArrowUpRight size={12} color="#64748b" />
+              <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
 
@@ -744,9 +892,9 @@ export default function WorkspaceHome({
                 gap: '0.35rem',
                 padding: '0.42rem 0.75rem',
                 borderRadius: '8px',
-                backgroundColor: '#f8fafc',
+                backgroundColor: 'var(--spc-home-control-surface)',
                 border: '1px solid var(--border-light, #cbd5e1)',
-                color: 'var(--text-primary, #1e293b)',
+                color: 'var(--spc-home-text)',
                 fontWeight: 600,
                 fontSize: '0.8rem',
                 cursor: 'pointer',
@@ -754,7 +902,7 @@ export default function WorkspaceHome({
               }}
             >
               <span>⏰ Punch Station</span>
-              <ArrowUpRight size={12} color="#64748b" />
+              <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
 
@@ -769,9 +917,9 @@ export default function WorkspaceHome({
                 gap: '0.35rem',
                 padding: '0.42rem 0.75rem',
                 borderRadius: '8px',
-                backgroundColor: '#f8fafc',
+                backgroundColor: 'var(--spc-home-control-surface)',
                 border: '1px solid var(--border-light, #cbd5e1)',
-                color: 'var(--text-primary, #1e293b)',
+                color: 'var(--spc-home-text)',
                 fontWeight: 600,
                 fontSize: '0.8rem',
                 cursor: 'pointer',
@@ -779,7 +927,32 @@ export default function WorkspaceHome({
               }}
             >
               <span>✅ Daily Checklist</span>
-              <ArrowUpRight size={12} color="#64748b" />
+              <ArrowUpRight size={12} color="var(--spc-home-muted)" />
+            </button>
+          )}
+
+          {/* Task Planner Page */}
+          {canTaskPlanner && (
+            <button
+              type="button"
+              onClick={() => onNavigate('task_planner')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.42rem 0.75rem',
+                borderRadius: '8px',
+                backgroundColor: 'var(--spc-home-control-surface)',
+                border: '1px solid var(--border-light, #cbd5e1)',
+                color: 'var(--spc-home-text)',
+                fontWeight: 600,
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <span>🗓️ Task Planner</span>
+              <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
 
@@ -794,9 +967,9 @@ export default function WorkspaceHome({
                 gap: '0.35rem',
                 padding: '0.42rem 0.75rem',
                 borderRadius: '8px',
-                backgroundColor: '#f8fafc',
+                backgroundColor: 'var(--spc-home-control-surface)',
                 border: '1px solid var(--border-light, #cbd5e1)',
-                color: 'var(--text-primary, #1e293b)',
+                color: 'var(--spc-home-text)',
                 fontWeight: 600,
                 fontSize: '0.8rem',
                 cursor: 'pointer',
@@ -804,7 +977,7 @@ export default function WorkspaceHome({
               }}
             >
               <span>👥 Delegation Desk</span>
-              <ArrowUpRight size={12} color="#64748b" />
+              <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
 
@@ -819,9 +992,9 @@ export default function WorkspaceHome({
                 gap: '0.35rem',
                 padding: '0.42rem 0.75rem',
                 borderRadius: '8px',
-                backgroundColor: '#f8fafc',
+                backgroundColor: 'var(--spc-home-control-surface)',
                 border: '1px solid var(--border-light, #cbd5e1)',
-                color: 'var(--text-primary, #1e293b)',
+                color: 'var(--spc-home-text)',
                 fontWeight: 600,
                 fontSize: '0.8rem',
                 cursor: 'pointer',
@@ -829,7 +1002,7 @@ export default function WorkspaceHome({
               }}
             >
               <span>📞 Call Center Desk</span>
-              <ArrowUpRight size={12} color="#64748b" />
+              <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
 
@@ -844,9 +1017,9 @@ export default function WorkspaceHome({
                 gap: '0.35rem',
                 padding: '0.42rem 0.75rem',
                 borderRadius: '8px',
-                backgroundColor: '#f8fafc',
+                backgroundColor: 'var(--spc-home-control-surface)',
                 border: '1px solid var(--border-light, #cbd5e1)',
-                color: 'var(--text-primary, #1e293b)',
+                color: 'var(--spc-home-text)',
                 fontWeight: 600,
                 fontSize: '0.8rem',
                 cursor: 'pointer',
@@ -854,7 +1027,7 @@ export default function WorkspaceHome({
               }}
             >
               <span>📍 Field Force</span>
-              <ArrowUpRight size={12} color="#64748b" />
+              <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
 
@@ -869,9 +1042,9 @@ export default function WorkspaceHome({
                 gap: '0.35rem',
                 padding: '0.42rem 0.75rem',
                 borderRadius: '8px',
-                backgroundColor: '#f8fafc',
+                backgroundColor: 'var(--spc-home-control-surface)',
                 border: '1px solid var(--border-light, #cbd5e1)',
-                color: 'var(--text-primary, #1e293b)',
+                color: 'var(--spc-home-text)',
                 fontWeight: 600,
                 fontSize: '0.8rem',
                 cursor: 'pointer',
@@ -879,14 +1052,14 @@ export default function WorkspaceHome({
               }}
             >
               <span>🤝 Recruiter Hub</span>
-              <ArrowUpRight size={12} color="#64748b" />
+              <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
         </div>
       </div>
 
       {/* 3. Personalized Widget Cards Grid */}
-      <div style={{
+      <div className="spc-home-widgets" style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
         gap: '1.25rem'
@@ -934,10 +1107,10 @@ export default function WorkspaceHome({
                 padding: '0.6rem 0.75rem',
                 borderRadius: '8px',
                 backgroundColor: attOutTime 
-                  ? (canRePunchIn ? 'rgba(124, 58, 237, 0.06)' : '#f8fafc')
+                  ? (canRePunchIn ? 'rgba(124, 58, 237, 0.06)' : 'var(--spc-raised, #f8fafc)')
                   : (attInTime ? 'rgba(34, 197, 94, 0.08)' : 'rgba(249, 115, 22, 0.08)'),
                 border: attOutTime
-                  ? (canRePunchIn ? '1px solid rgba(124, 58, 237, 0.25)' : '1px solid #e2e8f0')
+                  ? (canRePunchIn ? '1px solid rgba(124, 58, 237, 0.25)' : '1px solid var(--spc-line, #e2e8f0)')
                   : (attInTime ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(249, 115, 22, 0.3)'),
                 fontSize: '0.82rem',
                 display: 'flex',
@@ -946,26 +1119,26 @@ export default function WorkspaceHome({
               }}>
                 {attInTime ? (
                   <div>
-                    <span style={{ fontWeight: 700, color: '#15803d' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--spc-home-success, #15803d)' }}>
                       🟢 In: {attInTime}
                     </span>
                     {attOutTime ? (
-                      <span style={{ marginLeft: '8px', fontWeight: 700, color: '#475569' }}>
+                      <span style={{ marginLeft: '8px', fontWeight: 700, color: 'var(--spc-muted, #475569)' }}>
                         • Out: {attOutTime}
                       </span>
                     ) : (
-                      <span style={{ marginLeft: '8px', color: '#16a34a', fontSize: '0.78rem' }}>
+                      <span style={{ marginLeft: '8px', color: 'var(--spc-home-success, #16a34a)', fontSize: '0.78rem' }}>
                         (Active Shift)
                       </span>
                     )}
                     {canRePunchIn && (
-                      <div style={{ marginTop: '3px', fontSize: '0.75rem', color: '#7c3aed', fontWeight: 600 }}>
+                      <div style={{ marginTop: '3px', fontSize: '0.75rem', color: 'var(--spc-home-violet, #7c3aed)', fontWeight: 600 }}>
                         ⚡ Multi-punch enabled — aap dobara punch in kar sakte hain
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div style={{ color: '#ea580c', fontWeight: 650 }}>
+                  <div style={{ color: 'var(--spc-home-warning, #ea580c)', fontWeight: 650 }}>
                     🔴 You have not punched in today yet.
                   </div>
                 )}
@@ -973,7 +1146,7 @@ export default function WorkspaceHome({
                   <div style={{
                     fontSize: '0.78rem',
                     fontWeight: 700,
-                    color: punchNotice.type === 'success' ? '#16a34a' : '#dc2626',
+                    color: punchNotice.type === 'success' ? 'var(--spc-home-success, #16a34a)' : 'var(--spc-home-danger, #dc2626)',
                     marginTop: '2px'
                   }}>
                     {punchNotice.message}
@@ -1301,7 +1474,7 @@ export default function WorkspaceHome({
                         borderRadius: '6px',
                         backgroundColor: '#2563eb12',
                         border: '1px solid #2563eb30',
-                        color: '#1d4ed8',
+                        color: 'var(--spc-home-blue, #1d4ed8)',
                         fontSize: '0.72rem',
                         fontWeight: 700,
                         cursor: 'pointer',
@@ -1410,7 +1583,7 @@ export default function WorkspaceHome({
                         borderRadius: '6px',
                         backgroundColor: '#6366f112',
                         border: '1px solid #6366f130',
-                        color: '#4f46e5',
+                        color: 'var(--spc-home-violet, #4f46e5)',
                         fontSize: '0.72rem',
                         fontWeight: 700,
                         cursor: 'pointer',
@@ -1521,7 +1694,7 @@ export default function WorkspaceHome({
                         borderRadius: '6px',
                         backgroundColor: '#ef444412',
                         border: '1px solid #ef444430',
-                        color: '#dc2626',
+                        color: 'var(--spc-home-danger, #dc2626)',
                         fontSize: '0.72rem',
                         fontWeight: 700,
                         cursor: 'pointer',
@@ -1630,7 +1803,7 @@ export default function WorkspaceHome({
                         borderRadius: '6px',
                         backgroundColor: '#ec489912',
                         border: '1px solid #ec489930',
-                        color: '#db2777',
+                        color: 'var(--spc-home-pink, #db2777)',
                         fontSize: '0.72rem',
                         fontWeight: 700,
                         cursor: 'pointer',
@@ -1735,6 +1908,27 @@ export default function WorkspaceHome({
         userId={userId}
         userName={userName}
         userEmail={userEmail}
+        userCompany={userCompany}
+      />
+
+      {/* Instant Task Planner Modal (Schedule New Daily Task) */}
+      <QuickTaskModal
+        isOpen={isTaskPlannerModalOpen}
+        onClose={() => setIsTaskPlannerModalOpen(false)}
+        onSave={async (formData) => {
+          const res = await createTaskPlannerItem({ ...formData, tenant_id: tenantId }, tenantId);
+          if (!res?.success) {
+            throw new Error(res?.error || 'Failed to schedule task');
+          }
+          if (typeof window !== 'undefined') {
+            try {
+              window.dispatchEvent(new CustomEvent('task_planner_updated'));
+            } catch {}
+          }
+        }}
+        employeeName={userName}
+        employeeEmail={userEmail}
+        tenantId={tenantId}
         userCompany={userCompany}
       />
     </div>

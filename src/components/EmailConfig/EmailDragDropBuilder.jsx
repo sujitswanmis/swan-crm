@@ -1750,7 +1750,7 @@ export default function EmailDragDropBuilder({
                       ))}
                     </div>
                   </div>
-                  <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', padding: '0.5rem', background: '#f8fafc', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-primary, #1e293b)', padding: '0.5rem', background: 'var(--bg-primary, #f8fafc)', borderRadius: '6px' }}>
                     Displays 4 colored quality badges: In-stock ready, Fast-dispatch, Heavy Duty Tested, 1 Year Warranty.
                   </div>
                 </div>

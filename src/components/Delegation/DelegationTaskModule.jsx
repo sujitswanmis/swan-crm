@@ -1003,6 +1003,24 @@ export default function DelegationTaskModule({
         loadAnalytics();
       }
     } catch (e) {
+      const isNetErr = (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        (e && (e.name === 'TypeError' || /failed to fetch|network\s*error|load\s*failed|fetch failed/i.test(e.message || '')));
+      if (isNetErr) {
+        const check = canPerformOfflineAction('delegationStatusUpdate');
+        if (check.allowed) {
+          const queued = await enqueueOfflineAction('update', 'delegation_update', {
+            taskId: task.id,
+            status: 'IN_PROGRESS',
+            user: { name: userName, email: userEmail },
+            tenantId: effectiveTenantId
+          });
+          if (queued) {
+            setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'IN_PROGRESS' } : t));
+            showNotification('⚡ Network issue: Task marked as In Progress (saved to device)');
+            return;
+          }
+        }
+      }
       showNotification(e.message, true);
     }
   };
@@ -1060,6 +1078,27 @@ export default function DelegationTaskModule({
         showNotification(res.error || 'Failed to submit task', true);
       }
     } catch (e) {
+      const isNetErr = (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        (e && (e.name === 'TypeError' || /failed to fetch|network\s*error|load\s*failed|fetch failed/i.test(e.message || '')));
+      if (isNetErr) {
+        const check = canPerformOfflineAction('delegationStatusUpdate');
+        if (check.allowed) {
+          const queued = await enqueueOfflineAction('update', 'delegation_update', {
+            taskId: submittingTask.id,
+            status: 'SUBMITTED',
+            completionNotes: submissionNotes,
+            completionProof: submissionProof,
+            user: { name: userName, email: userEmail },
+            tenantId: effectiveTenantId
+          });
+          if (queued) {
+            setTasks(prev => prev.map(t => t.id === submittingTask.id ? { ...t, status: 'SUBMITTED', completion_notes: submissionNotes, completion_proof: submissionProof } : t));
+            showNotification('⚡ Network issue: Task submission saved to device! Will sync when connected.');
+            setSubmitModalOpen(false);
+            return;
+          }
+        }
+      }
       showNotification(e.message, true);
     }
   };
@@ -1101,6 +1140,24 @@ export default function DelegationTaskModule({
       });
       loadTasks();
     } catch (e) {
+      const isNetErr = (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        (e && (e.name === 'TypeError' || /failed to fetch|network\s*error|load\s*failed|fetch failed/i.test(e.message || '')));
+      if (isNetErr) {
+        const check = canPerformOfflineAction('delegationStatusUpdate');
+        if (check.allowed) {
+          const queued = await enqueueOfflineAction('update', 'delegation_update', {
+            taskId: task.id,
+            status: task.status === 'PENDING' ? 'IN_PROGRESS' : task.status,
+            subtasks: updatedSubtasks,
+            user: { name: userName, email: userEmail },
+            tenantId: effectiveTenantId
+          });
+          if (queued) {
+            setTasks(prev => prev.map(t => t.id === task.id ? { ...t, subtasks: updatedSubtasks } : t));
+            return;
+          }
+        }
+      }
       console.warn(e);
     }
   };

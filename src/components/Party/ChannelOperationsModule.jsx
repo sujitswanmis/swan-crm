@@ -232,8 +232,27 @@ export default function ChannelOperationsModule({
     return OPERATIONS_TABS.find(t => t.id === activeTab) || OPERATIONS_TABS[0];
   }, [activeTab]);
 
+  const useDashboardTheme = ['order_followup', 'order_pipeline', 'complaints'].includes(activeTab);
+
   return (
-    <div style={{ padding: '0.5rem 0.5rem 1.5rem', color: 'var(--text-primary)', background: 'var(--bg-primary)', minHeight: '100%', width: '100%' }}>
+    <div
+      data-spc-module-theme={useDashboardTheme || undefined}
+      style={{
+        ...(useDashboardTheme && {
+          '--channel-action-fill': 'color-mix(in srgb, var(--accent-color) 33%, #1a1816)',
+          '--spc-view-info': 'color-mix(in srgb, #2563eb 27%, var(--spc-view-text))',
+          '--spc-view-success': 'color-mix(in srgb, #0f9f5b 27%, var(--spc-view-text))',
+          '--spc-view-warning': 'color-mix(in srgb, #d97706 27%, var(--spc-view-text))',
+          '--spc-view-danger': 'color-mix(in srgb, #dc2626 27%, var(--spc-view-text))',
+          '--spc-view-violet': 'color-mix(in srgb, #7c3aed 27%, var(--spc-view-text))'
+        }),
+        padding: '0.5rem 0.5rem 1.5rem',
+        color: 'var(--text-primary)',
+        background: useDashboardTheme ? 'var(--spc-view-canvas)' : 'var(--bg-primary)',
+        minHeight: '100%',
+        width: '100%'
+      }}
+    >
       {/* Top Module Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
@@ -242,8 +261,8 @@ export default function ChannelOperationsModule({
               width: '44px',
               height: '44px',
               borderRadius: '12px',
-              background: 'linear-gradient(135deg, rgba(37,99,235,0.2) 0%, rgba(59,130,246,0.3) 100%)',
-              border: '1px solid rgba(59,130,246,0.4)',
+              background: 'var(--spc-view-info-bg, linear-gradient(135deg, rgba(37,99,235,0.2) 0%, rgba(59,130,246,0.3) 100%))',
+              border: '1px solid var(--spc-view-info-border, rgba(59,130,246,0.4))',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -317,7 +336,7 @@ export default function ChannelOperationsModule({
                 padding: '0.6rem 1.1rem',
                 borderRadius: '8px',
                 border: 'none',
-                background: isActive ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : 'transparent',
+                background: isActive ? 'var(--channel-action-fill, linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%))' : 'transparent',
                 color: isActive ? '#fff' : 'var(--text-secondary)',
                 fontWeight: isActive ? 700 : 600,
                 fontSize: '0.84rem',
@@ -337,8 +356,10 @@ export default function ChannelOperationsModule({
                   fontWeight: 800,
                   padding: '0.1rem 0.45rem',
                   borderRadius: '10px',
-                  background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(59,130,246,0.15)',
-                  color: isActive ? '#fff' : '#60a5fa'
+                  background: isActive
+                    ? (useDashboardTheme ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.25)')
+                    : 'var(--spc-view-info-bg, rgba(59,130,246,0.15))',
+                  color: isActive ? '#fff' : 'var(--spc-view-info, #60a5fa)'
                 }}>
                   {badgeCount}
                 </span>

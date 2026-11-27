@@ -652,7 +652,7 @@ const LeadStatusCell = React.memo(({ info }) => {
         showSyncToast(check.reason, 'error', 6000);
         return;
       }
-      await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id });
+      await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteText, noteText });
       showSyncToast(`⚠️ Cloud save failed (${netErr?.message || 'Network issue'}). Saved in Offline Sync Center & auto-syncing!`, 'warning', 6000);
       const updatedRawLead = {
         ...lead,
@@ -2495,7 +2495,7 @@ export default function LeadTable({
         showSyncToast(check.reason, 'error', 6000);
         return;
       }
-      await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id });
+      await enqueueOfflineAction('update', 'lead', { ...updates, id: lead.id, updated_at: nowIso, last_timestamp: nowIso, latest_remark: noteText, noteText });
       showSyncToast(`⚠️ Cloud save failed (${netErr?.message || 'Network issue'}). Saved in Offline Sync Center & auto-syncing!`, 'warning', 6000);
       const updatedRawLead = {
         ...lead,

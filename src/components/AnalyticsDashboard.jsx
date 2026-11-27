@@ -1,7 +1,8 @@
 'use client';
 
 import './AnalyticsDashboard.css';
-import MobileTableView from '@/components/common/MobileTableView';
+import MobileTableView, { useTableViewPreference } from '@/components/common/MobileTableView';
+import StandardTablePagination from '@/components/common/StandardTablePagination';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
@@ -18,6 +19,159 @@ import {
 } from 'lucide-react';
 import DateRangePicker, { computeDateRange } from '@/components/common/DateRangePicker';
 import SearchableEmployeeSelect from '@/components/common/SearchableEmployeeSelect';
+import { ColumnResizer, useTableColumnResize } from '@/utils/tableColumnResize';
+
+const PHASE31_TABLES = {
+  overview: {
+    id: 'AnalyticsDashboard-1',
+    label: 'Employee activity',
+    columns: [
+      ['employee', 'Employee', 156],
+      ['leads', 'Leads', 75, 'center'],
+      ['updates', 'Updates', 82, 'right'],
+    ],
+  },
+  scorecard: {
+    id: 'AnalyticsDashboard-2',
+    label: 'Performance leaderboard',
+    columns: [
+      ['rank', 'Rank', 76, 'center'],
+      ['executive', 'Executive & Role', 204],
+      ['score', 'Overall Score', 112, 'center'],
+      ['leads', 'Leads Touched', 132, 'center'],
+      ['recruiting', 'Recruiter (30p)', 158],
+      ['followup', 'Follow-up Discipline (25p)', 172],
+      ['checklists', 'Checklists (20p)', 128],
+      ['tasks', 'Tasks (15p)', 126],
+      ['attendance', 'Attendance (10p)', 138],
+    ],
+  },
+  delegation: {
+    id: 'AnalyticsDashboard-3',
+    label: 'Recent delegated tasks',
+    columns: [
+      ['code', 'Code', 120], ['title', 'Task Title', 240],
+      ['priority', 'Priority', 98, 'center'], ['assigned', 'Assigned To', 158],
+      ['deadline', 'Deadline', 156], ['status', 'Status', 128, 'center'],
+    ],
+  },
+  leads: {
+    id: 'AnalyticsDashboard-7',
+    label: 'Lead stages by representative',
+    columns: [
+      ['representative', 'Representative', 155], ['department', 'Department', 147],
+      ['s1', 'S1 New', 72, 'center', '#3b82f6'], ['s2', 'S2 Contact', 86, 'center', '#06b6d4'],
+      ['s3', 'S3 Qual', 76, 'center', '#8b5cf6'], ['s4', 'S4 Follow', 80, 'center', '#f59e0b'],
+      ['s5', 'S5 Process', 92, 'center', '#ec4899'], ['s6', 'S6 Convert', 91, 'center', '#10b981'],
+      ['s7', 'S7 Final', 76, 'center', '#6366f1'],
+      ['assigned', 'Total Assigned', 112, 'right'], ['touched', 'Leads Touched', 112, 'right'],
+      ['rate', 'Touch Rate %', 106, 'right'], ['outreach', 'Outreach Score', 114, 'center'],
+    ],
+  },
+};
+const TASK_STATUS_TONES = { COMPLETED: 'success', IN_PROGRESS: 'info', SUBMITTED: 'violet', REOPENED: 'warning' };
+
+function phaseInk(color) {
+  return `color-mix(in srgb, ${color} 30%, var(--spc-view-text))`;
+}
+
+function phaseAvatar(color) {
+  return { color: phaseInk(color), backgroundColor: `color-mix(in srgb, ${color} 14%, var(--spc-view-surface))` };
+}
+
+function analyticsPageSize() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('crmPageNavSettings') || '{}').defaultPageSize;
+    if (stored === 'All') return 100000;
+    const size = Number(stored);
+    if (Number.isSafeInteger(size) && size > 0) return size;
+  } catch {
+    // Use the default when browser storage is unavailable.
+  }
+  return 15;
+}
+
+function AnalyticsPhaseTable({ table, rows, resetKey, empty, renderRow }) {
+  const [pageSize, setPageSize] = useState(analyticsPageSize);
+  const [paging, setPaging] = useState({ resetKey, page: 1 });
+  const [view] = useTableViewPreference(table.id);
+  const defaultWidths = useMemo(() => Object.fromEntries(table.columns.map(([key, , width]) => [key, width])), [table]);
+  const sizing = useTableColumnResize(table.id + '-phase31-widths', defaultWidths);
+  if (paging.resetKey !== resetKey) setPaging({ resetKey, page: 1 });
+  const page = Math.min(paging.resetKey === resetKey ? paging.page : 1, Math.max(1, Math.ceil(rows.length / pageSize)));
+  const tiles = view === 'tiles' && rows.length > 0;
+  const start = tiles ? 0 : (page - 1) * pageSize;
+  const shownRows = tiles ? rows : rows.slice(start, start + pageSize);
+
+  useEffect(() => {
+    let savedDefault = analyticsPageSize();
+    const reloadPageSize = () => {
+      const nextDefault = analyticsPageSize();
+      if (nextDefault === savedDefault) return;
+      savedDefault = nextDefault;
+      setPageSize(nextDefault);
+      setPaging(current => ({ ...current, page: 1 }));
+    };
+    window.addEventListener('crm_page_nav_updated', reloadPageSize);
+    window.addEventListener('crm_config_updated', reloadPageSize);
+    return () => {
+      window.removeEventListener('crm_page_nav_updated', reloadPageSize);
+      window.removeEventListener('crm_config_updated', reloadPageSize);
+    };
+  }, []);
+
+  return (
+    <>
+      <div className="an-phase-table-scroll" role="region" aria-label={table.label} tabIndex={0}>
+        <MobileTableView key={resetKey} id={table.id} view={view} hideToggle>
+          <table aria-label={table.label} className="an-phase-table" style={{ minWidth: sizing.getTotalTableWidth() }}>
+            <colgroup>{table.columns.map(([key]) => <col key={key} style={{ width: sizing.colWidths[key] }} />)}</colgroup>
+            <thead>
+              <tr>{table.columns.map(([key, label, , align, color]) => (
+                <th key={key} scope="col" style={{ textAlign: align, color: color ? phaseInk(color) : undefined }}>
+                  {label}
+                  <ColumnResizer colKey={key} isResizing={sizing.isResizing(key)}
+                    onResizeStart={sizing.handleResizeStart} onReset={sizing.resetColWidth} />
+                </th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {shownRows.length ? shownRows.map((row, index) => renderRow(row, start + index)) : (
+                <tr><td colSpan={table.columns.length} className="an-report-empty">{empty}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </MobileTableView>
+      </div>
+      {!tiles && (
+        <StandardTablePagination className="an-phase-pagination" currentPage={page} totalRecords={rows.length} pageSize={pageSize}
+          onPageChange={next => setPaging({ resetKey, page: next })}
+          onPageSizeChange={size => { setPageSize(size); setPaging({ resetKey, page: 1 }); }} />
+      )}
+    </>
+  );
+}
+
+function AnalyticsStageChart({ data, height }) {
+  return (
+    <div className="an-phase-chart">
+      <ResponsiveContainer width="100%" height={height} minWidth={0}>
+        <BarChart data={data} margin={{ top: 14, right: 12, left: 0, bottom: 8 }} accessibilityLayer>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--spc-view-border)" />
+          <XAxis dataKey="name" axisLine={false} tickLine={false} minTickGap={12}
+            tickFormatter={name => name.replace(/\s+Stage$/i, '')} tick={{ fontSize: 11, fill: 'var(--an-report-muted)' }} />
+          <YAxis width={42} axisLine={false} tickLine={false} allowDecimals={false} tick={{ fill: 'var(--an-report-muted)', fontSize: 11 }} />
+          <RechartsTooltip cursor={{ fill: 'var(--spc-view-raised)' }}
+            contentStyle={{ backgroundColor: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '8px' }}
+            itemStyle={{ color: 'var(--spc-view-text)' }} />
+          <Bar dataKey="count" name="Leads" fill="var(--an-report-accent)" radius={[4, 4, 0, 0]} isAnimationActive={false}>
+            <LabelList dataKey="count" position="top" style={{ fill: 'var(--spc-view-text)', fontSize: 11, fontWeight: 600 }} />
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
 const COLORS = [
   'var(--chart-1, #3b82f6)',
@@ -1443,7 +1597,7 @@ export default function AnalyticsDashboard({
       t.assigned_to_name?.toLowerCase().includes(q) ||
       t.delegated_by_name?.toLowerCase().includes(q)
     );
-  }, [assignedWork.delegation, taskSearch]);
+  }, [assignedWork.delegation, taskSearch, selectedEmployeeEmails, selectedEmployeeObjs]);
 
   // Filtered Checklists list
   const checklistItemsList = useMemo(() => {
@@ -1621,13 +1775,30 @@ export default function AnalyticsDashboard({
     }
   };
 
+  const phase31 = ['overview', 'scorecard', 'delegation', 'lead-data', 'pipeline'].includes(activeTab);
+  const phaseScopeKey = phase31 ? JSON.stringify([tenantId, adminCompanyFilter, datePreset, startDate, endDate, selectedEmployeeEmails]) : '';
+  const overviewActivitySource = employeeActivityList.length > 0 ? employeeActivityList : (metrics.employeeActivity || []);
+  const overviewActivity = activeTab === 'overview' && selectedEmployeeEmails.length
+    ? overviewActivitySource.filter(row => selectedEmployeeObjs.some(employee => isEmployeeMatch(row.email || row.employee, employee)))
+    : overviewActivitySource;
+  const phaseLoading = activeTab === 'scorecard' ? loadingSummaries || loadingAssignedWork
+    : activeTab === 'delegation' ? loadingAssignedWork : loading;
+  const legacyReportTheme = ['checklist', 'attendance', 'recruiter'].includes(activeTab);
+  const useReportTheme = phase31 || legacyReportTheme;
+  const reportLoading = legacyReportTheme && (loadingSummaries || (activeTab !== 'recruiter' && loadingAssignedWork));
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+    <div
+      data-spc-module-theme={useReportTheme || undefined}
+      data-analytics-report-theme={useReportTheme ? activeTab : undefined}
+      data-analytics-phase31={phase31 ? activeTab : undefined}
+      style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}
+    >
 
       {/* ========================================================================= */}
       {/* 🔝 FIXED / STICKY TOP CONTROL BAR + EXECUTIVE TABS                        */}
       {/* ========================================================================= */}
-      <div style={{
+      <div className={phase31 ? 'an-phase-toolbar' : undefined} style={{
         position: 'sticky', top: 0, zIndex: 30,
         backgroundColor: 'var(--bg-surface)',
         borderRadius: '12px', border: '1px solid var(--border-light)',
@@ -1756,26 +1927,32 @@ export default function AnalyticsDashboard({
       {/* ========================================================================= */}
       {/* 📊 TAB 1: EXECUTIVE OVERVIEW (360° SUMMARY)                              */}
       {/* ========================================================================= */}
+      {phase31 && phaseLoading && (
+        <div className="an-report-loading" role="status">
+          <Loader2 size={16} className="animate-spin" aria-hidden="true" /> Updating report…
+        </div>
+      )}
+
       {activeTab === 'overview' && (
-        <div className="flex flex-col gap-5">
+        <div className="an-phase-body">
 
           {/* 5 Top Core KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3.5">
+          <div className="an-phase-kpis">
             {/* KPI 1: Assigned Leads */}
             <div className="card an-card-hover p-4 border-l-4 border-l-blue-500 flex flex-col gap-2 rounded-xl shadow-sm bg-[var(--bg-surface)]">
               <div className="flex justify-between items-center">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
                   {isAllTime ? '🎯 Assigned Leads' : `🎯 Leads Active (${dateFilterLabel})`}
                 </span>
-                <Target size={15} className="text-blue-500" />
+                <Target size={15} className="text-[var(--an-report-info)]" />
               </div>
               <div className="text-3xl font-extrabold text-[var(--text-primary)] leading-none">{kpis.total.toLocaleString('en-IN')}</div>
               <div className="text-xs flex gap-2 flex-wrap items-center">
-                <span className="text-amber-600 font-bold">⚡ {kpis.actionNeeded} Need Action</span>
-                <span className="text-emerald-600 font-semibold">🏆 {kpis.won} Won</span>
+                <span className="text-[var(--an-report-warning)] font-bold">⚡ {kpis.actionNeeded} Need Action</span>
+                <span className="text-[var(--an-report-success)] font-semibold">🏆 {kpis.won} Won</span>
                 {!isAllTime && <span className="text-[var(--text-secondary)] font-medium">({leads.length.toLocaleString('en-IN')} in CRM)</span>}
               </div>
-              <button onClick={() => onNavigateTab?.('leads')} className="flex items-center gap-1.5 bg-transparent border-0 border-t border-[var(--border-light)] text-blue-500 text-xs font-semibold cursor-pointer pt-2 mt-auto hover:text-blue-600 transition-colors">
+              <button onClick={() => onNavigateTab?.('leads')} className="flex items-center gap-1.5 bg-transparent border-0 border-t border-[var(--border-light)] text-[var(--an-report-info)] text-xs font-semibold cursor-pointer pt-2 mt-auto hover:text-[var(--an-report-info)] transition-colors">
                 Open Leads <ArrowRight size={11} />
               </button>
             </div>
@@ -1784,14 +1961,14 @@ export default function AnalyticsDashboard({
             <div className={`card an-card-hover p-4 border-l-4 ${kpis.overdueFollowups > 0 ? 'border-l-red-500' : 'border-l-amber-500'} flex flex-col gap-2 rounded-xl shadow-sm bg-[var(--bg-surface)]`}>
               <div className="flex justify-between items-center">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">📞 Follow-ups</span>
-                <CalendarClock size={15} className={kpis.overdueFollowups > 0 ? 'text-red-500' : 'text-amber-500'} />
+                <CalendarClock size={15} className={kpis.overdueFollowups > 0 ? 'text-[var(--an-report-danger)]' : 'text-[var(--an-report-warning)]'} />
               </div>
               <div className="text-3xl font-extrabold text-[var(--text-primary)] leading-none">{kpis.followUps.toLocaleString('en-IN')}</div>
               <div className="text-xs flex gap-2 flex-wrap items-center">
-                {kpis.overdueFollowups > 0 && <span className="text-red-600 font-bold">🚨 {kpis.overdueFollowups} Overdue</span>}
-                <span className="text-amber-700 font-semibold">📅 {kpis.todayFollowups} Today</span>
+                {kpis.overdueFollowups > 0 && <span className="text-[var(--an-report-danger)] font-bold">🚨 {kpis.overdueFollowups} Overdue</span>}
+                <span className="text-[var(--an-report-warning)] font-semibold">📅 {kpis.todayFollowups} Today</span>
               </div>
-              <button onClick={() => onNavigateTab?.('leads')} className="flex items-center gap-1.5 bg-transparent border-0 border-t border-[var(--border-light)] text-amber-500 text-xs font-semibold cursor-pointer pt-2 mt-auto hover:text-amber-600 transition-colors">
+              <button onClick={() => onNavigateTab?.('leads')} className="flex items-center gap-1.5 bg-transparent border-0 border-t border-[var(--border-light)] text-[var(--an-report-warning)] text-xs font-semibold cursor-pointer pt-2 mt-auto hover:text-[var(--an-report-warning)] transition-colors">
                 Open Leads <ArrowRight size={11} />
               </button>
             </div>
@@ -1800,11 +1977,11 @@ export default function AnalyticsDashboard({
             <div className="card an-card-hover p-4 border-l-4 border-l-emerald-500 flex flex-col gap-2 rounded-xl shadow-sm bg-[var(--bg-surface)]">
               <div className="flex justify-between items-center">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">🏆 Deals Won</span>
-                <CheckCircle2 size={15} className="text-emerald-500" />
+                <CheckCircle2 size={15} className="text-[var(--an-report-success)]" />
               </div>
               <div className="text-3xl font-extrabold text-[var(--text-primary)] leading-none">{kpis.won}</div>
               <div className="text-xs text-[var(--text-secondary)]">{kpis.inPipeline} in active pipeline</div>
-              <button onClick={() => setActiveTab('lead-data')} className="flex items-center gap-1.5 bg-transparent border-0 border-t border-[var(--border-light)] text-emerald-600 text-xs font-semibold cursor-pointer pt-2 mt-auto hover:text-emerald-700 transition-colors">
+              <button onClick={() => setActiveTab('lead-data')} className="flex items-center gap-1.5 bg-transparent border-0 border-t border-[var(--border-light)] text-[var(--an-report-success)] text-xs font-semibold cursor-pointer pt-2 mt-auto hover:text-[var(--an-report-success)] transition-colors">
                 Lead Data View <ArrowRight size={11} />
               </button>
             </div>
@@ -1813,18 +1990,18 @@ export default function AnalyticsDashboard({
             <div className={`card an-card-hover p-4 border-l-4 ${delegation.overdue > 0 ? 'border-l-red-500' : 'border-l-purple-500'} flex flex-col gap-2 rounded-xl shadow-sm bg-[var(--bg-surface)]`}>
               <div className="flex justify-between items-center">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">📋 Delegated Tasks</span>
-                {loadingAssignedWork ? <Loader2 size={14} className="animate-spin text-purple-500" /> : <CheckSquare size={15} className="text-purple-500" />}
+                {loadingAssignedWork ? <Loader2 size={14} className="animate-spin text-[var(--an-report-violet)]" /> : <CheckSquare size={15} className="text-[var(--an-report-violet)]" />}
               </div>
               <div className="text-3xl font-extrabold text-[var(--text-primary)] leading-none">
                 {loadingAssignedWork ? '—' : delegation.total}
               </div>
               <div className="text-xs flex gap-2 flex-wrap items-center">
-                <span className={delegation.overdue > 0 ? 'text-red-600 font-bold' : 'text-[var(--text-secondary)] font-medium'}>
+                <span className={delegation.overdue > 0 ? 'text-[var(--an-report-danger)] font-bold' : 'text-[var(--text-secondary)] font-medium'}>
                   {delegation.overdue > 0 ? `🚨 ${delegation.overdue} Overdue` : `⏳ ${delegation.pending + delegation.inProgress} Pending`}
                 </span>
-                <span className="text-emerald-600 font-semibold">✅ {delegation.completed} Done</span>
+                <span className="text-[var(--an-report-success)] font-semibold">✅ {delegation.completed} Done</span>
               </div>
-              <button onClick={() => setActiveTab('delegation')} className="flex items-center gap-1.5 bg-transparent border-0 border-t border-[var(--border-light)] text-purple-600 text-xs font-semibold cursor-pointer pt-2 mt-auto hover:text-purple-700 transition-colors">
+              <button onClick={() => setActiveTab('delegation')} className="flex items-center gap-1.5 bg-transparent border-0 border-t border-[var(--border-light)] text-[var(--an-report-violet)] text-xs font-semibold cursor-pointer pt-2 mt-auto hover:text-[var(--an-report-violet)] transition-colors">
                 Task Manager <ArrowRight size={11} />
               </button>
             </div>
@@ -1839,7 +2016,7 @@ export default function AnalyticsDashboard({
                   style={{ width: `${workHealthScore}%` }} 
                 />
               </div>
-              <div className={`text-xs font-bold ${workHealthScore >= 75 ? 'text-emerald-700' : workHealthScore >= 45 ? 'text-amber-700' : 'text-red-600'}`}>
+              <div className={`text-xs font-bold ${workHealthScore >= 75 ? 'text-[var(--an-report-success)]' : workHealthScore >= 45 ? 'text-[var(--an-report-warning)]' : 'text-[var(--an-report-danger)]'}`}>
                 {workHealthScore >= 80 ? '🌟 Outstanding' : workHealthScore >= 50 ? '👍 On Track' : '⚠️ Needs Attention'}
               </div>
             </div>
@@ -1852,22 +2029,22 @@ export default function AnalyticsDashboard({
                 ⚡ Action Required
               </span>
               {kpis.overdueFollowups > 0 && (
-                <button onClick={() => onNavigateTab?.('leads')} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30 hover:bg-red-500/20 cursor-pointer transition-colors">
+                <button onClick={() => onNavigateTab?.('leads')} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[var(--an-report-danger-bg)] text-[var(--an-report-danger)] border border-red-500/30 hover:bg-[var(--an-report-danger-bg)] cursor-pointer transition-colors">
                   <AlertTriangle size={12} /> {kpis.overdueFollowups} Overdue Follow-ups → Open Leads
                 </button>
               )}
               {kpis.todayFollowups > 0 && (
-                <button onClick={() => onNavigateTab?.('leads')} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 cursor-pointer transition-colors">
+                <button onClick={() => onNavigateTab?.('leads')} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[var(--an-report-warning-bg)] text-[var(--an-report-warning)] border border-amber-500/30 hover:bg-[var(--an-report-warning-bg)] cursor-pointer transition-colors">
                   📅 {kpis.todayFollowups} Follow-ups Due Today → Open Leads
                 </button>
               )}
               {delegation.overdue > 0 && (
-                <button onClick={() => setActiveTab('delegation')} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30 hover:bg-red-500/20 cursor-pointer transition-colors">
+                <button onClick={() => setActiveTab('delegation')} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[var(--an-report-danger-bg)] text-[var(--an-report-danger)] border border-red-500/30 hover:bg-[var(--an-report-danger-bg)] cursor-pointer transition-colors">
                   🚨 {delegation.overdue} Tasks Overdue → Task Manager
                 </button>
               )}
               {checklists.pending > 0 && (
-                <button onClick={() => setActiveTab('checklist')} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 cursor-pointer transition-colors">
+                <button onClick={() => setActiveTab('checklist')} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[var(--an-report-success-bg)] text-[var(--an-report-success)] border border-emerald-500/30 hover:bg-[var(--an-report-success-bg)] cursor-pointer transition-colors">
                   ✅ {checklists.pending} Checklists Pending → Open Checklist
                 </button>
               )}
@@ -1880,9 +2057,9 @@ export default function AnalyticsDashboard({
             <div className="flex flex-col gap-1.5 md:border-r md:border-[var(--border-light)] md:pr-4">
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-[var(--text-secondary)] flex items-center gap-1.5">
-                  <UserCheck size={14} className="text-blue-600" /> Today's Attendance
+                  <UserCheck size={14} className="text-[var(--an-report-info)]" /> Today&apos;s Attendance
                 </span>
-                <span className="text-xs text-blue-600 font-semibold cursor-pointer hover:underline" onClick={() => setActiveTab('attendance')}>
+                <span className="text-xs text-[var(--an-report-info)] font-semibold cursor-pointer hover:underline" onClick={() => setActiveTab('attendance')}>
                   View Ops →
                 </span>
               </div>
@@ -1890,9 +2067,9 @@ export default function AnalyticsDashboard({
                 {attendanceStats.effectivePresent} / {attendanceStats.total} Staff Active
               </div>
               <div className="text-xs flex gap-2 flex-wrap items-center">
-                <span className="text-emerald-600 font-semibold">✅ {attendanceStats.punched} Punched</span>
-                <span className="text-blue-600 font-semibold">⚡ {attendanceStats.crmActiveOnly} CRM Active</span>
-                <span className="text-red-600 font-semibold">🚫 {attendanceStats.absent} Absent</span>
+                <span className="text-[var(--an-report-success)] font-semibold">✅ {attendanceStats.punched} Punched</span>
+                <span className="text-[var(--an-report-info)] font-semibold">⚡ {attendanceStats.crmActiveOnly} CRM Active</span>
+                <span className="text-[var(--an-report-danger)] font-semibold">🚫 {attendanceStats.absent} Absent</span>
               </div>
             </div>
 
@@ -1900,9 +2077,9 @@ export default function AnalyticsDashboard({
             <div className="flex flex-col gap-1.5 md:border-r md:border-[var(--border-light)] md:pr-4">
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-[var(--text-secondary)] flex items-center gap-1.5">
-                  <ClipboardList size={14} className="text-emerald-500" /> Checklist Compliance
+                  <ClipboardList size={14} className="text-[var(--an-report-success)]" /> Checklist Compliance
                 </span>
-                <span className="text-xs text-emerald-600 font-semibold cursor-pointer hover:underline" onClick={() => setActiveTab('checklist')}>
+                <span className="text-xs text-[var(--an-report-success)] font-semibold cursor-pointer hover:underline" onClick={() => setActiveTab('checklist')}>
                   View Ops →
                 </span>
               </div>
@@ -1910,10 +2087,10 @@ export default function AnalyticsDashboard({
                 {dashboardSummaries.checklistSummary?.complianceRate ?? checklists.complianceRate}% Completed
               </div>
               <div className="text-xs flex gap-2 flex-wrap items-center">
-                <span className="text-emerald-600 font-semibold">✅ {dashboardSummaries.checklistSummary?.completed ?? checklists.completed} Done</span>
-                <span className="text-amber-600 font-semibold">⏳ {dashboardSummaries.checklistSummary?.pending ?? checklists.pending} Pending</span>
+                <span className="text-[var(--an-report-success)] font-semibold">✅ {dashboardSummaries.checklistSummary?.completed ?? checklists.completed} Done</span>
+                <span className="text-[var(--an-report-warning)] font-semibold">⏳ {dashboardSummaries.checklistSummary?.pending ?? checklists.pending} Pending</span>
                 {(dashboardSummaries.checklistSummary?.late || checklists.completedLate) > 0 && (
-                  <span className="text-red-600 font-semibold">⚠️ {dashboardSummaries.checklistSummary?.late || checklists.completedLate} Late</span>
+                  <span className="text-[var(--an-report-danger)] font-semibold">⚠️ {dashboardSummaries.checklistSummary?.late || checklists.completedLate} Late</span>
                 )}
               </div>
             </div>
@@ -1922,9 +2099,9 @@ export default function AnalyticsDashboard({
             <div className="flex flex-col gap-1.5 md:border-r md:border-[var(--border-light)] md:pr-4">
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-[var(--text-secondary)] flex items-center gap-1.5">
-                  <Award size={14} className="text-amber-500" /> Top Reps Scoreboard
+                  <Award size={14} className="text-[var(--an-report-warning)]" /> Top Reps Scoreboard
                 </span>
-                <span className="text-xs text-amber-600 font-semibold cursor-pointer hover:underline" onClick={() => setActiveTab('scorecard')}>
+                <span className="text-xs text-[var(--an-report-warning)] font-semibold cursor-pointer hover:underline" onClick={() => setActiveTab('scorecard')}>
                   Full Scorecard →
                 </span>
               </div>
@@ -1932,7 +2109,7 @@ export default function AnalyticsDashboard({
                 {teamScorecardData[0]?.empName || 'Team'} 🏆 #{1}
               </div>
               <div className="text-xs text-[var(--text-secondary)]">
-                Score: <strong className="text-emerald-600">{teamScorecardData[0]?.totalScore || 0}%</strong> · {teamScorecardData[0]?.updatesCount || 0} updates logged today
+                Score: <strong className="text-[var(--an-report-success)]">{teamScorecardData[0]?.totalScore || 0}%</strong> · {teamScorecardData[0]?.updatesCount || 0} updates logged today
               </div>
             </div>
 
@@ -1940,9 +2117,9 @@ export default function AnalyticsDashboard({
             <div className="flex flex-col gap-1.5">
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-[var(--text-secondary)] flex items-center gap-1.5">
-                  <Briefcase size={14} className="text-purple-500" /> Recruiter Hub
+                  <Briefcase size={14} className="text-[var(--an-report-violet)]" /> Recruiter Hub
                 </span>
-                <span className="text-xs text-purple-600 font-semibold cursor-pointer hover:underline" onClick={() => setActiveTab('recruiter')}>
+                <span className="text-xs text-[var(--an-report-violet)] font-semibold cursor-pointer hover:underline" onClick={() => setActiveTab('recruiter')}>
                   View Talent →
                 </span>
               </div>
@@ -1950,9 +2127,9 @@ export default function AnalyticsDashboard({
                 {dashboardSummaries.recruitmentSummary?.openPositions || 0} Open Positions
               </div>
               <div className="text-xs flex gap-2 flex-wrap items-center">
-                <span className="text-purple-600 font-semibold">👥 {dashboardSummaries.recruitmentSummary?.totalCandidates || 0} Pipeline</span>
-                <span className="text-blue-600 font-semibold">🎯 {dashboardSummaries.recruitmentSummary?.inInterview || 0} Interview</span>
-                <span className="text-emerald-600 font-semibold">🎉 {dashboardSummaries.recruitmentSummary?.hired || 0} Hired</span>
+                <span className="text-[var(--an-report-violet)] font-semibold">👥 {dashboardSummaries.recruitmentSummary?.totalCandidates || 0} Pipeline</span>
+                <span className="text-[var(--an-report-info)] font-semibold">🎯 {dashboardSummaries.recruitmentSummary?.inInterview || 0} Interview</span>
+                <span className="text-[var(--an-report-success)] font-semibold">🎉 {dashboardSummaries.recruitmentSummary?.hired || 0} Hired</span>
               </div>
             </div>
           </div>
@@ -1967,17 +2144,7 @@ export default function AnalyticsDashboard({
                   <h3 className="m-0 text-sm font-bold text-[var(--text-primary)]">Leads by Stage</h3>
                   <span className="text-xs text-[var(--text-secondary)]">{kpis.total.toLocaleString('en-IN')} total in scope</span>
                 </div>
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={stageData} margin={{ top: 8, right: 8, left: -20, bottom: 16 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-light)" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
-                    <RechartsTooltip cursor={{ fill: 'var(--bg-primary)' }} contentStyle={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', borderRadius: '8px' }} />
-                    <Bar dataKey="count" fill="var(--accent-color)" radius={[4, 4, 0, 0]}>
-                      <LabelList dataKey="count" position="top" style={{ fill: 'var(--text-primary)', fontSize: 11, fontWeight: 600 }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <AnalyticsStageChart data={stageData} height={240} />
               </div>
 
               {/* Pipeline & Outreach Summary Card */}
@@ -1995,7 +2162,7 @@ export default function AnalyticsDashboard({
                   ].map(item => (
                     <div key={item.label} className="p-3 rounded-lg bg-[var(--th-bg)] border border-[var(--border-light)]">
                       <div className="text-[11px] text-[var(--text-secondary)] font-semibold mb-1 truncate">{item.label}</div>
-                      <div className="text-xl font-extrabold" style={{ color: item.color }}>
+                      <div className="text-xl font-extrabold" style={{ color: phaseInk(item.color) }}>
                         {typeof item.value === 'number' ? item.value.toLocaleString('en-IN') : item.value}
                       </div>
                     </div>
@@ -2016,38 +2183,25 @@ export default function AnalyticsDashboard({
                 <div className="p-8 text-center text-[var(--text-secondary)]">
                   <Loader2 size={22} className="animate-spin inline-block" />
                 </div>
-              ) : (employeeActivityList.length === 0 && (!metrics.employeeActivity || metrics.employeeActivity.length === 0)) ? (
-                <div className="p-6 text-center text-[var(--text-secondary)] text-xs">
-                  No activity recorded for {dateFilterLabel.toLowerCase()}.
-                </div>
               ) : (
-                <div className="overflow-auto max-h-[460px] w-full relative">
-                  <MobileTableView id="AnalyticsDashboard-1" hideToggle><table className="w-full min-w-[300px] border-separate border-spacing-0 text-xs">
-                    <thead className="sticky top-0 z-10 bg-[var(--th-bg)]">
-                      <tr className="bg-[var(--th-bg)]">
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3 py-2 text-[var(--text-secondary)] font-semibold text-[11px] whitespace-nowrap min-w-[140px]">Employee</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-2 py-2 text-[var(--text-secondary)] font-semibold text-[11px] whitespace-nowrap min-w-[65px]">Leads</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-right px-3 py-2 text-[var(--text-secondary)] font-semibold text-[11px] whitespace-nowrap min-w-[70px]">Updates</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(employeeActivityList.length > 0 ? employeeActivityList : (metrics.employeeActivity || [])).slice(0, 10).map((act, i) => (
-                        <tr key={act.employee} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
-                          <td className="px-3 py-2 text-[var(--text-primary)] max-w-[160px]">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <div className="w-6 h-6 rounded-full shrink-0 text-white flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: COLORS[i % COLORS.length] }}>
-                                {act.employee.substring(0, 2).toUpperCase()}
-                              </div>
-                              <span className="font-medium truncate" title={act.employee}>{act.employee}</span>
-                            </div>
-                          </td>
-                          <td className="px-2 py-2 text-center font-bold text-[var(--text-primary)] whitespace-nowrap min-w-[65px]">{act.uniqueLeads}</td>
-                          <td className="px-3 py-2 text-right font-bold text-[var(--accent-color)] whitespace-nowrap min-w-[70px]">{act.actions}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table></MobileTableView>
-                </div>
+                <AnalyticsPhaseTable table={PHASE31_TABLES.overview}
+                  rows={overviewActivity}
+                  resetKey={phaseScopeKey} empty={`No activity recorded for ${dateFilterLabel.toLowerCase()}.`}
+                  renderRow={(act, i) => (
+                    <tr key={act.employee} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
+                      <td className="px-3 py-2 text-[var(--text-primary)] max-w-[160px]">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold" style={phaseAvatar(COLORS[i % COLORS.length])}>
+                            {act.employee.substring(0, 2).toUpperCase()}
+                          </div>
+                          <span className="font-medium truncate" title={act.employee}>{act.employee}</span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-center font-bold text-[var(--text-primary)] whitespace-nowrap min-w-[65px]">{act.uniqueLeads}</td>
+                      <td className="px-3 py-2 text-right font-bold text-[var(--accent-color)] whitespace-nowrap min-w-[70px]">{act.actions}</td>
+                    </tr>
+                  )}
+                />
               )}
             </div>
           </div>
@@ -2058,12 +2212,12 @@ export default function AnalyticsDashboard({
       {/* 🏆 TAB 2: TEAM SCORECARD & LEADERBOARD (SCORING DASHBOARD)                */}
       {/* ========================================================================= */}
       {activeTab === 'scorecard' && (
-        <div className="flex flex-col gap-5">
+        <div className="an-phase-body">
           {/* Header Banner */}
           <div className="flex justify-between items-center flex-wrap gap-4 bg-[var(--bg-surface)] p-4.5 rounded-xl border border-[var(--border-light)] shadow-sm">
             <div>
               <h3 className="m-0 text-lg font-bold flex items-center gap-2 text-[var(--text-primary)]">
-                <Award size={22} className="text-amber-500" /> Team Performance Scorecard & Leaderboard
+                <Award size={22} className="text-[var(--an-report-warning)]" /> Team Performance Scorecard & Leaderboard
               </h3>
               <p className="mt-1 mb-0 text-xs text-[var(--text-secondary)]">
                 Multi-process operational index (100 pts max) across Calling/Recruitment (30 pts), Follow-up Adherence (25 pts), Daily Checklists (20 pts), Delegation Tasks (15 pts), and Attendance (10 pts).
@@ -2072,7 +2226,7 @@ export default function AnalyticsDashboard({
 
             <div className="flex items-center gap-3 flex-wrap">
               {/* Role filter buttons */}
-              <div className="flex gap-1.5 bg-[var(--bg-primary)] p-1 rounded-lg border border-[var(--border-light)]">
+              <div className="an-phase-filters flex gap-1.5 bg-[var(--bg-primary)] p-1 rounded-lg border border-[var(--border-light)]" role="group" aria-label="Filter scorecard by role">
                 {[
                   { key: 'ALL', label: 'All Roles', count: teamScorecardData.length },
                   { key: 'SALES', label: '📞 Sales & Calls', count: teamScorecardData.filter(s => s.roleCategory === 'SALES').length },
@@ -2082,6 +2236,7 @@ export default function AnalyticsDashboard({
                   <button
                     key={tab.key}
                     type="button"
+                    aria-pressed={scorecardDeptFilter === tab.key}
                     onClick={() => setScorecardDeptFilter(tab.key)}
                     className={`px-2.5 py-1.5 text-xs font-semibold rounded-md cursor-pointer transition-all duration-150 ${
                       scorecardDeptFilter === tab.key
@@ -2098,6 +2253,7 @@ export default function AnalyticsDashboard({
               <div className="relative w-56">
                 <input
                   type="text"
+                  aria-label="Search executive or department"
                   placeholder="Search executive or dept..."
                   value={scorecardSearch}
                   onChange={(e) => setScorecardSearch(e.target.value)}
@@ -2123,7 +2279,7 @@ export default function AnalyticsDashboard({
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-2">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-sm shrink-0 ${
-                        idx === 0 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30' : idx === 1 ? 'bg-slate-500/15 text-slate-600 dark:text-slate-300 border border-slate-500/30' : 'bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/30'
+                        idx === 0 ? 'bg-[var(--an-report-warning-bg)] text-[var(--an-report-warning)] border border-amber-500/30' : idx === 1 ? 'bg-[var(--an-report-neutral-bg)] text-[var(--an-report-muted)] border border-slate-500/30' : 'bg-[var(--an-report-warning-bg)] text-[var(--an-report-warning)] border border-orange-500/30'
                       }`}>
                         #{idx + 1}
                       </div>
@@ -2131,7 +2287,7 @@ export default function AnalyticsDashboard({
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <h4 className="m-0 text-sm font-bold text-[var(--text-primary)]">{rep.empName}</h4>
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
-                            rep.roleCategory === 'RECRUITER' ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/25' : rep.roleCategory === 'SALES' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25' : 'bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/25'
+                            rep.roleCategory === 'RECRUITER' ? 'bg-[var(--an-report-violet-bg)] text-[var(--an-report-violet)] border-purple-500/25' : rep.roleCategory === 'SALES' ? 'bg-[var(--an-report-info-bg)] text-[var(--an-report-info)] border-blue-500/25' : 'bg-[var(--an-report-neutral-bg)] text-[var(--an-report-muted)] border-slate-500/25'
                           }`}>
                             {rep.roleCategory === 'RECRUITER' ? 'Recruiter' : rep.roleCategory === 'SALES' ? 'Sales' : 'Ops'}
                           </span>
@@ -2139,7 +2295,7 @@ export default function AnalyticsDashboard({
                         <span className="text-xs text-[var(--text-secondary)]">{rep.department} · {rep.designation}</span>
                       </div>
                     </div>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: rep.tierBg, color: rep.tierColor }}>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: rep.tierBg, color: phaseInk(rep.tierColor) }}>
                       {rep.tierLabel}
                     </span>
                   </div>
@@ -2185,7 +2341,7 @@ export default function AnalyticsDashboard({
             </div>
           ) : (
             <div className="card an-card-hover p-5 text-center bg-[var(--bg-surface)] border border-dashed border-[var(--border-light)] rounded-xl">
-              <div className="inline-flex p-2.5 rounded-full bg-amber-100 text-amber-800 mb-2">
+              <div className="inline-flex p-2.5 rounded-full bg-[var(--an-report-warning-bg)] text-[var(--an-report-warning)] mb-2">
                 <Clock size={24} />
               </div>
               <h4 className="m-0 mb-1 text-sm font-bold text-[var(--text-primary)]">Live Shift In Progress — Scoring Active</h4>
@@ -2209,164 +2365,141 @@ export default function AnalyticsDashboard({
               <span className="text-xs text-[var(--text-secondary)]">Click any executive row to filter dashboard</span>
             </div>
 
-            <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[400px] w-full relative">
-              <MobileTableView id="AnalyticsDashboard-2" hideToggle><table className="w-full min-w-[980px] border-separate border-spacing-0 text-xs">
-                <thead className="sticky top-0 z-10 bg-[var(--th-bg)]">
-                  <tr className="bg-[var(--th-bg)]">
-                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-2 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] w-11">Rank</th>
-                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[180px]">Executive & Role</th>
-                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-2 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[110px]">Overall Score</th>
-                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-2.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[115px]">🎯 Leads Touched</th>
-                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-2.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[150px]">🧑‍💼 Recruiter (30p)</th>
-                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-2.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[140px]">⏰ Follow-up Discipline (25p)</th>
-                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-2.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[120px]">✅ Checklists (20p)</th>
-                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-2.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[110px]">📋 Tasks (15p)</th>
-                    <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-2.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[11px] min-w-[110px]">🏢 Attendance (10p)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredScorecard.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="p-8 text-center text-[var(--text-secondary)] text-xs">
-                        No team members found matching the selected filter.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredScorecard.map((row, idx) => {
-                      const isSelected = selectedEmployeeEmails.some(e => e.toLowerCase() === (row.empEmail || '').toLowerCase());
-                      return (
-                        <tr
-                          key={row.empEmail}
-                          onClick={() => {
-                            const target = (row.empEmail || '').toLowerCase();
-                            if (selectedEmployeeEmails.length === 1 && selectedEmployeeEmails[0].toLowerCase() === target) {
-                              setSelectedEmployeeEmails([]);
-                            } else {
-                              setSelectedEmployeeEmails([row.empEmail]);
-                            }
-                          }}
-                          className={`border-b border-[var(--border-light)] cursor-pointer transition-all duration-150 ${
-                            isSelected
-                              ? 'bg-[var(--table-row-selected,var(--th-filtered-bg))] border-l-[3px] border-l-[var(--accent-color)] active-row'
-                              : `${idx % 2 === 0 ? 'bg-[var(--table-row-odd,var(--bg-surface))]' : 'bg-[var(--table-row-even,var(--bg-primary))]'} border-l-[3px] border-l-transparent hover:bg-[var(--th-bg)]`
-                          }`}
+            <AnalyticsPhaseTable table={PHASE31_TABLES.scorecard} rows={filteredScorecard}
+              resetKey={JSON.stringify([phaseScopeKey, scorecardDeptFilter, scorecardSearch])}
+              empty={phaseLoading ? 'Loading team performance…' : 'No team members found matching the selected filter.'}
+              renderRow={(row, idx) => {
+                const isSelected = selectedEmployeeEmails.some(e => e.toLowerCase() === (row.empEmail || '').toLowerCase());
+                return (
+                  <tr
+                    key={row.empEmail}
+                    onClick={() => {
+                      const target = (row.empEmail || '').toLowerCase();
+                      if (selectedEmployeeEmails.length === 1 && selectedEmployeeEmails[0].toLowerCase() === target) {
+                        setSelectedEmployeeEmails([]);
+                      } else {
+                        setSelectedEmployeeEmails([row.empEmail]);
+                      }
+                    }}
+                    className={`border-b border-[var(--border-light)] cursor-pointer transition-all duration-150 ${
+                      isSelected
+                        ? 'bg-[var(--table-row-selected,var(--th-filtered-bg))] border-l-[3px] border-l-[var(--accent-color)] active-row'
+                        : `${idx % 2 === 0 ? 'bg-[var(--table-row-odd,var(--bg-surface))]' : 'bg-[var(--table-row-even,var(--bg-primary))]'} border-l-[3px] border-l-transparent hover:bg-[var(--th-bg)]`
+                    }`}
+                  >
+                    {/* Rank */}
+                    <td className={`text-center px-2 py-2.5 font-extrabold ${idx < 3 && row.totalScore > 0 ? 'text-[var(--an-report-warning)]' : 'text-[var(--text-secondary)]'}`}>
+                      {row.totalScore > 0 ? `#${idx + 1}` : '—'}
+                    </td>
+
+                    {/* Executive & Role */}
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <div
+                        className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold"
+                        style={phaseAvatar(COLORS[idx % COLORS.length])}
                         >
-                          {/* Rank */}
-                          <td className={`text-center px-2 py-2.5 font-extrabold ${idx < 3 && row.totalScore > 0 ? 'text-amber-500' : 'text-[var(--text-secondary)]'}`}>
-                            {row.totalScore > 0 ? `#${idx + 1}` : '—'}
-                          </td>
-
-                          {/* Executive & Role */}
-                          <td className="px-3 py-2.5">
-                            <div className="flex items-center gap-2">
-                              <div
-                                className="w-7 h-7 rounded-full shrink-0 text-white flex items-center justify-center text-[10px] font-bold"
-                                style={{ backgroundColor: COLORS[idx % COLORS.length] }}
-                              >
-                                {row.empName.substring(0, 2).toUpperCase()}
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-semibold text-[var(--text-primary)]">{row.empName}</span>
-                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
-                                    row.roleCategory === 'RECRUITER' ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/25' : row.roleCategory === 'SALES' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25' : 'bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/25'
-                                  }`}>
-                                    {row.roleCategory === 'RECRUITER' ? 'Recruiter' : row.roleCategory === 'SALES' ? 'Sales' : 'Operations'}
-                                  </span>
-                                  {row.leadsAssigned > 0 && (
-                                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--th-bg)] text-[var(--text-secondary)]">
-                                      {row.leadsAssigned.toLocaleString('en-IN')} Leads
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-[11px] text-[var(--text-secondary)]">
-                                  {row.department} · {row.designation}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Overall Score */}
-                          <td className="text-center px-2 py-2.5">
-                            <div className="text-base font-extrabold leading-none" style={{ color: row.tierColor }}>
-                              {row.totalScore}%
-                            </div>
-                            <span
-                              className="text-[10px] font-bold px-1.5 py-0.5 rounded-full inline-block mt-1"
-                              style={{ backgroundColor: row.tierBg, color: row.tierColor }}
-                            >
-                              {row.tierLabel}
+                          {row.empName.substring(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-semibold text-[var(--text-primary)]">{row.empName}</span>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                              row.roleCategory === 'RECRUITER' ? 'bg-[var(--an-report-violet-bg)] text-[var(--an-report-violet)] border-purple-500/25' : row.roleCategory === 'SALES' ? 'bg-[var(--an-report-info-bg)] text-[var(--an-report-info)] border-blue-500/25' : 'bg-[var(--an-report-neutral-bg)] text-[var(--an-report-muted)] border-slate-500/25'
+                            }`}>
+                              {row.roleCategory === 'RECRUITER' ? 'Recruiter' : row.roleCategory === 'SALES' ? 'Sales' : 'Operations'}
                             </span>
-                          </td>
+                            {row.leadsAssigned > 0 && (
+                              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-[var(--th-bg)] text-[var(--text-secondary)]">
+                                {row.leadsAssigned.toLocaleString('en-IN')} Leads
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-[var(--text-secondary)]">
+                            {row.department} · {row.designation}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
 
-                          {/* Leads Touched & Calling Score */}
-                          <td className="text-center px-2.5 py-2.5">
-                            <div className={`text-sm font-extrabold ${row.leadsTouched > 0 ? 'text-[var(--accent-color,#2563eb)]' : 'text-[var(--text-secondary)]'}`}>
-                              {row.leadsTouched > 0 ? row.leadsTouched.toLocaleString('en-IN') : (row.updatesCount > 0 ? '0' : '—')}
-                            </div>
-                            <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">
-                              {row.callingProcess?.applicable
-                                ? `${row.callingProcess.score} / 30 pts · ${row.leadsAssigned > 0 ? `${row.leadsAssigned.toLocaleString('en-IN')} assigned` : (row.updatesCount > 0 ? `${row.updatesCount} updates` : '0 assigned')}`
-                                : 'Exempt (No leads)'}
-                            </div>
-                          </td>
+                    {/* Overall Score */}
+                    <td className="text-center px-2 py-2.5">
+                      <div className="text-base font-extrabold leading-none" style={{ color: phaseInk(row.tierColor) }}>
+                        {row.totalScore}%
+                      </div>
+                      <span
+                        className="text-[10px] font-bold px-1.5 py-0.5 rounded-full inline-block mt-1"
+                        style={{ backgroundColor: row.tierBg, color: phaseInk(row.tierColor) }}
+                      >
+                        {row.tierLabel}
+                      </span>
+                    </td>
 
-                          {/* Recruiter & Hiring Pipeline (30p) */}
-                          <td className="px-2.5 py-2.5">
-                            <div className="font-semibold text-[var(--text-primary)] text-xs">
-                              {row.recruiterProcess?.applicable ? (row.recruiterProcess.metricText || 'No Candidates') : 'Exempt (Not a Recruiter)'}
-                            </div>
-                            <div className={`text-[11px] font-semibold ${row.recruiterProcess?.applicable && row.recruiterProcess.score > 0 ? 'text-[var(--accent-color,#2563eb)]' : 'text-[var(--text-secondary)]'}`}>
-                              {row.recruiterProcess?.applicable ? `${row.recruiterProcess.score} / ${row.recruiterProcess.max || 30} pts` : 'Exempt (Not scored)'}
-                            </div>
-                          </td>
+                    {/* Leads Touched & Calling Score */}
+                    <td className="text-center px-2.5 py-2.5">
+                      <div className={`text-sm font-extrabold ${row.leadsTouched > 0 ? 'text-[var(--accent-color,#2563eb)]' : 'text-[var(--text-secondary)]'}`}>
+                        {row.leadsTouched > 0 ? row.leadsTouched.toLocaleString('en-IN') : (row.updatesCount > 0 ? '0' : '—')}
+                      </div>
+                      <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                        {row.callingProcess?.applicable
+                          ? `${row.callingProcess.score} / 30 pts · ${row.leadsAssigned > 0 ? `${row.leadsAssigned.toLocaleString('en-IN')} assigned` : (row.updatesCount > 0 ? `${row.updatesCount} updates` : '0 assigned')}`
+                          : 'Exempt (No leads)'}
+                      </div>
+                    </td>
 
-                          {/* Follow-up / Requisitions */}
-                          <td className="px-2.5 py-2.5">
-                            <div className={`font-semibold text-xs ${row.overdueFollowups > 0 ? 'text-red-600' : 'text-[var(--text-primary)]'}`}>
-                              {row.followupProcess.metricText || row.followupProcess.metric}
-                            </div>
-                            <div className="text-[11px] text-[var(--text-secondary)] font-semibold">
-                              {row.followupProcess.score} / {row.followupProcess.max} pts
-                            </div>
-                          </td>
+                    {/* Recruiter & Hiring Pipeline (30p) */}
+                    <td className="px-2.5 py-2.5">
+                      <div className="font-semibold text-[var(--text-primary)] text-xs">
+                        {row.recruiterProcess?.applicable ? (row.recruiterProcess.metricText || 'No Candidates') : 'Exempt (Not a Recruiter)'}
+                      </div>
+                      <div className={`text-[11px] font-semibold ${row.recruiterProcess?.applicable && row.recruiterProcess.score > 0 ? 'text-[var(--accent-color,#2563eb)]' : 'text-[var(--text-secondary)]'}`}>
+                        {row.recruiterProcess?.applicable ? `${row.recruiterProcess.score} / ${row.recruiterProcess.max || 30} pts` : 'Exempt (Not scored)'}
+                      </div>
+                    </td>
 
-                          {/* Checklists */}
-                          <td className="px-2.5 py-2.5">
-                            <div className="font-semibold text-[var(--text-primary)] text-xs">
-                              {row.checklistProcess.applicable ? (row.checklistProcess.metricText || row.checklistProcess.metric) : 'Exempt (No slots)'}
-                            </div>
-                            <div className="text-[11px] text-[var(--text-secondary)] font-semibold">
-                              {row.checklistProcess.applicable ? `${row.checklistProcess.score} / ${row.checklistProcess.max} pts` : 'Exempt (Not scored)'}
-                            </div>
-                          </td>
+                    {/* Follow-up / Requisitions */}
+                    <td className="px-2.5 py-2.5">
+                      <div className={`font-semibold text-xs ${row.overdueFollowups > 0 ? 'text-[var(--an-report-danger)]' : 'text-[var(--text-primary)]'}`}>
+                        {row.followupProcess.metricText || row.followupProcess.metric}
+                      </div>
+                      <div className="text-[11px] text-[var(--text-secondary)] font-semibold">
+                        {row.followupProcess.score} / {row.followupProcess.max} pts
+                      </div>
+                    </td>
 
-                          {/* Tasks */}
-                          <td className="px-2.5 py-2.5">
-                            <div className="font-semibold text-[var(--text-primary)] text-xs">
-                              {row.taskProcess.applicable ? (row.taskProcess.metricText || row.taskProcess.metric) : 'Exempt (No tasks)'}
-                            </div>
-                            <div className="text-[11px] text-[var(--text-secondary)] font-semibold">
-                              {row.taskProcess.applicable ? `${row.taskProcess.score} / ${row.taskProcess.max} pts` : 'Exempt (Not scored)'}
-                            </div>
-                          </td>
+                    {/* Checklists */}
+                    <td className="px-2.5 py-2.5">
+                      <div className="font-semibold text-[var(--text-primary)] text-xs">
+                        {row.checklistProcess.applicable ? (row.checklistProcess.metricText || row.checklistProcess.metric) : 'Exempt (No slots)'}
+                      </div>
+                      <div className="text-[11px] text-[var(--text-secondary)] font-semibold">
+                        {row.checklistProcess.applicable ? `${row.checklistProcess.score} / ${row.checklistProcess.max} pts` : 'Exempt (Not scored)'}
+                      </div>
+                    </td>
 
-                          {/* Attendance */}
-                          <td className="px-2.5 py-2.5">
-                            <div className="font-semibold text-[var(--text-primary)] text-xs">
-                              {row.attendanceProcess.metricText || row.attendanceProcess.metric}
-                            </div>
-                            <div className={`text-[11px] font-semibold ${row.attendanceProcess.score >= 7 ? 'text-emerald-600' : 'text-[var(--text-secondary)]'}`}>
-                              {row.attendanceProcess.score} / {row.attendanceProcess.max} pts
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table></MobileTableView>
-            </div>
+                    {/* Tasks */}
+                    <td className="px-2.5 py-2.5">
+                      <div className="font-semibold text-[var(--text-primary)] text-xs">
+                        {row.taskProcess.applicable ? (row.taskProcess.metricText || row.taskProcess.metric) : 'Exempt (No tasks)'}
+                      </div>
+                      <div className="text-[11px] text-[var(--text-secondary)] font-semibold">
+                        {row.taskProcess.applicable ? `${row.taskProcess.score} / ${row.taskProcess.max} pts` : 'Exempt (Not scored)'}
+                      </div>
+                    </td>
+
+                    {/* Attendance */}
+                    <td className="px-2.5 py-2.5">
+                      <div className="font-semibold text-[var(--text-primary)] text-xs">
+                        {row.attendanceProcess.metricText || row.attendanceProcess.metric}
+                      </div>
+                      <div className={`text-[11px] font-semibold ${row.attendanceProcess.score >= 7 ? 'text-[var(--an-report-success)]' : 'text-[var(--text-secondary)]'}`}>
+                        {row.attendanceProcess.score} / {row.attendanceProcess.max} pts
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }}
+            />
           </div>
         </div>
       )}
@@ -2375,9 +2508,9 @@ export default function AnalyticsDashboard({
       {/* 📋 TAB 3: DELEGATION TASKS DASHBOARD                                      */}
       {/* ========================================================================= */}
       {activeTab === 'delegation' && (
-        <div className="flex flex-col gap-5">
+        <div className="an-phase-body">
           {/* Header Metric Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
+          <div className="an-phase-kpis">
             <div className="card an-card-hover p-4 border-l-4 border-l-purple-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
               <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Total Tasks</div>
               <div className="text-3xl font-extrabold text-[var(--text-primary)] my-1 leading-none">{delegation.total}</div>
@@ -2386,7 +2519,7 @@ export default function AnalyticsDashboard({
 
             <div className="card an-card-hover p-4 border-l-4 border-l-blue-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
               <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">In Progress / Active</div>
-              <div className="text-3xl font-extrabold text-blue-600 my-1 leading-none">
+              <div className="text-3xl font-extrabold text-[var(--an-report-info)] my-1 leading-none">
                 {delegation.active !== undefined ? delegation.active : Math.max(0, delegation.total - delegation.completed)}
               </div>
               <div className="text-xs text-[var(--text-secondary)]">
@@ -2396,16 +2529,16 @@ export default function AnalyticsDashboard({
 
             <div className="card an-card-hover p-4 border-l-4 border-l-emerald-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
               <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Completed</div>
-              <div className="text-3xl font-extrabold text-emerald-600 my-1 leading-none">{delegation.completed}</div>
-              <div className="text-xs text-emerald-700 font-semibold">
+              <div className="text-3xl font-extrabold text-[var(--an-report-success)] my-1 leading-none">{delegation.completed}</div>
+              <div className="text-xs text-[var(--an-report-success)] font-semibold">
                 {delegation.total > 0 ? `${Math.round((delegation.completed / delegation.total) * 100)}% Done` : '0%'}
               </div>
             </div>
 
             <div className={`card an-card-hover p-4 border-l-4 ${delegation.overdue > 0 ? 'border-l-red-500' : 'border-l-emerald-500'} rounded-xl bg-[var(--bg-surface)] shadow-sm`}>
               <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Overdue Tasks</div>
-              <div className={`text-3xl font-extrabold my-1 leading-none ${delegation.overdue > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{delegation.overdue}</div>
-              <div className={`text-xs font-semibold ${delegation.overdue > 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+              <div className={`text-3xl font-extrabold my-1 leading-none ${delegation.overdue > 0 ? 'text-[var(--an-report-danger)]' : 'text-[var(--an-report-success)]'}`}>{delegation.overdue}</div>
+              <div className={`text-xs font-semibold ${delegation.overdue > 0 ? 'text-[var(--an-report-danger)]' : 'text-[var(--an-report-success)]'}`}>
                 {delegation.overdue > 0 ? 'Action required' : 'All on time'}
               </div>
             </div>
@@ -2413,9 +2546,9 @@ export default function AnalyticsDashboard({
             <div className="card an-card-hover p-4 border-l-4 border-l-amber-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
               <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Priority Split</div>
               <div className="text-xs flex flex-col gap-1 mt-2">
-                <span className="text-red-600 font-bold">🔴 High: {delegation.priorityBreakdown?.high || 0}</span>
-                <span className="text-amber-600 font-semibold">🟡 Medium: {delegation.priorityBreakdown?.medium || 0}</span>
-                <span className="text-emerald-600 font-semibold">🟢 Low: {delegation.priorityBreakdown?.low || 0}</span>
+                <span className="text-[var(--an-report-danger)] font-bold">🔴 High: {delegation.priorityBreakdown?.high || 0}</span>
+                <span className="text-[var(--an-report-warning)] font-semibold">🟡 Medium: {delegation.priorityBreakdown?.medium || 0}</span>
+                <span className="text-[var(--an-report-success)] font-semibold">🟢 Low: {delegation.priorityBreakdown?.low || 0}</span>
               </div>
             </div>
           </div>
@@ -2428,9 +2561,10 @@ export default function AnalyticsDashboard({
                 <span className="text-xs text-[var(--text-secondary)]">Status & Deadline Tracking</span>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="an-phase-filters flex items-center gap-2">
                 <input
                   type="text"
+                  aria-label="Filter tasks"
                   placeholder="Filter tasks..."
                   value={taskSearch}
                   onChange={(e) => setTaskSearch(e.target.value)}
@@ -2438,69 +2572,48 @@ export default function AnalyticsDashboard({
                 />
                 <button
                   onClick={() => onNavigateTab?.('delegation')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-500/10 text-[var(--accent-color,#2563eb)] border border-[var(--accent-color,#2563eb)]/30 cursor-pointer hover:bg-blue-500/20 transition-colors shadow-xs"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[var(--an-report-info-bg)] text-[var(--accent-color,#2563eb)] border border-[var(--accent-color,#2563eb)]/30 cursor-pointer hover:bg-[var(--an-report-info-bg)] transition-colors shadow-xs"
                 >
                   Open Task Manager <ArrowRight size={12} />
                 </button>
               </div>
             </div>
 
-            {delegationTasksList.length === 0 ? (
-              <div className="p-8 text-center text-[var(--text-secondary)] text-xs">
-                No tasks found for this scope.
-              </div>
-            ) : (
-              <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[380px] w-full relative">
-                <MobileTableView id="AnalyticsDashboard-3" hideToggle><table className="w-full min-w-[650px] border-separate border-spacing-0 text-xs">
-                  <thead className="sticky top-0 z-10 bg-[var(--th-bg)]">
-                    <tr className="bg-[var(--th-bg)]">
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Code</th>
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Task Title</th>
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-2.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Priority</th>
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Assigned To</th>
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Deadline</th>
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-2.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {delegationTasksList.map(task => (
-                      <tr key={task.id} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
-                        <td className="px-3.5 py-2.5">
-                          <div className="font-bold text-[var(--text-secondary)] text-xs">
-                            {task.task_code || '—'}
-                          </div>
-                          {task.tenant_code && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--th-bg)] text-[var(--text-secondary)] mt-0.5 inline-block border border-[var(--border-light)]">
-                              {task.tenant_code}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3.5 py-2.5 font-semibold text-[var(--text-primary)]">{task.title}</td>
-                        <td className="text-center px-2.5 py-2.5">
-                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${
-                            task.priority === 'HIGH' || task.priority === 'URGENT' ? 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/25' : task.priority === 'MEDIUM' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25' : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
-                          }`}>
-                            {task.priority}
-                          </span>
-                        </td>
-                        <td className="px-3.5 py-2.5 text-[var(--text-secondary)]">{task.assigned_to_name || task.assigned_to_email}</td>
-                        <td className="px-3.5 py-2.5 whitespace-nowrap">
-                          {task.deadline ? new Date(task.deadline).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                          {task.is_overdue && <span className="text-red-600 dark:text-red-400 font-bold ml-1.5">🚨 Overdue</span>}
-                        </td>
-                        <td className="text-center px-2.5 py-2.5">
-                          <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border whitespace-nowrap ${
-                            task.status === 'COMPLETED' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25' : task.status === 'IN_PROGRESS' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25' : task.status === 'SUBMITTED' ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/25' : task.status === 'REOPENED' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25' : 'bg-slate-500/15 text-slate-600 dark:text-slate-300 border-slate-500/25'
-                          }`}>
-                            {(task.status || '').replace(/_/g, ' ')}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table></MobileTableView>
-              </div>
-            )}
+            <AnalyticsPhaseTable table={PHASE31_TABLES.delegation} rows={delegationTasksList}
+              resetKey={JSON.stringify([phaseScopeKey, taskSearch])}
+              empty={loadingAssignedWork ? 'Loading tasks…' : 'No tasks found for this scope.'}
+              renderRow={task => (
+                <tr key={task.id} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
+                  <td className="px-3.5 py-2.5">
+                    <div className="font-bold text-[var(--text-secondary)] text-xs">
+                      {task.task_code || '—'}
+                    </div>
+                    {task.tenant_code && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--th-bg)] text-[var(--text-secondary)] mt-0.5 inline-block border border-[var(--border-light)]">
+                        {task.tenant_code}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3.5 py-2.5 font-semibold text-[var(--text-primary)]">{task.title}</td>
+                  <td className="text-center px-2.5 py-2.5">
+                    <span className="an-report-status an-phase-badge"
+                      data-an-tone={['HIGH', 'URGENT'].includes(task.priority) ? 'danger' : task.priority === 'MEDIUM' ? 'warning' : 'success'}>
+                      {task.priority}
+                    </span>
+                  </td>
+                  <td className="px-3.5 py-2.5 text-[var(--text-secondary)]">{task.assigned_to_name || task.assigned_to_email}</td>
+                  <td className="px-3.5 py-2.5 whitespace-nowrap">
+                    {task.deadline ? new Date(task.deadline).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                    {task.is_overdue && <span className="an-report-status an-phase-badge ml-1.5" data-an-tone="danger">Overdue</span>}
+                  </td>
+                  <td className="text-center px-2.5 py-2.5">
+                    <span className="an-report-status an-phase-badge" data-an-tone={TASK_STATUS_TONES[task.status]}>
+                      {(task.status || '').replace(/_/g, ' ')}
+                    </span>
+                  </td>
+                </tr>
+              )}
+            />
           </div>
         </div>
       )}
@@ -2508,44 +2621,49 @@ export default function AnalyticsDashboard({
       {/* ========================================================================= */}
       {/* ✅ TAB 4: DAILY CHECKLISTS DASHBOARD                                      */}
       {/* ========================================================================= */}
+      {reportLoading && (
+        <div className="an-report-loading" role="status">
+          <Loader2 size={16} className="animate-spin" aria-hidden="true" /> Loading report…
+        </div>
+      )}
       {activeTab === 'checklist' && (
         <div className="flex flex-col gap-5">
           {/* Header Metric Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-            <div className="card an-card-hover p-4 border-l-4 border-l-emerald-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
-              <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Scheduled Slots</div>
+            <div className="card an-card-hover p-4 border-l-4 border-l-[var(--an-report-success)] rounded-xl bg-[var(--bg-surface)] shadow-sm">
+              <div className="text-[11px] font-bold text-[var(--an-report-muted)] uppercase tracking-wider">Scheduled Slots</div>
               <div className="text-3xl font-extrabold text-[var(--text-primary)] my-1 leading-none">
                 {checklistAggregates.assignedTotal}
               </div>
-              <div className="text-xs text-[var(--text-secondary)]">
+              <div className="text-xs text-[var(--an-report-muted)]">
                 {checklistAggregates.distinctSlots} unique slot templates{checklistAggregates.workingDays > 1 ? ` · ${checklistAggregates.workingDays} working days` : ''}
               </div>
             </div>
 
-            <div className="card an-card-hover p-4 border-l-4 border-l-green-600 rounded-xl bg-[var(--bg-surface)] shadow-sm">
-              <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Completed</div>
-              <div className="text-3xl font-extrabold text-emerald-600 my-1 leading-none">
+            <div className="card an-card-hover p-4 border-l-4 border-l-[var(--an-report-success)] rounded-xl bg-[var(--bg-surface)] shadow-sm">
+              <div className="text-[11px] font-bold text-[var(--an-report-muted)] uppercase tracking-wider">Completed</div>
+              <div className="text-3xl font-extrabold text-[var(--an-report-success)] my-1 leading-none">
                 {checklistAggregates.completedTotal}
               </div>
-              <div className="text-xs text-emerald-700 font-semibold">
+              <div className="text-xs text-[var(--an-report-success)] font-semibold">
                 {checklistAggregates.compliance}% Compliance
               </div>
             </div>
 
-            <div className="card an-card-hover p-4 border-l-4 border-l-amber-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
-              <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Pending Slots</div>
-              <div className="text-3xl font-extrabold text-amber-500 my-1 leading-none">
+            <div className="card an-card-hover p-4 border-l-4 border-l-[var(--an-report-warning)] rounded-xl bg-[var(--bg-surface)] shadow-sm">
+              <div className="text-[11px] font-bold text-[var(--an-report-muted)] uppercase tracking-wider">Pending Slots</div>
+              <div className="text-3xl font-extrabold text-[var(--an-report-warning)] my-1 leading-none">
                 {checklistAggregates.pendingTotal}
               </div>
-              <div className="text-xs text-amber-700 font-semibold">Awaiting submission</div>
+              <div className="text-xs text-[var(--an-report-warning)] font-semibold">Awaiting submission</div>
             </div>
 
-            <div className="card an-card-hover p-4 border-l-4 border-l-red-500 rounded-xl bg-[var(--bg-surface)] shadow-sm">
-              <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Completed Late</div>
-              <div className={`text-3xl font-extrabold my-1 leading-none ${checklistAggregates.completedLate > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+            <div className="card an-card-hover p-4 border-l-4 border-l-[var(--an-report-danger)] rounded-xl bg-[var(--bg-surface)] shadow-sm">
+              <div className="text-[11px] font-bold text-[var(--an-report-muted)] uppercase tracking-wider">Completed Late</div>
+              <div className={`text-3xl font-extrabold my-1 leading-none ${checklistAggregates.completedLate > 0 ? 'text-[var(--an-report-danger)]' : 'text-[var(--an-report-success)]'}`}>
                 {checklistAggregates.completedLate}
               </div>
-              <div className="text-xs text-[var(--text-secondary)]">Past deadline cutoff</div>
+              <div className="text-xs text-[var(--an-report-muted)]">Past deadline cutoff</div>
             </div>
           </div>
 
@@ -2559,7 +2677,7 @@ export default function AnalyticsDashboard({
                     onClick={() => setChecklistViewMode('BY_EMPLOYEE')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all duration-150 ${
                       checklistViewMode === 'BY_EMPLOYEE'
-                        ? 'bg-blue-500/10 text-[var(--accent-color,#2563eb)] font-bold border border-[var(--accent-color,#2563eb)]/30 shadow-xs'
+                        ? 'bg-[var(--an-report-info-bg)] text-[var(--an-report-accent)] font-bold border border-[var(--accent-color,#2563eb)]/30 shadow-xs'
                         : 'bg-transparent text-[var(--text-primary)] hover:bg-[var(--th-bg)] border border-transparent'
                     }`}
                   >
@@ -2569,7 +2687,7 @@ export default function AnalyticsDashboard({
                     onClick={() => setChecklistViewMode('BY_SLOTS')}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-all duration-150 ${
                       checklistViewMode === 'BY_SLOTS'
-                        ? 'bg-blue-500/10 text-[var(--accent-color,#2563eb)] font-bold border border-[var(--accent-color,#2563eb)]/30 shadow-xs'
+                        ? 'bg-[var(--an-report-info-bg)] text-[var(--an-report-accent)] font-bold border border-[var(--accent-color,#2563eb)]/30 shadow-xs'
                         : 'bg-transparent text-[var(--text-primary)] hover:bg-[var(--th-bg)] border border-transparent'
                     }`}
                   >
@@ -2589,7 +2707,7 @@ export default function AnalyticsDashboard({
                 />
                 <button
                   onClick={() => onNavigateTab?.('checklist')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 cursor-pointer hover:bg-emerald-500/20 transition-colors shadow-xs"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[var(--an-report-success-bg)] text-[var(--an-report-success)]  border border-[var(--an-report-success-line)] cursor-pointer hover:bg-[var(--an-report-success-bg)] transition-colors shadow-xs"
                 >
                   Open Checklist Module <ArrowRight size={12} />
                 </button>
@@ -2598,20 +2716,23 @@ export default function AnalyticsDashboard({
 
             {/* VIEW 1: Team Members Checklist Status Matrix */}
             {checklistViewMode === 'BY_EMPLOYEE' && (
-              <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[380px] w-full relative">
+              <div className="overflow-auto max-h-[calc(100vh-280px)] an-report-table-scroll w-full relative">
                 <MobileTableView id="AnalyticsDashboard-4" hideToggle><table className="w-full min-w-[760px] border-separate border-spacing-0 text-xs">
                   <thead className="sticky top-0 z-10 bg-[var(--th-bg)]">
                     <tr className="bg-[var(--th-bg)]">
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Staff Member</th>
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Department</th>
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Assigned Slots</th>
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Completed</th>
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Pending</th>
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap min-w-[120px]">Compliance</th>
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Status</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] text-[11px] font-semibold whitespace-nowrap">Staff Member</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] text-[11px] font-semibold whitespace-nowrap">Department</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--an-report-muted)] text-[11px] font-semibold whitespace-nowrap">Assigned Slots</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--an-report-muted)] text-[11px] font-semibold whitespace-nowrap">Completed</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--an-report-muted)] text-[11px] font-semibold whitespace-nowrap">Pending</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3.5 py-2.5 text-[var(--an-report-muted)] text-[11px] font-semibold whitespace-nowrap min-w-[120px]">Compliance</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--an-report-muted)] text-[11px] font-semibold whitespace-nowrap">Status</th>
                     </tr>
                   </thead>
                   <tbody>
+                    {!filteredEmployeeChecklist.length && !reportLoading && (
+                      <tr><td colSpan={7} className="an-report-empty">No team members match the selected filters.</td></tr>
+                    )}
                     {filteredEmployeeChecklist.map((row, idx) => (
                       <tr
                         key={row.empEmail}
@@ -2633,39 +2754,39 @@ export default function AnalyticsDashboard({
                           <div className="flex items-center gap-2">
                             <div
                               className="w-7 h-7 rounded-full shrink-0 text-white flex items-center justify-center text-[10px] font-bold"
-                              style={{ backgroundColor: COLORS[idx % COLORS.length] }}
+                              style={{ backgroundColor: `color-mix(in srgb, ${COLORS[idx % COLORS.length]} 37%, #171822)` }}
                             >
                               {row.empName.substring(0, 2).toUpperCase()}
                             </div>
                             <div>
                               <div className="font-semibold text-[var(--text-primary)]">{row.empName}</div>
-                              <div className="text-[11px] text-[var(--text-secondary)]">{row.empEmail}</div>
+                              <div className="text-[11px] text-[var(--an-report-muted)]">{row.empEmail}</div>
                             </div>
                           </div>
                         </td>
-                        <td className="px-3.5 py-2.5 text-[var(--text-secondary)]">{row.department}</td>
+                        <td className="px-3.5 py-2.5 text-[var(--an-report-muted)]">{row.department}</td>
                         <td className="text-center px-2.5 py-2.5">
                           <div className="font-bold text-[var(--text-primary)]">{row.total}</div>
                           {row.workingDays > 1 && (
-                            <div className="text-[10px] text-[var(--text-secondary)]">{row.totalPerDay}/day</div>
+                            <div className="text-[10px] text-[var(--an-report-muted)]">{row.totalPerDay}/day</div>
                           )}
                         </td>
-                        <td className="text-center px-2.5 py-2.5 font-bold text-emerald-600">{row.completed}</td>
-                        <td className={`text-center px-2.5 py-2.5 font-bold ${row.pending > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                        <td className="text-center px-2.5 py-2.5 font-bold text-[var(--an-report-success)]">{row.completed}</td>
+                        <td className={`text-center px-2.5 py-2.5 font-bold ${row.pending > 0 ? 'text-[var(--an-report-warning)]' : 'text-[var(--an-report-success)]'}`}>
                           {row.pending > 0 ? row.pending : '0'}
                         </td>
                         <td className="px-3.5 py-2.5">
                           <div className="flex items-center gap-2">
                             <div className="flex-1 h-1.5 bg-[var(--border-light)] rounded-full overflow-hidden">
-                              <div className={`h-full rounded-full ${row.rate === 100 ? 'bg-emerald-500' : row.rate > 0 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{ width: `${row.rate}%` }} />
+                              <div className={`h-full rounded-full ${row.rate === 100 ? 'bg-[var(--an-report-success)]' : row.rate > 0 ? 'bg-[var(--an-report-info)]' : 'bg-[var(--an-report-warning)]'}`} style={{ width: `${row.rate}%` }} />
                             </div>
                             <span className="text-[11px] font-bold min-w-[32px]">{row.rate}%</span>
                           </div>
                         </td>
                         <td className="text-center px-2.5 py-2.5">
                           <span
-                            className="text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
-                            style={{ backgroundColor: row.statusBg, color: row.statusColor }}
+                            className="an-report-status text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
+                            style={{ '--an-status-color': row.statusColor }}
                           >
                             {row.statusLabel}
                           </span>
@@ -2679,36 +2800,36 @@ export default function AnalyticsDashboard({
 
             {/* VIEW 2: Scheduled Slots Details */}
             {checklistViewMode === 'BY_SLOTS' && (
-              <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[380px] w-full relative">
+              <div className="overflow-auto max-h-[calc(100vh-280px)] an-report-table-scroll w-full relative">
                 {checklistItemsList.length === 0 ? (
-                  <div className="p-8 text-center text-[var(--text-secondary)] text-xs">
+                  <div className="p-8 text-center text-[var(--an-report-muted)] text-xs">
                     No checklist slots scheduled for today.
                   </div>
                 ) : (
                   <MobileTableView id="AnalyticsDashboard-5" hideToggle><table className="w-full min-w-[760px] border-separate border-spacing-0 text-xs">
                     <thead className="sticky top-0 z-10 bg-[var(--th-bg)]">
                       <tr className="bg-[var(--th-bg)]">
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Slot ID</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Checklist Title</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Department</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Assigned To</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Due Time</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap">Status</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] text-[11px] font-semibold whitespace-nowrap">Slot ID</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] text-[11px] font-semibold whitespace-nowrap">Checklist Title</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] text-[11px] font-semibold whitespace-nowrap">Department</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] text-[11px] font-semibold whitespace-nowrap">Assigned To</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--an-report-muted)] text-[11px] font-semibold whitespace-nowrap">Due Time</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--an-report-muted)] text-[11px] font-semibold whitespace-nowrap">Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {checklistItemsList.map((item, idx) => (
                         <tr key={item.id + (item.slot_id || '') + idx} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
-                          <td className="px-3.5 py-2.5 font-bold text-[var(--accent-color)] text-xs whitespace-nowrap">
+                          <td className="px-3.5 py-2.5 font-bold text-[var(--an-report-accent)] text-xs whitespace-nowrap">
                             {item.slot_id || `Slot ${idx + 1}`}
                           </td>
                           <td className="px-3.5 py-2.5 font-semibold text-[var(--text-primary)]">
                             {item.title || item.base_title || 'Daily Operational Checklist'}
                           </td>
-                          <td className="px-3.5 py-2.5 text-[var(--text-secondary)]">
+                          <td className="px-3.5 py-2.5 text-[var(--an-report-muted)]">
                             {item.department || 'General'}
                           </td>
-                          <td className="px-3.5 py-2.5 text-[var(--text-secondary)] text-[11px]">
+                          <td className="px-3.5 py-2.5 text-[var(--an-report-muted)] text-[11px]">
                             {item.assigned_type === 'ALL' ? '👥 All Team Staff' : (item.assigned_employee_email || 'General Staff')}
                           </td>
                           <td className="text-center px-2.5 py-2.5 font-semibold whitespace-nowrap">
@@ -2716,7 +2837,7 @@ export default function AnalyticsDashboard({
                           </td>
                           <td className="text-center px-2.5 py-2.5">
                             <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                              item.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' : item.status === 'PARTIAL' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-600'
+                              item.status === 'COMPLETED' ? 'bg-[var(--an-report-success-bg)] text-[var(--an-report-success)]' : item.status === 'PARTIAL' ? 'bg-[var(--an-report-warning-bg)] text-[var(--an-report-warning)]' : 'bg-[var(--an-report-danger-bg)] text-[var(--an-report-danger)]'
                             }`}>
                               {item.status === 'COMPLETED' ? (item.isDelayed ? '✅ Done (Late)' : '✅ Completed') : '⏳ Pending'}
                             </span>
@@ -2741,44 +2862,44 @@ export default function AnalyticsDashboard({
         <div className="flex flex-col gap-5">
           {/* Header Metric Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="card an-card-hover p-4 border-l-4 border-blue-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
-              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Approved Staff</div>
+            <div className="card an-card-hover p-4 border-l-4 border-[var(--an-report-info)] rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--an-report-muted)] uppercase tracking-wider">Approved Staff</div>
               <div className="text-2xl sm:text-3xl font-extrabold text-[var(--text-primary)] my-1">{attendanceStats.total}</div>
-              <div className="text-xs text-[var(--text-secondary)]">Active team members</div>
+              <div className="text-xs text-[var(--an-report-muted)]">Active team members</div>
             </div>
 
-            <div className="card an-card-hover p-4 border-l-4 border-emerald-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
-              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+            <div className="card an-card-hover p-4 border-l-4 border-[var(--an-report-success)] rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--an-report-muted)] uppercase tracking-wider">
                 {isAttendanceRange ? 'Period Presence Rate' : 'Effective Present'}
               </div>
-              <div className="text-2xl sm:text-3xl font-extrabold text-emerald-500 my-1">
+              <div className="text-2xl sm:text-3xl font-extrabold text-[var(--an-report-success)] my-1">
                 {isAttendanceRange ? `${attendanceStats.effectivePercent}%` : attendanceStats.effectivePresent}
               </div>
-              <div className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold">
+              <div className="text-xs text-[var(--an-report-success)]  font-semibold">
                 {isAttendanceRange ? `${attendanceStats.totalPresentLogs || 0} Total Present Logs` : `${attendanceStats.effectivePercent}% Presence Rate`}
               </div>
             </div>
 
-            <div className="card an-card-hover p-4 border-l-4 border-blue-600 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
-              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+            <div className="card an-card-hover p-4 border-l-4 border-[var(--an-report-info)] rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--an-report-muted)] uppercase tracking-wider">
                 {isAttendanceRange ? 'Working Days in Period' : '⚡ Active on CRM'}
               </div>
-              <div className="text-2xl sm:text-3xl font-extrabold text-blue-600 dark:text-blue-400 my-1">
+              <div className="text-2xl sm:text-3xl font-extrabold text-[var(--an-report-info)]  my-1">
                 {isAttendanceRange ? `${attendanceWorkingDays} Days` : attendanceStats.crmActiveOnly}
               </div>
-              <div className="text-xs text-[var(--text-secondary)]">
+              <div className="text-xs text-[var(--an-report-muted)]">
                 {isAttendanceRange ? 'Mon–Sat in selected period' : 'Working without punch'}
               </div>
             </div>
 
-            <div className="card an-card-hover p-4 border-l-4 border-red-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
-              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+            <div className="card an-card-hover p-4 border-l-4 border-[var(--an-report-danger)] rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--an-report-muted)] uppercase tracking-wider">
                 {isAttendanceRange ? 'Active Punched Staff' : 'Absent'}
               </div>
-              <div className={`text-2xl sm:text-3xl font-extrabold my-1 ${isAttendanceRange ? 'text-emerald-600 dark:text-emerald-400' : (attendanceStats.absent > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400')}`}>
+              <div className={`text-2xl sm:text-3xl font-extrabold my-1 ${isAttendanceRange ? 'text-[var(--an-report-success)] ' : (attendanceStats.absent > 0 ? 'text-[var(--an-report-danger)] ' : 'text-[var(--an-report-success)] ')}`}>
                 {isAttendanceRange ? `${attendanceStats.punched} / ${attendanceStats.total}` : attendanceStats.absent}
               </div>
-              <div className="text-xs text-[var(--text-secondary)]">
+              <div className="text-xs text-[var(--an-report-muted)]">
                 {isAttendanceRange ? `${attendanceStats.absent} Staff with zero punches` : 'No punch or activity'}
               </div>
             </div>
@@ -2791,7 +2912,7 @@ export default function AnalyticsDashboard({
                 <h4 className="m-0 text-sm font-bold text-[var(--text-primary)]">
                   {isAttendanceRange ? `Team Attendance & Working Days Summary (${dateFilterLabel})` : "Today's Team Attendance & Activity Status"}
                 </h4>
-                <span className="text-xs text-[var(--text-secondary)]">
+                <span className="text-xs text-[var(--an-report-muted)]">
                   {isAttendanceRange ? `Aggregated punch logs across ${attendanceWorkingDays} working days in selected period` : "Combines Web Terminal Punch with CRM Lead Activity"}
                 </span>
               </div>
@@ -2810,7 +2931,7 @@ export default function AnalyticsDashboard({
 
                 <button
                   onClick={() => onNavigateTab?.('attendance')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-500/10 text-[var(--accent-color,#2563eb)] border border-[var(--accent-color,#2563eb)]/30 cursor-pointer hover:bg-blue-500/20 transition-colors shadow-xs"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[var(--an-report-info-bg)] text-[var(--an-report-accent)] border border-[var(--accent-color,#2563eb)]/30 cursor-pointer hover:bg-[var(--an-report-info-bg)] transition-colors shadow-xs"
                 >
                   <span>Open Attendance Module</span>
                   <ArrowRight size={12} />
@@ -2818,69 +2939,68 @@ export default function AnalyticsDashboard({
               </div>
             </div>
 
-            <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[380px] w-full relative">
+            <div className="overflow-auto max-h-[calc(100vh-280px)] an-report-table-scroll w-full relative">
               <MobileTableView id="AnalyticsDashboard-6" hideToggle>
                 <table className="w-full min-w-[650px] border-separate border-spacing-0 text-xs">
                   <thead className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)]">
                     <tr className="bg-[var(--th-bg)]">
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Staff Member</th>
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Code</th>
-                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Department</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] text-[0.72rem] font-semibold whitespace-nowrap">Staff Member</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--an-report-muted)] text-[0.72rem] font-semibold whitespace-nowrap">Code</th>
+                      <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] text-[0.72rem] font-semibold whitespace-nowrap">Department</th>
                       {isAttendanceRange ? (
                         <>
-                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Present Days</th>
-                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Late / Half Day</th>
-                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3.5 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap min-w-[120px]">Attendance Rate</th>
-                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Status & Health</th>
+                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--an-report-muted)] text-[0.72rem] font-semibold whitespace-nowrap">Present Days</th>
+                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--an-report-muted)] text-[0.72rem] font-semibold whitespace-nowrap">Late / Half Day</th>
+                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3.5 py-2.5 text-[var(--an-report-muted)] text-[0.72rem] font-semibold whitespace-nowrap min-w-[120px]">Attendance Rate</th>
+                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--an-report-muted)] text-[0.72rem] font-semibold whitespace-nowrap">Status & Health</th>
                         </>
                       ) : (
                         <>
-                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">In Time</th>
-                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] text-[0.72rem] font-semibold whitespace-nowrap">Status & Source</th>
+                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--an-report-muted)] text-[0.72rem] font-semibold whitespace-nowrap">In Time</th>
+                          <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--an-report-muted)] text-[0.72rem] font-semibold whitespace-nowrap">Status & Source</th>
                         </>
                       )}
                     </tr>
                   </thead>
                   <tbody>
+                    {!filteredAttendance.length && !reportLoading && (
+                      <tr><td colSpan={isAttendanceRange ? 7 : 5} className="an-report-empty">No attendance records match the selected filters.</td></tr>
+                    )}
                     {filteredAttendance.map(row => (
-                      <tr key={row.email} className="border-b border-[var(--border-light)] hover:bg-[var(--hover-bg,rgba(0,0,0,0.02))] transition-colors">
+                      <tr key={row.email} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
                         <td className="px-3.5 py-2.5">
                           <div className="font-semibold text-[var(--text-primary)]">{row.empName}</div>
-                          <div className="text-[0.7rem] text-[var(--text-secondary)]">{row.email}</div>
+                          <div className="text-[0.7rem] text-[var(--an-report-muted)]">{row.email}</div>
                         </td>
-                        <td className="text-center px-3 py-2.5 font-semibold text-[var(--text-secondary)]">{row.empCode}</td>
-                        <td className="px-3.5 py-2.5 text-[var(--text-secondary)]">{row.department}</td>
+                        <td className="text-center px-3 py-2.5 font-semibold text-[var(--an-report-muted)]">{row.empCode}</td>
+                        <td className="px-3.5 py-2.5 text-[var(--an-report-muted)]">{row.department}</td>
                         {isAttendanceRange ? (
                           <>
                             <td className="text-center px-3 py-2.5 font-bold text-[var(--text-primary)] whitespace-nowrap">
                               {row.presentDays || 0} / {attendanceWorkingDays}d
                             </td>
                             <td className="text-center px-3 py-2.5 whitespace-nowrap text-xs">
-                              {row.lateDays > 0 && <span className="text-amber-600 font-semibold mr-1">{row.lateDays} Late</span>}
-                              {row.halfDays > 0 && <span className="text-orange-600 font-semibold">{row.halfDays} Half</span>}
-                              {(!row.lateDays && !row.halfDays) && <span className="text-[var(--text-secondary)]">—</span>}
+                              {row.lateDays > 0 && <span className="text-[var(--an-report-warning)] font-semibold mr-1">{row.lateDays} Late</span>}
+                              {row.halfDays > 0 && <span className="text-[var(--an-report-warning)] font-semibold">{row.halfDays} Half</span>}
+                              {(!row.lateDays && !row.halfDays) && <span className="text-[var(--an-report-muted)]">—</span>}
                             </td>
                             <td className="px-3.5 py-2.5">
                               <div className="flex items-center gap-2">
                                 <div className="flex-1 h-1.5 bg-[var(--border-light)] rounded-full overflow-hidden">
                                   <div
-                                    className={`h-full rounded-full ${row.attendanceRate >= 80 ? 'bg-emerald-500' : row.attendanceRate >= 50 ? 'bg-blue-500' : row.attendanceRate > 0 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                    className={`h-full rounded-full ${row.attendanceRate >= 80 ? 'bg-[var(--an-report-success)]' : row.attendanceRate >= 50 ? 'bg-[var(--an-report-info)]' : row.attendanceRate > 0 ? 'bg-[var(--an-report-warning)]' : 'bg-[var(--an-report-danger)]'}`}
                                     style={{ width: `${row.attendanceRate || 0}%` }}
                                   />
                                 </div>
-                                <span className="text-[11px] font-bold text-[var(--text-secondary)] w-8 text-right">
+                                <span className="text-[11px] font-bold text-[var(--an-report-muted)] w-8 text-right">
                                   {row.attendanceRate || 0}%
                                 </span>
                               </div>
                             </td>
                             <td className="text-center px-3 py-2.5">
                               <span
-                                className="inline-block text-[0.7rem] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap"
-                                style={{
-                                  backgroundColor: (row.presentDays && row.presentDays > 0) ? 'rgba(16, 185, 129, 0.14)' : 'rgba(239, 68, 68, 0.14)',
-                                  color: (row.presentDays && row.presentDays > 0) ? '#16a34a' : '#dc2626',
-                                  border: `1px solid ${(row.presentDays && row.presentDays > 0) ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
-                                }}
+                                className="an-report-status inline-block text-[0.7rem] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap"
+                                style={{ '--an-status-color': row.statusColor }}
                               >
                                 {row.statusLabel}
                               </span>
@@ -2893,18 +3013,8 @@ export default function AnalyticsDashboard({
                             </td>
                             <td className="text-center px-3 py-2.5">
                               <span
-                                className="inline-block text-[0.7rem] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap"
-                                style={{
-                                  backgroundColor: (row.presenceStatus === 'PRESENT' || row.presenceStatus === 'REGULARIZED') ? 'rgba(16, 185, 129, 0.14)'
-                                    : row.presenceStatus === 'CRM_ACTIVE' ? 'rgba(59, 130, 246, 0.14)'
-                                    : (row.presenceStatus === 'LATE' || row.presenceStatus === 'HALF_DAY') ? 'rgba(245, 158, 11, 0.14)'
-                                    : 'rgba(239, 68, 68, 0.14)',
-                                  color: row.statusColor,
-                                  border: `1px solid ${(row.presenceStatus === 'PRESENT' || row.presenceStatus === 'REGULARIZED') ? 'rgba(16, 185, 129, 0.3)'
-                                    : row.presenceStatus === 'CRM_ACTIVE' ? 'rgba(59, 130, 246, 0.3)'
-                                    : (row.presenceStatus === 'LATE' || row.presenceStatus === 'HALF_DAY') ? 'rgba(245, 158, 11, 0.3)'
-                                    : 'rgba(239, 68, 68, 0.3)'}`
-                                }}
+                                className="an-report-status inline-block text-[0.7rem] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap"
+                                style={{ '--an-status-color': row.statusColor }}
                               >
                                 {row.statusLabel}
                               </span>
@@ -2925,7 +3035,7 @@ export default function AnalyticsDashboard({
       {/* 🎯 TAB 6: LEAD DATA & PIPELINE DASHBOARD                                  */}
       {/* ========================================================================= */}
       {(activeTab === 'lead-data' || activeTab === 'pipeline') && (
-        <div className="flex flex-col gap-5">
+        <div className="an-phase-body">
           {/* Header Action Banner */}
           <div className="flex justify-between items-center flex-wrap gap-3.5 p-4.5 bg-[var(--bg-surface)] rounded-xl border border-[var(--border-light)] shadow-sm">
             <div>
@@ -2940,7 +3050,7 @@ export default function AnalyticsDashboard({
 
             <button
               onClick={() => onNavigateTab?.('leads')}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 text-[var(--accent-color,#2563eb)] border border-[var(--accent-color,#2563eb)]/30 text-xs font-bold cursor-pointer hover:bg-blue-500/20 transition-colors shadow-xs"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--an-report-info-bg)] text-[var(--accent-color,#2563eb)] border border-[var(--accent-color,#2563eb)]/30 text-xs font-bold cursor-pointer hover:bg-[var(--an-report-info-bg)] transition-colors shadow-xs"
             >
               <span>Open Full Leads Database</span>
               <ArrowRight size={15} />
@@ -2948,7 +3058,7 @@ export default function AnalyticsDashboard({
           </div>
 
           {/* Quick Stats Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+          <div className="an-phase-kpis">
             {[
               { label: isAllTime ? 'Total Leads in CRM' : `Leads Active (${dateFilterLabel})`, value: kpis.total, color: '#3b82f6', icon: Database },
               { label: isAllTime ? 'Fresh / New Leads' : 'New Leads Created', value: kpis.newLeads, color: '#06b6d4', icon: Zap },
@@ -2962,9 +3072,9 @@ export default function AnalyticsDashboard({
                 <div key={card.label} className="card an-card-hover p-3.5 flex flex-col gap-1.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
                   <div className="flex justify-between items-center">
                     <span className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">{card.label}</span>
-                    <Icon size={14} style={{ color: card.color }} />
+                    <Icon size={14} style={{ color: phaseInk(card.color) }} />
                   </div>
-                  <div className="text-2xl font-extrabold" style={{ color: card.color }}>
+                  <div className="text-2xl font-extrabold" style={{ color: phaseInk(card.color) }}>
                     {typeof card.value === 'number' ? card.value.toLocaleString('en-IN') : card.value}
                   </div>
                 </div>
@@ -3008,8 +3118,8 @@ export default function AnalyticsDashboard({
                     {item.shortName}
                   </div>
                   <div className="flex justify-between items-baseline mt-2 gap-2">
-                    <span className="text-xl font-extrabold" style={{ color: item.color }}>{item.count.toLocaleString('en-IN')}</span>
-                    <span className="text-xs font-semibold flex items-center gap-1 shrink-0" style={{ color: item.color }}>
+                    <span className="text-xl font-extrabold" style={{ color: phaseInk(item.color) }}>{item.count.toLocaleString('en-IN')}</span>
+                    <span className="text-xs font-semibold flex items-center gap-1 shrink-0" style={{ color: phaseInk(item.color) }}>
                       View <ArrowRight size={11} />
                     </span>
                   </div>
@@ -3022,7 +3132,7 @@ export default function AnalyticsDashboard({
                           <span className="text-[var(--text-secondary)] truncate max-w-[75%]" title={sub.label}>
                             ↳ {sub.label}
                           </span>
-                          <span className="font-bold bg-[var(--th-bg)] px-1.5 py-0.5 rounded text-[10px] border border-[var(--border-light)]" style={{ color: item.color }}>
+                          <span className="font-bold bg-[var(--th-bg)] px-1.5 py-0.5 rounded text-[10px] border border-[var(--border-light)]" style={{ color: phaseInk(item.color) }}>
                             {sub.count}
                           </span>
                         </div>
@@ -3046,17 +3156,7 @@ export default function AnalyticsDashboard({
                 <h3 className="m-0 text-sm font-bold text-[var(--text-primary)]">Sales Pipeline Stage Distribution</h3>
                 <span className="text-xs text-[var(--text-secondary)]">{filteredLeadsSync.length.toLocaleString('en-IN')} Leads in View</span>
               </div>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={stageData} margin={{ top: 8, right: 8, left: -20, bottom: 16 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-light)" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
-                  <RechartsTooltip cursor={{ fill: 'var(--bg-primary)' }} contentStyle={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', borderRadius: '8px' }} />
-                  <Bar dataKey="count" fill="var(--accent-color)" radius={[4, 4, 0, 0]}>
-                    <LabelList dataKey="count" position="top" style={{ fill: 'var(--text-primary)', fontSize: 11, fontWeight: 600 }} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <AnalyticsStageChart data={stageData} height={260} />
             </div>
 
             <div className="card an-card-hover p-5 flex flex-col gap-3.5 rounded-xl border border-[var(--border-light)] bg-[var(--bg-surface)] shadow-sm">
@@ -3064,7 +3164,7 @@ export default function AnalyticsDashboard({
               <div className="flex flex-col gap-2.5">
                 <div className="p-3.5 rounded-lg bg-[var(--th-bg)] border border-[var(--border-light)]">
                   <div className="text-xs text-[var(--text-secondary)] font-semibold">WhatsApp Messages Sent ({dateFilterLabel})</div>
-                  <div className="text-2xl font-extrabold text-emerald-600 my-1">
+                  <div className="text-2xl font-extrabold text-[var(--an-report-success)] my-1">
                     {loading ? '…' : metrics.whatsappStats.period.toLocaleString('en-IN')}
                   </div>
                   <div className="text-[11px] text-[var(--text-secondary)]">
@@ -3074,7 +3174,7 @@ export default function AnalyticsDashboard({
 
                 <div className="p-3.5 rounded-lg bg-[var(--th-bg)] border border-[var(--border-light)]">
                   <div className="text-xs text-[var(--text-secondary)] font-semibold">Pipeline Conversion Health</div>
-                  <div className="text-2xl font-extrabold text-blue-600 my-1">
+                  <div className="text-2xl font-extrabold text-[var(--an-report-info)] my-1">
                     {kpis.total > 0 ? `${((kpis.won / kpis.total) * 100).toFixed(2)}%` : '0%'}
                   </div>
                   <div className="text-[11px] text-[var(--text-secondary)]">
@@ -3147,6 +3247,7 @@ export default function AnalyticsDashboard({
                   <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] pointer-events-none" />
                   <input
                     type="text"
+                    aria-label="Filter lead representatives"
                     placeholder="Filter representative..."
                     value={leadBreakdownSearch}
                     onChange={(e) => setLeadBreakdownSearch(e.target.value)}
@@ -3154,7 +3255,7 @@ export default function AnalyticsDashboard({
                   />
                 </div>
 
-                <div className="inline-flex rounded-lg border border-[var(--border-light)] overflow-hidden">
+                <div className="an-phase-filters inline-flex rounded-lg border border-[var(--border-light)] overflow-hidden" role="group" aria-label="Filter lead representatives by activity">
                   {[
                     { id: 'ALL', label: 'All Reps' },
                     { id: 'WITH_LEADS', label: 'With Leads' },
@@ -3162,6 +3263,8 @@ export default function AnalyticsDashboard({
                   ].map(f => (
                     <button
                       key={f.id}
+                      type="button"
+                      aria-pressed={leadBreakdownFilter === f.id}
                       onClick={() => setLeadBreakdownFilter(f.id)}
                       className={`px-2.5 py-1 text-xs font-bold border-0 cursor-pointer transition-colors ${
                         leadBreakdownFilter === f.id
@@ -3183,121 +3286,60 @@ export default function AnalyticsDashboard({
               </div>
             </div>
 
-            <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[400px] w-full relative">
-              <MobileTableView id="AnalyticsDashboard-7" hideToggle><table className="w-full border-separate border-spacing-0 text-xs">
-                <thead className="sticky top-0 z-12 bg-[var(--th-bg)]">
-                  <tr className="bg-[var(--th-bg)]">
-                    <th rowSpan={2} className="sticky top-0 z-12 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-3 py-2.5 font-bold text-[var(--text-secondary)] text-left align-middle border-r border-[var(--border-light)] min-w-[150px]">
-                      Representative
-                    </th>
-                    <th rowSpan={2} className="sticky top-0 z-12 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-3 py-2.5 font-bold text-[var(--text-secondary)] text-left align-middle border-r border-[var(--border-light)] min-w-[130px]">
-                      Department
-                    </th>
-                    <th colSpan={7} className="sticky top-0 z-12 px-2.5 py-1.5 font-bold text-[var(--text-primary)] text-center bg-[var(--th-bg)] border-r border-b border-[var(--border-light)] h-8">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <Layers size={13} className="text-[var(--accent-color)]" />
-                        <span>Stage Breakdown (Stages 1 – 7)</span>
-                      </div>
-                    </th>
-                    <th rowSpan={2} className="sticky top-0 z-12 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-3 py-2.5 font-bold text-[var(--text-secondary)] text-right align-middle border-r border-[var(--border-light)] min-w-[95px]">
-                      Total Assigned
-                    </th>
-                    <th rowSpan={2} className="sticky top-0 z-12 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-3 py-2.5 font-bold text-[var(--text-secondary)] text-right align-middle border-r border-[var(--border-light)] min-w-[100px]">
-                      🎯 Leads Touched
-                    </th>
-                    <th rowSpan={2} className="sticky top-0 z-12 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-3 py-2.5 font-bold text-[var(--text-secondary)] text-right align-middle border-r border-[var(--border-light)] min-w-[95px]">
-                      Touch Rate %
-                    </th>
-                    <th rowSpan={2} className="sticky top-0 z-12 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-3 py-2.5 font-bold text-[var(--text-secondary)] text-center align-middle min-w-[95px]">
-                      Outreach Score
-                    </th>
-                  </tr>
-                  <tr className="bg-[var(--th-bg)]">
-                    {[
-                      { num: 1, label: 'S1 New', color: '#3b82f6' },
-                      { num: 2, label: 'S2 Contact', color: '#06b6d4' },
-                      { num: 3, label: 'S3 Qual', color: '#8b5cf6' },
-                      { num: 4, label: 'S4 Follow', color: '#f59e0b' },
-                      { num: 5, label: 'S5 Process', color: '#ec4899' },
-                      { num: 6, label: 'S6 Convert', color: '#10b981' },
-                      { num: 7, label: 'S7 Final', color: '#6366f1' },
-                    ].map(st => (
-                      <th
-                        key={st.num}
-                        className="sticky top-8 z-11 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] px-2 py-1.5 text-center text-[11px] font-bold border-r border-[var(--border-light)] min-w-[58px]"
-                        style={{ color: st.color }}
-                      >
-                        {st.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredLeadMatrixData.length === 0 ? (
-                    <tr>
-                      <td colSpan={12} className="p-8 text-center text-[var(--text-secondary)] text-xs">
-                        No representatives found matching the selected filter.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredLeadMatrixData.map((row, idx) => {
-                      const contactRate = row.contactRate !== undefined ? row.contactRate : (row.leadsAssigned > 0 ? Math.round((row.leadsTouched / row.leadsAssigned) * 100) : 0);
+            <AnalyticsPhaseTable table={PHASE31_TABLES.leads} rows={filteredLeadMatrixData}
+              resetKey={JSON.stringify([phaseScopeKey, leadBreakdownFilter, leadBreakdownSearch])}
+              empty={phaseLoading ? 'Loading lead activity…' : 'No representatives found matching the selected filter.'}
+              renderRow={(row, idx) => {
+                const contactRate = row.contactRate !== undefined ? row.contactRate : (row.leadsAssigned > 0 ? Math.round((row.leadsTouched / row.leadsAssigned) * 100) : 0);
+                return (
+                  <tr key={row.empEmail || idx} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
+                    <td className="px-3 py-2 font-semibold text-[var(--text-primary)] border-r border-[var(--border-light)]">
+                      {row.empName}
+                    </td>
+                    <td className="px-3 py-2 text-[var(--text-secondary)] border-r border-[var(--border-light)]">
+                      {row.department || 'Sales & Telecalling'}
+                    </td>
+                    {[1, 2, 3, 4, 5, 6, 7].map(stNum => {
+                      const count = row.assignedStageBreakdown?.[stNum] ?? row.stageBreakdown?.[stNum] ?? 0;
+                      const colors = ['#3b82f6', '#06b6d4', '#8b5cf6', '#f59e0b', '#ec4899', '#10b981', '#6366f1'];
+                      const colColor = colors[stNum - 1];
                       return (
-                        <tr key={row.empEmail || idx} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
-                          <td className="px-3 py-2 font-semibold text-[var(--text-primary)] border-r border-[var(--border-light)]">
-                            {row.empName}
-                          </td>
-                          <td className="px-3 py-2 text-[var(--text-secondary)] border-r border-[var(--border-light)]">
-                            {row.department || 'Sales & Telecalling'}
-                          </td>
-                          {[1, 2, 3, 4, 5, 6, 7].map(stNum => {
-                            const count = row.assignedStageBreakdown?.[stNum] ?? row.stageBreakdown?.[stNum] ?? 0;
-                            const colors = ['#3b82f6', '#06b6d4', '#8b5cf6', '#f59e0b', '#ec4899', '#10b981', '#6366f1'];
-                            const colColor = colors[stNum - 1];
-                            return (
-                              <td
-                                key={stNum}
-                                className="px-2 py-2 text-center text-xs border-r border-[var(--border-light)]"
-                                style={{
-                                  fontWeight: count > 0 ? 700 : 400,
-                                  color: count > 0 ? colColor : 'var(--text-secondary)',
-                                  backgroundColor: count > 0 ? `${colColor}0D` : 'transparent'
-                                }}
-                              >
-                                {count > 0 ? count : '—'}
-                              </td>
-                            );
-                          })}
-                          <td className="px-3 py-2 text-right font-bold text-blue-600 border-r border-[var(--border-light)]">
-                            📦 {row.leadsAssigned.toLocaleString('en-IN')}
-                          </td>
-                          <td className="px-3 py-2 text-right font-bold text-emerald-600 border-r border-[var(--border-light)]">
-                            🎯 {row.leadsAssigned > 0 ? row.leadsTouched.toLocaleString('en-IN') : '—'}
-                          </td>
-                          <td className={`px-3 py-2 text-right font-bold border-r border-[var(--border-light)] ${contactRate >= 70 ? 'text-emerald-600' : contactRate >= 40 ? 'text-amber-500' : 'text-red-500'}`}>
-                            {row.leadsAssigned > 0 ? `${contactRate}%` : '—'}
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            {row.leadsAssigned > 0 ? (
-                              <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                (row.outreachScore ?? 0) >= 20 
-                                  ? 'bg-emerald-50 text-emerald-600' 
-                                  : (row.outreachScore ?? 0) >= 12 
-                                    ? 'bg-amber-50 text-amber-600' 
-                                    : 'bg-red-50 text-red-600'
-                              }`}>
-                                {row.outreachScore ?? 0} / 30 pts
-                              </span>
-                            ) : (
-                              <span className="text-[var(--text-secondary)] text-xs">—</span>
-                            )}
-                          </td>
-                        </tr>
+                        <td
+                          key={stNum}
+                          className="px-2 py-2 text-center text-xs border-r border-[var(--border-light)]"
+                          style={{
+                            fontWeight: count > 0 ? 700 : 400,
+                            color: count > 0 ? phaseInk(colColor) : 'var(--an-report-muted)',
+                            backgroundColor: count > 0 ? `${colColor}0D` : 'transparent'
+                          }}
+                        >
+                          {count > 0 ? count : '—'}
+                        </td>
                       );
-                    }))}
-                </tbody>
-              </table></MobileTableView>
-            </div>
+                    })}
+                    <td className="px-3 py-2 text-right font-bold text-[var(--an-report-info)] border-r border-[var(--border-light)]">
+                      📦 {row.leadsAssigned.toLocaleString('en-IN')}
+                    </td>
+                    <td className="px-3 py-2 text-right font-bold text-[var(--an-report-success)] border-r border-[var(--border-light)]">
+                      🎯 {row.leadsAssigned > 0 ? row.leadsTouched.toLocaleString('en-IN') : '—'}
+                    </td>
+                    <td className={`px-3 py-2 text-right font-bold border-r border-[var(--border-light)] ${contactRate >= 70 ? 'text-[var(--an-report-success)]' : contactRate >= 40 ? 'text-[var(--an-report-warning)]' : 'text-[var(--an-report-danger)]'}`}>
+                      {row.leadsAssigned > 0 ? `${contactRate}%` : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {row.leadsAssigned > 0 ? (
+                        <span className="an-phase-badge an-report-status"
+                          data-an-tone={(row.outreachScore ?? 0) >= 20 ? 'success' : (row.outreachScore ?? 0) >= 12 ? 'warning' : 'danger'}>
+                          {row.outreachScore ?? 0} / 30 pts
+                        </span>
+                      ) : (
+                        <span className="text-[var(--text-secondary)] text-xs">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              }}
+            />
           </div>
         </div>
       )}
@@ -3311,17 +3353,17 @@ export default function AnalyticsDashboard({
           <div className="flex justify-between items-center flex-wrap gap-3.5 p-4.5 bg-[var(--bg-surface)] rounded-xl border border-[var(--border-light)] shadow-sm">
             <div>
               <h3 className="m-0 text-base font-bold flex items-center gap-2 text-[var(--text-primary)]">
-                <Briefcase size={18} className="text-[var(--accent-color)]" />
+                <Briefcase size={18} className="text-[var(--an-report-accent)]" />
                 Recruitment & Talent Acquisition Hub
               </h3>
-              <div className="text-xs text-[var(--text-secondary)] mt-1">
+              <div className="text-xs text-[var(--an-report-muted)] mt-1">
                 Live job requisitions, candidate pipeline tracking & multi-stage interview progress
               </div>
             </div>
 
             <button
               onClick={() => onNavigateTab?.('recruiter')}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 text-[var(--accent-color,#2563eb)] border border-[var(--accent-color,#2563eb)]/30 text-xs font-bold cursor-pointer hover:bg-blue-500/20 transition-colors shadow-xs"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--an-report-info-bg)] text-[var(--an-report-accent)] border border-[var(--accent-color,#2563eb)]/30 text-xs font-bold cursor-pointer hover:bg-[var(--an-report-info-bg)] transition-colors shadow-xs"
             >
               <span>Open Full Recruiter Module</span>
               <ArrowRight size={15} />
@@ -3330,52 +3372,52 @@ export default function AnalyticsDashboard({
 
           {/* Top KPI Metric Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3.5">
-            <div className="card an-card-hover p-4 border-l-4 border-blue-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
-              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Open Positions</div>
-              <div className="text-2xl sm:text-3xl font-extrabold text-blue-500 my-1">
+            <div className="card an-card-hover p-4 border-l-4 border-[var(--an-report-info)] rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--an-report-muted)] uppercase tracking-wider">Open Positions</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-[var(--an-report-info)] my-1">
                 {dashboardSummaries.recruitmentSummary?.openPositions || 0}
               </div>
-              <div className="text-xs text-[var(--text-secondary)]">
+              <div className="text-xs text-[var(--an-report-muted)]">
                 {dashboardSummaries.recruitmentSummary?.positions?.reduce((a, b) => a + (b.openings || 1), 0) || 0} Total vacancies
               </div>
             </div>
 
-            <div className="card an-card-hover p-4 border-l-4 border-purple-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
-              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Total Candidates</div>
-              <div className="text-2xl sm:text-3xl font-extrabold text-purple-500 my-1">
+            <div className="card an-card-hover p-4 border-l-4 border-[var(--an-report-violet)] rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--an-report-muted)] uppercase tracking-wider">Total Candidates</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-[var(--an-report-violet)] my-1">
                 {dashboardSummaries.recruitmentSummary?.totalCandidates || 0}
               </div>
-              <div className="text-xs text-[var(--text-secondary)]">
+              <div className="text-xs text-[var(--an-report-muted)]">
                 {dashboardSummaries.recruitmentSummary?.newInPeriod ?? dashboardSummaries.recruitmentSummary?.newToday ?? 0} Added in period ({dateFilterLabel})
               </div>
             </div>
 
-            <div className="card an-card-hover p-4 border-l-4 border-indigo-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
-              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">In Interview</div>
-              <div className="text-2xl sm:text-3xl font-extrabold text-indigo-500 my-1">
+            <div className="card an-card-hover p-4 border-l-4 border-[var(--an-report-violet)] rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--an-report-muted)] uppercase tracking-wider">In Interview</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-[var(--an-report-violet)] my-1">
                 {dashboardSummaries.recruitmentSummary?.inInterview || 0}
               </div>
-              <div className="text-xs text-[var(--text-secondary)]">
+              <div className="text-xs text-[var(--an-report-muted)]">
                 Stages S03 & Scheduling
               </div>
             </div>
 
-            <div className="card an-card-hover p-4 border-l-4 border-emerald-500 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
-              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Shortlisted</div>
-              <div className="text-2xl sm:text-3xl font-extrabold text-emerald-500 my-1">
+            <div className="card an-card-hover p-4 border-l-4 border-[var(--an-report-success)] rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--an-report-muted)] uppercase tracking-wider">Shortlisted</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-[var(--an-report-success)] my-1">
                 {dashboardSummaries.recruitmentSummary?.shortlisted || 0}
               </div>
-              <div className="text-xs text-[var(--text-secondary)]">
+              <div className="text-xs text-[var(--an-report-muted)]">
                 Stage S07 Qualified
               </div>
             </div>
 
-            <div className="card an-card-hover p-4 border-l-4 border-green-600 rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
-              <div className="text-[0.72rem] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Offers & Joined</div>
-              <div className="text-2xl sm:text-3xl font-extrabold text-green-600 my-1">
+            <div className="card an-card-hover p-4 border-l-4 border-[var(--an-report-success)] rounded-xl bg-[var(--bg-surface)] border-t border-r border-b border-[var(--border-light)] shadow-sm">
+              <div className="text-[0.72rem] font-bold text-[var(--an-report-muted)] uppercase tracking-wider">Offers & Joined</div>
+              <div className="text-2xl sm:text-3xl font-extrabold text-[var(--an-report-success)] my-1">
                 {dashboardSummaries.recruitmentSummary?.hired || 0}
               </div>
-              <div className="text-xs text-[var(--text-secondary)]">
+              <div className="text-xs text-[var(--an-report-muted)]">
                 LOI Accepted & Joined
               </div>
             </div>
@@ -3386,17 +3428,17 @@ export default function AnalyticsDashboard({
             <div className="px-4 py-3 border-b border-[var(--border-light)] bg-[var(--th-bg)] flex justify-between items-center flex-wrap gap-2">
               <div>
                 <h4 className="m-0 text-sm font-bold text-[var(--text-primary)] flex items-center gap-1.5">
-                  <Briefcase size={15} className="text-[var(--accent-color)]" />
+                  <Briefcase size={15} className="text-[var(--an-report-accent)]" />
                   Active Job Positions ({dashboardSummaries.recruitmentSummary?.positions?.length || 0})
                 </h4>
-                <span className="text-xs text-[var(--text-secondary)]">
+                <span className="text-xs text-[var(--an-report-muted)]">
                   Current open requisitions and department headcount requirements
                 </span>
               </div>
 
               <button
                 onClick={() => onNavigateTab?.('recruiter')}
-                className="flex items-center gap-1.5 text-xs font-semibold text-[var(--accent-color)] bg-transparent border-0 cursor-pointer p-0 hover:underline"
+                className="flex items-center gap-1.5 text-xs font-semibold text-[var(--an-report-accent)] bg-transparent border-0 cursor-pointer p-0 hover:underline"
               >
                 <span>Manage in Recruiter</span>
                 <ExternalLink size={12} />
@@ -3404,38 +3446,38 @@ export default function AnalyticsDashboard({
             </div>
 
             {dashboardSummaries.recruitmentSummary?.positions?.length === 0 ? (
-              <div className="p-10 text-center text-xs text-[var(--text-secondary)]">
+              <div className="p-10 text-center text-xs text-[var(--an-report-muted)]">
                 No job positions created yet.
               </div>
             ) : (
-              <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[380px] w-full relative">
+              <div className="overflow-auto max-h-[calc(100vh-280px)] an-report-table-scroll w-full relative">
                 <MobileTableView id="AnalyticsDashboard-8" hideToggle>
                   <table className="w-full min-w-[760px] border-separate border-spacing-0 text-xs">
                     <thead className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)]">
                       <tr className="bg-[var(--th-bg)]">
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Job Title</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Department</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Openings</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Recruiter Assigned</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Salary Range</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Target Deadline</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Status</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Job Title</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Department</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Openings</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Recruiter Assigned</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Salary Range</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Target Deadline</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3.5 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(dashboardSummaries.recruitmentSummary?.positions || []).map((pos, idx) => {
                         const isClosed = pos.status === 'CLOSED';
                         return (
-                          <tr key={pos.id || idx} className="border-b border-[var(--border-light)] hover:bg-[var(--hover-bg,rgba(0,0,0,0.02))] transition-colors">
+                          <tr key={pos.id || idx} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
                             <td className="px-3.5 py-2.5">
                               <div className="font-bold text-[var(--text-primary)]">{pos.title}</div>
                               <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                                <span className="text-[0.68rem] text-[var(--text-secondary)] font-mono">
+                                <span className="text-[0.68rem] text-[var(--an-report-muted)] font-mono">
                                   {pos.id?.substring(0, 8) ? `POS-${pos.id.substring(0, 8).toUpperCase()}` : ''}
                                 </span>
                                 {pos.workspace_branch_code && (
                                   <span
-                                    className="text-[0.65rem] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-[var(--accent-color,#2563eb)]"
+                                    className="text-[0.65rem] font-bold px-1.5 py-0.5 rounded bg-[var(--an-report-info-bg)] text-[var(--an-report-accent)]"
                                     title={`Tenant: ${pos.workspace_tenant_code || 'TNT00002'} | Branch: ${pos.workspace_branch_code}`}
                                   >
                                     {pos.workspace_branch_code} ({pos.workspace_company || 'NSMLR'})
@@ -3449,11 +3491,11 @@ export default function AnalyticsDashboard({
                               </span>
                             </td>
                             <td className="text-center px-3 py-2.5 font-bold">
-                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/25 text-xs font-bold">
+                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[var(--an-report-info-bg)] text-[var(--an-report-info)]  border border-[var(--an-report-info-line)] text-xs font-bold">
                                 {pos.openings || 1}
                               </span>
                             </td>
-                            <td className="px-3.5 py-2.5 text-[var(--text-secondary)] text-xs">
+                            <td className="px-3.5 py-2.5 text-[var(--an-report-muted)] text-xs">
                               {pos.recruiter_assigned || 'Unassigned'}
                             </td>
                             <td className="px-3.5 py-2.5 text-xs">
@@ -3464,17 +3506,17 @@ export default function AnalyticsDashboard({
                                   {pos.salary_max ? `₹${Number(pos.salary_max).toLocaleString('en-IN')}` : ''}
                                 </span>
                               ) : (
-                                <span className="text-[var(--text-secondary)]">Best in industry</span>
+                                <span className="text-[var(--an-report-muted)]">Best in industry</span>
                               )}
                             </td>
-                            <td className="px-3.5 py-2.5 text-xs text-[var(--text-secondary)]">
+                            <td className="px-3.5 py-2.5 text-xs text-[var(--an-report-muted)]">
                               {pos.deadline_date ? new Date(pos.deadline_date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
                             </td>
                             <td className="text-center px-3.5 py-2.5">
                               <span className={`inline-block px-2.5 py-0.5 rounded-full text-[0.72rem] font-bold whitespace-nowrap border ${
                                 isClosed
-                                  ? 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/25'
-                                  : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
+                                  ? 'bg-[var(--an-report-danger-bg)] text-[var(--an-report-danger)]  border-[var(--an-report-danger-line)]'
+                                  : 'bg-[var(--an-report-success-bg)] text-[var(--an-report-success)]  border-[var(--an-report-success-line)]'
                               }`}>
                                 {isClosed ? 'Closed' : 'Active Requisition'}
                               </span>
@@ -3494,10 +3536,10 @@ export default function AnalyticsDashboard({
             <div className="px-4 py-3 border-b border-[var(--border-light)] bg-[var(--th-bg)] flex justify-between items-center flex-wrap gap-2.5">
               <div>
                 <h4 className="m-0 text-sm font-bold text-[var(--text-primary)] flex items-center gap-1.5">
-                  <Users size={15} className="text-[var(--accent-color)]" />
+                  <Users size={15} className="text-[var(--an-report-accent)]" />
                   Candidate Talent Pipeline ({filteredCandidatesList.length})
                 </h4>
-                <span className="text-xs text-[var(--text-secondary)]">
+                <span className="text-xs text-[var(--an-report-muted)]">
                   Screening, evaluation stages & hiring decisions
                 </span>
               </div>
@@ -3505,7 +3547,7 @@ export default function AnalyticsDashboard({
               {/* Filters & Search Toolbar */}
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="relative">
-                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
+                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--an-report-muted)]" />
                   <input
                     type="text"
                     placeholder="Search candidate, role, phone..."
@@ -3516,7 +3558,7 @@ export default function AnalyticsDashboard({
                   {recruiterSearch && (
                     <button
                       onClick={() => setRecruiterSearch('')}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 bg-transparent border-0 cursor-pointer text-[var(--text-secondary)] text-xs hover:text-[var(--text-primary)]"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 bg-transparent border-0 cursor-pointer text-[var(--an-report-muted)] text-xs hover:text-[var(--text-primary)]"
                     >
                       ×
                     </button>
@@ -3546,22 +3588,22 @@ export default function AnalyticsDashboard({
             </div>
 
             {filteredCandidatesList.length === 0 ? (
-              <div className="p-10 text-center text-xs text-[var(--text-secondary)]">
+              <div className="p-10 text-center text-xs text-[var(--an-report-muted)]">
                 {recruiterSearch || recruiterFilter !== 'ALL' ? 'No candidates match your search or filter.' : 'No candidates in the pipeline.'}
               </div>
             ) : (
-              <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[380px] w-full relative">
+              <div className="overflow-auto max-h-[calc(100vh-280px)] an-report-table-scroll w-full relative">
                 <MobileTableView id="AnalyticsDashboard-9" hideToggle>
                   <table className="w-full min-w-[850px] border-separate border-spacing-0 text-xs">
                     <thead className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)]">
                       <tr className="bg-[var(--th-bg)]">
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Candidate</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Target Position</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Pipeline Stage</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Current Status</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Contact Info</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Applied Date</th>
-                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3.5 py-2.5 text-[var(--text-secondary)] font-semibold text-[0.72rem] whitespace-nowrap">Actions</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Candidate</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Target Position</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Pipeline Stage</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Current Status</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Contact Info</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-left px-3.5 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Applied Date</th>
+                        <th className="sticky top-0 z-10 bg-[var(--th-bg)] shadow-[0_1px_0_var(--border-light)] text-center px-3.5 py-2.5 text-[var(--an-report-muted)] font-semibold text-[0.72rem] whitespace-nowrap">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3570,18 +3612,18 @@ export default function AnalyticsDashboard({
                         const isJoined = (cand.candidate_status || '').toLowerCase().includes('joined') || cand.current_stage === 'S09';
                         const isRejected = (cand.candidate_status || '').toLowerCase().includes('reject') || (cand.candidate_status || '').toLowerCase().includes('dropped');
                         return (
-                          <tr key={cand.id || idx} className="border-b border-[var(--border-light)] hover:bg-[var(--hover-bg,rgba(0,0,0,0.02))] transition-colors">
+                          <tr key={cand.id || idx} className="border-b border-[var(--border-light)] hover:bg-[var(--th-bg)] transition-colors">
                             <td className="px-3.5 py-2.5">
                               <div className="font-bold text-[var(--text-primary)]">{cand.name}</div>
                               <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                                 {cand.candidate_code && (
-                                  <span className="text-[0.68rem] text-[var(--text-secondary)] font-mono">
+                                  <span className="text-[0.68rem] text-[var(--an-report-muted)] font-mono">
                                     {cand.candidate_code}
                                   </span>
                                 )}
                                 {cand.workspace_tenant_code && (
                                   <span
-                                    className="text-[0.63rem] font-bold px-1 py-0.5 rounded bg-[var(--th-bg)] text-[var(--text-secondary)]"
+                                    className="text-[0.63rem] font-bold px-1 py-0.5 rounded bg-[var(--th-bg)] text-[var(--an-report-muted)]"
                                     title={`Tenant Code: ${cand.workspace_tenant_code}`}
                                   >
                                     {cand.workspace_tenant_code}
@@ -3594,12 +3636,12 @@ export default function AnalyticsDashboard({
                                 {cand.recruitment_positions?.title || 'General Position'}
                               </div>
                               <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                                <span className="text-[0.7rem] text-[var(--text-secondary)]">
+                                <span className="text-[0.7rem] text-[var(--an-report-muted)]">
                                   {cand.recruitment_positions?.department || '—'}
                                 </span>
                                 {cand.workspace_branch_code && (
                                   <span
-                                    className="text-[0.65rem] font-bold px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400"
+                                    className="text-[0.65rem] font-bold px-1.5 py-0.5 rounded bg-[var(--an-report-violet-bg)] text-[var(--an-report-violet)] "
                                     title={`Branch: ${cand.workspace_branch_code} | Company: ${cand.workspace_company || 'NSMLR'}`}
                                   >
                                     {cand.workspace_branch_code} ({cand.workspace_company || 'NSMLR'})
@@ -3609,8 +3651,8 @@ export default function AnalyticsDashboard({
                             </td>
                             <td className="px-3.5 py-2.5">
                               <span
-                                className="inline-block px-2.5 py-0.5 rounded-full text-[0.72rem] font-bold border border-[var(--border-light)]"
-                                style={{ backgroundColor: badge.bg, color: badge.color }}
+                                className="an-report-status inline-block px-2.5 py-0.5 rounded-full text-[0.72rem] font-bold"
+                                style={{ '--an-status-color': badge.color }}
                               >
                                 {badge.label}
                               </span>
@@ -3618,19 +3660,19 @@ export default function AnalyticsDashboard({
                             <td className="px-3.5 py-2.5">
                               <span className={`inline-block px-2.5 py-0.5 rounded text-[0.73rem] font-semibold border ${
                                 isJoined
-                                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
+                                  ? 'bg-[var(--an-report-success-bg)] text-[var(--an-report-success)]  border-[var(--an-report-success-line)]'
                                   : isRejected
-                                    ? 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/25'
+                                    ? 'bg-[var(--an-report-danger-bg)] text-[var(--an-report-danger)]  border-[var(--an-report-danger-line)]'
                                     : 'bg-[var(--th-bg)] text-[var(--text-primary)] border-[var(--border-light)]'
                               }`}>
                                 {cand.candidate_status || 'Under Review'}
                               </span>
                             </td>
-                            <td className="px-3.5 py-2.5 text-xs text-[var(--text-secondary)]">
+                            <td className="px-3.5 py-2.5 text-xs text-[var(--an-report-muted)]">
                               {cand.phone && <div className="flex items-center gap-1"><Phone size={11} /> {cand.phone}</div>}
                               {cand.email && <div className="flex items-center gap-1"><Mail size={11} /> {cand.email}</div>}
                             </td>
-                            <td className="px-3.5 py-2.5 text-xs text-[var(--text-secondary)]">
+                            <td className="px-3.5 py-2.5 text-xs text-[var(--an-report-muted)]">
                               {cand.created_at ? new Date(cand.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
                             </td>
                             <td className="text-center px-3.5 py-2.5">
@@ -3641,7 +3683,7 @@ export default function AnalyticsDashboard({
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     title="View Resume"
-                                    className="inline-flex items-center justify-center px-2 py-1 rounded-md border border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--accent-color)] no-underline text-xs font-semibold hover:opacity-80"
+                                    className="inline-flex items-center justify-center px-2 py-1 rounded-md border border-[var(--border-light)] bg-[var(--bg-surface)] text-[var(--an-report-accent)] no-underline text-xs font-semibold hover:opacity-80"
                                   >
                                     <FileText size={12} className="mr-1" />
                                     Resume

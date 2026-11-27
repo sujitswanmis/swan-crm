@@ -138,6 +138,6 @@ export async function GET(request) {
     return NextResponse.redirect(new URL(targetUrl, request.url), 307);
   } catch (err) {
     console.error('[android-apk] Download error:', err);
-    return NextResponse.redirect(getDirectStorageUrl(10), 307);
+    return NextResponse.redirect(getDirectStorageUrl(DEFAULT_ANDROID_RELEASE_POLICY.latest_version_code), 307);
   }
 }

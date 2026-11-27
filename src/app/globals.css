@@ -1390,27 +1390,27 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
 }
 
 .nav-list {
-  padding: 0.65rem 0.4rem;
+  padding: 0.45rem 0.35rem;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 3px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.55rem 0.7rem;
+  padding: 0.38rem 0.65rem;
   border-radius: 6px 10px 10px 6px !important;
   color: var(--text-secondary);
   text-decoration: none;
   font-weight: 600;
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   background-color: transparent !important;
   border: 1px solid transparent !important;
   border-left: 3.5px solid transparent !important;
   box-shadow: none !important;
-  margin: 0.12rem 0.15rem !important;
+  margin: 1px 2px !important;
   position: relative;
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -1466,6 +1466,15 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
   top: 0;
   z-index: 40;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.03);
+}
+
+/* Keep the top header on the selected dark theme surface. */
+:is(
+  .theme-dark, .theme-m3-dark, .theme-stylish-1, .theme-stylish-2,
+  .theme-stylish-3, .theme-stylish-4, .theme-premium-1, .theme-premium-3,
+  .theme-premium-4, .theme-aurora, .theme-forest, .theme-carbon, .theme-sunset
+) .top-header.spc-header {
+  background-color: var(--bg-surface) !important;
 }
 
 .page-content {
@@ -2311,3 +2320,304 @@ input.search-input-field:not([type="checkbox"]):not([type="radio"]),
 
 
 
+/* SPC themes style the shell and Home without changing the shared module palette. */
+.theme-spc-pearl :is(.spc-sidebar, .sidebar-submenu-popover, .spc-header, .page-content:is([data-spc-home="true"], [data-task-planner-active="true"]), .spc-workspace-home, [data-spc-module-theme]) {
+  --spc-canvas: #f6f5f2;
+  --spc-surface: #fff;
+  --spc-navigation: #fcfbf8;
+  --spc-raised: #f7f4ee;
+  --spc-text: #282521;
+  --spc-muted: #5f574c;
+  --spc-line: #e4dcd0;
+  --spc-accent: #785321;
+  --spc-accent-surface: #f1e6d3;
+  --spc-avatar: #785321;
+  --spc-hero: linear-gradient(115deg, #fff 25%, #f5ecdf);
+  --spc-shadow: 0 1px 2px rgb(52 36 17 / 5%), 0 8px 22px rgb(52 36 17 / 6%);
+}
+
+.theme-spc-midnight :is(.spc-sidebar, .sidebar-submenu-popover, .spc-header, .page-content:is([data-spc-home="true"], [data-task-planner-active="true"]), .spc-workspace-home, [data-spc-module-theme]) {
+  --spc-canvas: #111318;
+  --spc-surface: #1b1e26;
+  --spc-navigation: #171920;
+  --spc-raised: #242832;
+  --spc-text: #f4efe7;
+  --spc-muted: #bdb6ab;
+  --spc-line: #3a3d45;
+  --spc-accent: #dfbf81;
+  --spc-accent-surface: #383022;
+  --spc-avatar: #785321;
+  --spc-hero: linear-gradient(115deg, #1e2129 25%, #30291f);
+  --spc-shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 22px rgb(0 0 0 / 20%);
+}
+
+.theme-spc-pearl .spc-workspace-home {
+  --spc-home-success: #147439;
+  --spc-home-warning: #a84a10;
+  --spc-home-danger: #b91c1c;
+}
+
+.theme-spc-midnight .spc-workspace-home {
+  --spc-home-success: #85dca7;
+  --spc-home-warning: #ffb87f;
+  --spc-home-danger: #ff9b9b;
+  --spc-home-blue: #9dbdff;
+  --spc-home-violet: #c7b8ff;
+  --spc-home-pink: #ff9ccd;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) :is(.spc-sidebar, .sidebar-submenu-popover) {
+  --bg-primary: var(--spc-raised);
+  --bg-surface: var(--spc-navigation);
+  --text-primary: var(--spc-text);
+  --text-secondary: var(--spc-muted);
+  --border-light: var(--spc-line);
+  --accent-color: var(--spc-accent);
+  --nav-active-bg: var(--spc-accent-surface);
+  --nav-hover-bg: var(--spc-raised);
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-sidebar .spc-sidebar-logo {
+  background: #fffaf0 !important;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-header {
+  background-color: var(--spc-navigation) !important;
+  border-bottom-color: var(--spc-line) !important;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-header :is(.spc-header-title, .mobile-menu-toggle) {
+  color: var(--spc-text) !important;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-header :is(.spc-header-search, .spc-header-theme, .spc-header-profile) {
+  --bg-primary: var(--spc-raised);
+  --bg-surface: var(--spc-surface);
+  --text-primary: var(--spc-text);
+  --text-secondary: var(--spc-muted);
+  --border-light: var(--spc-line);
+  --accent-color: var(--spc-accent);
+  --nav-active-bg: var(--spc-accent-surface);
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-header .spc-header-profile {
+  --accent-color: var(--spc-avatar);
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .page-content[data-spc-home="true"] {
+  background: var(--spc-canvas);
+}
+
+.spc-workspace-home {
+  --spc-home-control-surface: var(--spc-raised, var(--bg-primary, #f8fafc));
+  --spc-home-text: var(--spc-text, var(--text-primary, #1e293b));
+  --spc-home-muted: var(--spc-muted, var(--text-secondary, #475569));
+  --spc-home-focus: color-mix(in srgb, var(--accent-color, #4f46e5) 60%, var(--spc-home-text));
+}
+
+.spc-workspace-home :is(.spc-home-greeting > button, .spc-home-quick > div > button):hover {
+  border-color: var(--spc-home-focus) !important;
+}
+
+.spc-workspace-home :is(.spc-home-greeting > button, .spc-home-quick > div > button):focus-visible {
+  outline: 2px solid var(--spc-home-focus);
+  outline-offset: 2px;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-workspace-home {
+  background: var(--spc-canvas);
+  color: var(--spc-text) !important;
+  padding: clamp(0.875rem, 2.5vw, 2rem) !important;
+  gap: clamp(0.875rem, 2vw, 1.5rem) !important;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-home-greeting {
+  background: var(--spc-hero) !important;
+  border-color: var(--spc-line) !important;
+  border-radius: 18px !important;
+  box-shadow: var(--spc-shadow) !important;
+  padding: clamp(1rem, 3vw, 2rem) !important;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-home-title {
+  background: none !important;
+  -webkit-text-fill-color: currentColor !important;
+  color: var(--spc-text);
+  font-size: clamp(1.35rem, 2.5vw, 2rem) !important;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-home-meta {
+  color: var(--spc-muted) !important;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.65rem !important;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-home-role {
+  background: var(--spc-accent-surface) !important;
+  color: var(--spc-accent) !important;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) :is(.spc-home-greeting, .spc-home-quick) .spc-home-accent-icon {
+  stroke: var(--spc-accent);
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) :is(.spc-home-quick, .spc-home-widgets > div) {
+  --text-secondary: var(--spc-muted);
+  background: var(--spc-surface) !important;
+  border-color: var(--spc-line) !important;
+  box-shadow: var(--spc-shadow) !important;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-home-quick {
+  padding: clamp(0.875rem, 2vw, 1.35rem) !important;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-home-quick > div > div:first-child {
+  color: var(--spc-text) !important;
+  flex-basis: 100%;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-home-quick .spc-home-quick-divider {
+  background: var(--spc-line) !important;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) :is(.spc-home-greeting > button, .spc-home-quick > div > button) {
+  background: var(--spc-raised) !important;
+  border: 1px solid var(--spc-line) !important;
+  box-shadow: none !important;
+  color: var(--spc-text) !important;
+  min-height: 36px;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-home-quick > div:first-child > button {
+  background: var(--spc-accent-surface) !important;
+  color: var(--spc-accent) !important;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) :is(.spc-home-greeting > button, .spc-home-quick > div > button):hover {
+  border-color: var(--spc-accent) !important;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-home-quick > div:last-child > button > svg {
+  stroke: var(--spc-muted);
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-home-widgets {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22.5rem), 1fr)) !important;
+  gap: clamp(0.875rem, 2vw, 1.5rem) !important;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-home-widgets > div {
+  min-width: 0;
+  border-radius: 16px !important;
+  padding: clamp(0.875rem, 2vw, 1.25rem) !important;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) .spc-home-widgets h3 {
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) :is(
+  .spc-sidebar :is(button, [role="button"], a),
+  .sidebar-submenu-popover :is(button, a),
+  .spc-header :is(.mobile-menu-toggle, .spc-header-search, .spc-header-theme button, .spc-header-profile, .spc-header-mobile-theme),
+  .spc-home-greeting > button,
+  .spc-home-quick > div > button,
+  .spc-home-widgets button
+):focus-visible {
+  outline: 2px solid var(--spc-accent) !important;
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  :is(.theme-spc-pearl, .theme-spc-midnight) :is(.spc-home-greeting > button, .spc-home-quick > div > button) {
+    min-height: 40px;
+  }
+}
+
+/* Task Planner opts into the theme canvas and solid header while its route is active. */
+.top-header.spc-header[data-task-planner-active="true"] {
+  background-color: var(--spc-navigation, var(--bg-surface)) !important;
+}
+
+.page-content[data-task-planner-active="true"] {
+  background-color: var(--spc-canvas, var(--bg-primary));
+}
+
+/* Page palettes are opt-in and do not affect the CRM shell or other modules. */
+[data-spc-module-theme] {
+  --spc-view-canvas: var(--spc-canvas, var(--bg-primary, #f8fafc));
+  --spc-view-surface: var(--spc-surface, var(--bg-surface, #fff));
+  --spc-view-text: var(--spc-text, var(--text-primary, #0f172a));
+  --spc-view-muted: var(--spc-muted, var(--text-secondary, #475569));
+  --spc-view-border: var(--spc-line, var(--border-light, #e2e8f0));
+  --spc-view-raised: color-mix(in srgb, var(--spc-view-text) 7%, var(--spc-view-surface));
+  --spc-view-accent: color-mix(in srgb, var(--spc-accent, var(--accent-color, #2563eb)) 62%, var(--spc-view-text));
+  --spc-view-action: color-mix(in srgb, var(--spc-accent, var(--accent-color, #2563eb)) 58%, #151b2d);
+  --spc-view-action-hover: color-mix(in srgb, var(--spc-view-action) 85%, #0f172a);
+  --spc-view-info: color-mix(in srgb, #2563eb 45%, var(--spc-view-text));
+  --spc-view-success: color-mix(in srgb, #0f9f5b 45%, var(--spc-view-text));
+  --spc-view-warning: color-mix(in srgb, #d97706 42%, var(--spc-view-text));
+  --spc-view-danger: color-mix(in srgb, #dc2626 45%, var(--spc-view-text));
+  --spc-view-violet: color-mix(in srgb, #7c3aed 45%, var(--spc-view-text));
+  --spc-view-success-fill: #047857;
+  --spc-view-warning-fill: #92400e;
+  --spc-view-danger-fill: #b91c1c;
+  --spc-view-info-bg: color-mix(in srgb, var(--spc-view-info) 11%, var(--spc-view-surface));
+  --spc-view-success-bg: color-mix(in srgb, var(--spc-view-success) 11%, var(--spc-view-surface));
+  --spc-view-warning-bg: color-mix(in srgb, var(--spc-view-warning) 11%, var(--spc-view-surface));
+  --spc-view-danger-bg: color-mix(in srgb, var(--spc-view-danger) 11%, var(--spc-view-surface));
+  --spc-view-violet-bg: color-mix(in srgb, var(--spc-view-violet) 11%, var(--spc-view-surface));
+  --spc-view-info-border: color-mix(in srgb, var(--spc-view-info) 35%, var(--spc-view-border));
+  --spc-view-success-border: color-mix(in srgb, var(--spc-view-success) 35%, var(--spc-view-border));
+  --spc-view-warning-border: color-mix(in srgb, var(--spc-view-warning) 35%, var(--spc-view-border));
+  --spc-view-danger-border: color-mix(in srgb, var(--spc-view-danger) 35%, var(--spc-view-border));
+  --spc-view-violet-border: color-mix(in srgb, var(--spc-view-violet) 35%, var(--spc-view-border));
+  --bg-canvas: var(--spc-view-canvas);
+  --th-bg: var(--spc-view-raised);
+  --th-hover-bg: var(--spc-view-info-bg);
+  --th-active-bg: var(--spc-view-info-bg);
+  --th-filtered-bg: var(--spc-view-info-bg);
+  --th-filtered-hover-bg: var(--spc-view-info-bg);
+  --table-header-bg: var(--spc-view-raised);
+  --table-header-text: var(--spc-view-text);
+  --table-row-odd: var(--spc-view-surface);
+  --table-row-even: var(--spc-view-raised);
+  --table-row-hover: var(--spc-view-info-bg);
+  --spc-view-color-scheme: light;
+  background-color: var(--spc-view-canvas);
+  color: var(--spc-view-text);
+  color-scheme: var(--spc-view-color-scheme);
+}
+
+:is(.theme-spc-pearl, .theme-spc-midnight) [data-spc-module-theme] {
+  --bg-primary: var(--spc-canvas);
+  --bg-surface: var(--spc-surface);
+  --bg-secondary: var(--spc-raised);
+  --text-primary: var(--spc-text);
+  --text-secondary: var(--spc-muted);
+  --border-light: var(--spc-line);
+  --accent-color: var(--spc-accent);
+}
+
+:is(
+  .theme-dark, .theme-m3-dark, .theme-stylish-1, .theme-stylish-2,
+  .theme-stylish-3, .theme-stylish-4, .theme-premium-1, .theme-premium-3,
+  .theme-premium-4, .theme-aurora, .theme-forest, .theme-carbon, .theme-sunset,
+  .theme-spc-midnight
+) [data-spc-module-theme] {
+  --spc-view-color-scheme: dark;
+}
+
+[data-spc-module-theme] :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  color: var(--spc-view-text);
+}
+
+[data-spc-module-theme] :is(input, textarea)::placeholder {
+  color: var(--spc-view-muted);
+  opacity: 1;
+}

@@ -52,6 +52,7 @@ export async function updateSession(request) {
   const isPublicPage = 
     pathname === '/chat' || 
     pathname === '/' || 
+    pathname === '/home' || 
     pathname.startsWith('/apply') || 
     pathname === '/manifest.json' || 
     pathname === '/sw.js' || 
@@ -87,7 +88,7 @@ export async function updateSession(request) {
 
   // If user is logged in, don't let them see the login page
   if (user && pathname === '/login') {
-    const nextPath = request.nextUrl.searchParams.get('next') || '/';
+    const nextPath = request.nextUrl.searchParams.get('next') || '/home';
     return NextResponse.redirect(new URL(nextPath, request.url));
   }
 

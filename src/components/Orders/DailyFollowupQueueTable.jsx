@@ -771,7 +771,7 @@ export default function DailyFollowupQueueTable({
               padding: '0.5rem 1rem',
               borderRadius: '8px',
               border: 'none',
-              background: viewMode === 'QUEUE' ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : 'transparent',
+              background: viewMode === 'QUEUE' ? 'var(--channel-action-fill)' : 'transparent',
               color: viewMode === 'QUEUE' ? '#fff' : 'var(--text-secondary)',
               fontWeight: viewMode === 'QUEUE' ? 700 : 600,
               fontSize: '0.84rem',
@@ -793,7 +793,7 @@ export default function DailyFollowupQueueTable({
               padding: '0.5rem 1rem',
               borderRadius: '8px',
               border: 'none',
-              background: viewMode === 'LEDGER' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'transparent',
+              background: viewMode === 'LEDGER' ? 'var(--spc-view-success-fill)' : 'transparent',
               color: viewMode === 'LEDGER' ? '#fff' : 'var(--text-secondary)',
               fontWeight: viewMode === 'LEDGER' ? 700 : 600,
               fontSize: '0.84rem',
@@ -818,7 +818,7 @@ export default function DailyFollowupQueueTable({
             borderRadius: '8px',
             border: '1px solid var(--border-light)'
           }}>
-            <User size={13} style={{ color: '#38bdf8' }} />
+            <User size={13} style={{ color: 'var(--spc-view-info)' }} />
             <span>Logged in as: <strong style={{ color: 'var(--text-primary)' }}>{userName || 'Admin'}</strong></span>
           </div>
 
@@ -857,7 +857,7 @@ export default function DailyFollowupQueueTable({
             marginBottom: '1rem'
           }}>
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(56,189,248,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'var(--spc-view-info-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--spc-view-info)' }}>
                 <Phone size={20} />
               </div>
               <div>
@@ -867,31 +867,31 @@ export default function DailyFollowupQueueTable({
             </div>
 
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'var(--spc-view-danger-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--spc-view-danger)' }}>
                 <Clock size={20} />
               </div>
               <div>
-                <div style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 600, textTransform: 'uppercase' }}>Overdue Calls</div>
-                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ef4444' }}>{kpis.overdue}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-danger)', fontWeight: 600, textTransform: 'uppercase' }}>Overdue Calls</div>
+                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--spc-view-danger)' }}>{kpis.overdue}</div>
               </div>
             </div>
 
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'var(--spc-view-success-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--spc-view-success)' }}>
                 <CheckCircle2 size={20} />
               </div>
               <div>
-                <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600, textTransform: 'uppercase' }}>Completed Today</div>
-                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#10b981' }}>{kpis.completedToday}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-success)', fontWeight: 600, textTransform: 'uppercase' }}>Completed Today</div>
+                <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--spc-view-success)' }}>{kpis.completedToday}</div>
               </div>
             </div>
 
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'var(--spc-view-violet-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--spc-view-violet)' }}>
                 <Building2 size={20} />
               </div>
               <div>
-                <div style={{ fontSize: '0.72rem', color: '#a78bfa', fontWeight: 600, textTransform: 'uppercase' }}>Total Network</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-violet)', fontWeight: 600, textTransform: 'uppercase' }}>Total Network</div>
                 <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-primary)' }}>{kpis.total}</div>
               </div>
             </div>
@@ -999,7 +999,7 @@ export default function DailyFollowupQueueTable({
                 onChange={e => handleStateChange(e.target.value)}
                 style={{
                   padding: '0.5rem 0.75rem',
-                  background: stateFilter !== 'ALL' ? 'rgba(37,99,235,0.08)' : 'var(--bg-primary)',
+                  background: stateFilter !== 'ALL' ? 'var(--spc-view-info-bg)' : 'var(--bg-primary)',
                   border: stateFilter !== 'ALL' ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
                   borderRadius: '8px',
                   color: 'var(--text-primary)',
@@ -1019,7 +1019,7 @@ export default function DailyFollowupQueueTable({
                 onChange={e => setDistrictFilter(e.target.value)}
                 style={{
                   padding: '0.5rem 0.75rem',
-                  background: districtFilter !== 'ALL' ? 'rgba(37,99,235,0.08)' : 'var(--bg-primary)',
+                  background: districtFilter !== 'ALL' ? 'var(--spc-view-info-bg)' : 'var(--bg-primary)',
                   border: districtFilter !== 'ALL' ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
                   borderRadius: '8px',
                   color: 'var(--text-primary)',
@@ -1041,7 +1041,7 @@ export default function DailyFollowupQueueTable({
                 onChange={e => setBillingTypeFilter(e.target.value)}
                 style={{
                   padding: '0.5rem 0.75rem',
-                  background: billingTypeFilter !== 'ALL' ? 'rgba(37,99,235,0.08)' : 'var(--bg-primary)',
+                  background: billingTypeFilter !== 'ALL' ? 'var(--spc-view-info-bg)' : 'var(--bg-primary)',
                   border: billingTypeFilter !== 'ALL' ? '1px solid var(--accent-color, #2563eb)' : '1px solid var(--border-light)',
                   borderRadius: '8px',
                   color: 'var(--text-primary)',
@@ -1139,7 +1139,7 @@ export default function DailyFollowupQueueTable({
                               onClick={() => setStatusFilter('ALL')}
                               style={{
                                 padding: '0.45rem 0.9rem',
-                                background: 'var(--accent-color, #2563eb)',
+                                background: 'var(--channel-action-fill)',
                                 color: '#fff',
                                 border: 'none',
                                 borderRadius: '6px',
@@ -1189,7 +1189,7 @@ export default function DailyFollowupQueueTable({
                       return (
                         <tr key={item.party_id} style={{ borderBottom: '1px solid var(--border-light)' }}>
                           <td style={{ padding: '0.85rem 1rem' }}>
-                            <div style={{ fontWeight: 800, color: p?.party_type === 'Distributor' ? '#38bdf8' : '#34d399', fontSize: '0.9rem' }}>
+                            <div style={{ fontWeight: 800, color: p?.party_type === 'Distributor' ? 'var(--spc-view-info)' : 'var(--spc-view-success)', fontSize: '0.9rem' }}>
                               {p?.distributor_code || p?.dealer_code || p?.party_universal_code}
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
@@ -1199,8 +1199,8 @@ export default function DailyFollowupQueueTable({
                                 fontWeight: 700,
                                 padding: '0.1rem 0.4rem',
                                 borderRadius: '4px',
-                                background: p?.party_type === 'Distributor' ? 'rgba(56,189,248,0.2)' : 'rgba(16,185,129,0.2)',
-                                color: p?.party_type === 'Distributor' ? '#38bdf8' : '#34d399'
+                                background: p?.party_type === 'Distributor' ? 'var(--spc-view-info-bg)' : 'var(--spc-view-success-bg)',
+                                color: p?.party_type === 'Distributor' ? 'var(--spc-view-info)' : 'var(--spc-view-success)'
                               }}>
                                 {p?.party_type || 'Partner'}
                               </span>
@@ -1213,8 +1213,8 @@ export default function DailyFollowupQueueTable({
                                   fontWeight: 800,
                                   padding: '0.1rem 0.45rem',
                                   borderRadius: '4px',
-                                  background: opStatus.bg,
-                                  color: opStatus.color,
+                                  background: `color-mix(in srgb, ${opStatus.color} 13%, var(--spc-view-surface))`,
+                                  color: `color-mix(in srgb, ${opStatus.color} 30%, var(--spc-view-text))`,
                                   border: `1px solid ${opStatus.border}`
                                 }}
                                 title={`S08 Operational Status: ${opStatus.label}${opStatus.substage ? ' (' + opStatus.substage + ')' : ''}`}
@@ -1241,7 +1241,7 @@ export default function DailyFollowupQueueTable({
                           </td>
 
                           <td style={{ padding: '0.85rem 1rem', fontSize: '0.8rem' }}>
-                            <div style={{ fontWeight: 700, color: '#60a5fa' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--spc-view-info)' }}>
                               {item.frequency_type}
                             </div>
                             {item.preferred_time_slot && item.preferred_time_slot !== 'ANYTIME' && (
@@ -1259,8 +1259,8 @@ export default function DailyFollowupQueueTable({
                                 fontWeight: 800,
                                 padding: '0.2rem 0.55rem',
                                 borderRadius: '4px',
-                                background: 'rgba(239,68,68,0.15)',
-                                color: '#ef4444'
+                                background: 'var(--spc-view-danger-bg)',
+                                color: 'var(--spc-view-danger)'
                               }}>
                                 ⚠️ Overdue ({item.next_due_date})
                               </span>
@@ -1271,8 +1271,8 @@ export default function DailyFollowupQueueTable({
                                 fontWeight: 800,
                                 padding: '0.2rem 0.55rem',
                                 borderRadius: '4px',
-                                background: 'rgba(56,189,248,0.15)',
-                                color: '#38bdf8'
+                                background: 'var(--spc-view-info-bg)',
+                                color: 'var(--spc-view-info)'
                               }}>
                                 🟢 Due Today ({item.next_due_date})
                               </span>
@@ -1289,27 +1289,27 @@ export default function DailyFollowupQueueTable({
                               <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
                                   {latestCall.call_status === 'ORDER_PLACED' && (
-                                    <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)' }}>
+                                    <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'var(--spc-view-success-bg)', color: 'var(--spc-view-success)', border: '1px solid var(--spc-view-success-border)' }}>
                                       📦 Order Placed
                                     </span>
                                   )}
                                   {latestCall.call_status === 'NO_ORDER' && (
-                                    <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'rgba(148,163,184,0.15)', color: '#94a3b8', border: '1px solid rgba(148,163,184,0.3)' }}>
+                                    <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'var(--spc-view-raised)', color: 'var(--spc-view-muted)', border: '1px solid var(--spc-view-border)' }}>
                                       ❌ Stock Full / No Order
                                     </span>
                                   )}
                                   {latestCall.call_status === 'RESCHEDULED' && (
-                                    <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>
+                                    <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'var(--spc-view-warning-bg)', color: 'var(--spc-view-warning)', border: '1px solid var(--spc-view-warning-border)' }}>
                                       ⏰ Callback Later
                                     </span>
                                   )}
                                   {latestCall.call_status === 'UNREACHABLE' && (
-                                    <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                                    <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'var(--spc-view-danger-bg)', color: 'var(--spc-view-danger)', border: '1px solid var(--spc-view-danger-border)' }}>
                                       📵 Ringing / Unreachable
                                     </span>
                                   )}
                                   {latestCall.generated_order_no && (
-                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#38bdf8' }}>
+                                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--spc-view-info)' }}>
                                       #{latestCall.generated_order_no}
                                     </span>
                                   )}
@@ -1322,13 +1322,13 @@ export default function DailyFollowupQueueTable({
                                   <span>🕒 {formatISTDateTime(latestCall.created_at)}</span>
                                 </div>
                                 {latestCall.notes && (
-                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '210px' }} title={latestCall.notes}>
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-muted)', marginTop: '0.2rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '210px' }} title={latestCall.notes}>
                                     📝 {latestCall.notes}
                                   </div>
                                 )}
                               </div>
                             ) : (
-                              <div style={{ color: 'var(--text-muted)', fontSize: '0.76rem', fontStyle: 'italic' }}>
+                              <div style={{ color: 'var(--spc-view-muted)', fontSize: '0.76rem', fontStyle: 'italic' }}>
                                 — Never Contacted —
                               </div>
                             )}
@@ -1343,7 +1343,7 @@ export default function DailyFollowupQueueTable({
                                 disabled={loadingProducts}
                                 style={{
                                   padding: '0.42rem 0.8rem',
-                                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                  background: 'var(--spc-view-success-fill)',
                                   border: 'none',
                                   color: '#fff',
                                   borderRadius: '6px',
@@ -1393,6 +1393,7 @@ export default function DailyFollowupQueueTable({
 
             {/* Standard Table Pagination for Queue */}
             <StandardTablePagination
+              style={{ '--accent-color': 'var(--channel-action-fill)' }}
               currentPage={queuePage}
               totalRecords={filteredQueue.length}
               pageSize={queuePageSize}
@@ -1420,9 +1421,9 @@ export default function DailyFollowupQueueTable({
               <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.2rem' }}>{ledgerMetrics.totalCalls}</div>
             </div>
 
-            <div style={{ background: 'var(--bg-surface)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px', padding: '0.85rem 1rem' }}>
-              <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600, textTransform: 'uppercase' }}>Orders Placed</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981', marginTop: '0.2rem' }}>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--spc-view-success-border)', borderRadius: '10px', padding: '0.85rem 1rem' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-success)', fontWeight: 600, textTransform: 'uppercase' }}>Orders Placed</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--spc-view-success)', marginTop: '0.2rem' }}>
                 {ledgerMetrics.orderCount}
                 <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-secondary)', marginLeft: '0.4rem' }}>
                   (₹{ledgerMetrics.totalValue.toLocaleString('en-IN')})
@@ -1431,23 +1432,23 @@ export default function DailyFollowupQueueTable({
             </div>
 
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem' }}>
-              <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>Stock Full / No Order</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#94a3b8', marginTop: '0.2rem' }}>{ledgerMetrics.noOrders}</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Stock Full / No Order</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--spc-view-muted)', marginTop: '0.2rem' }}>{ledgerMetrics.noOrders}</div>
             </div>
 
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem' }}>
-              <div style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 600, textTransform: 'uppercase' }}>Callbacks Scheduled</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f59e0b', marginTop: '0.2rem' }}>{ledgerMetrics.callbacks}</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-warning)', fontWeight: 600, textTransform: 'uppercase' }}>Callbacks Scheduled</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--spc-view-warning)', marginTop: '0.2rem' }}>{ledgerMetrics.callbacks}</div>
             </div>
 
             <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem' }}>
-              <div style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 600, textTransform: 'uppercase' }}>Ringing / Unreachable</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ef4444', marginTop: '0.2rem' }}>{ledgerMetrics.unreachable}</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-danger)', fontWeight: 600, textTransform: 'uppercase' }}>Ringing / Unreachable</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--spc-view-danger)', marginTop: '0.2rem' }}>{ledgerMetrics.unreachable}</div>
             </div>
 
-            <div style={{ background: 'var(--bg-surface)', border: '1px solid rgba(56,189,248,0.3)', borderRadius: '10px', padding: '0.85rem 1rem' }}>
-              <div style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 600, textTransform: 'uppercase' }}>Conversion Rate</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#38bdf8', marginTop: '0.2rem' }}>{ledgerMetrics.conversionRate}%</div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--spc-view-info-border)', borderRadius: '10px', padding: '0.85rem 1rem' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-info)', fontWeight: 600, textTransform: 'uppercase' }}>Conversion Rate</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--spc-view-info)', marginTop: '0.2rem' }}>{ledgerMetrics.conversionRate}%</div>
             </div>
           </div>
 
@@ -1526,7 +1527,7 @@ export default function DailyFollowupQueueTable({
                   alignItems: 'center',
                   gap: '0.45rem',
                   padding: '0.5rem 0.9rem',
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  background: 'var(--spc-view-success-fill)',
                   border: 'none',
                   borderRadius: '8px',
                   color: '#ffffff',
@@ -1646,29 +1647,29 @@ export default function DailyFollowupQueueTable({
 
                           <td style={{ padding: '0.85rem 1rem' }}>
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.82rem' }}>
-                              <User size={13} style={{ color: '#38bdf8' }} />
+                              <User size={13} style={{ color: 'var(--spc-view-info)' }} />
                               {log.assigned_caller_name || 'Agent'}
                             </div>
                           </td>
 
                           <td style={{ padding: '0.85rem 1rem' }}>
                             {log.call_status === 'ORDER_PLACED' && (
-                              <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '4px', background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)' }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '4px', background: 'var(--spc-view-success-bg)', color: 'var(--spc-view-success)', border: '1px solid var(--spc-view-success-border)' }}>
                                 📦 Order Placed
                               </span>
                             )}
                             {log.call_status === 'NO_ORDER' && (
-                              <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '4px', background: 'rgba(148,163,184,0.15)', color: '#94a3b8', border: '1px solid rgba(148,163,184,0.3)' }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '4px', background: 'var(--spc-view-raised)', color: 'var(--spc-view-muted)', border: '1px solid var(--spc-view-border)' }}>
                                 ❌ Stock Full / No Order
                               </span>
                             )}
                             {log.call_status === 'RESCHEDULED' && (
-                              <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '4px', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '4px', background: 'var(--spc-view-warning-bg)', color: 'var(--spc-view-warning)', border: '1px solid var(--spc-view-warning-border)' }}>
                                 ⏰ Callback Later
                               </span>
                             )}
                             {log.call_status === 'UNREACHABLE' && (
-                              <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '4px', background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '4px', background: 'var(--spc-view-danger-bg)', color: 'var(--spc-view-danger)', border: '1px solid var(--spc-view-danger-border)' }}>
                                 📵 Ringing / Unreachable
                               </span>
                             )}
@@ -1677,7 +1678,7 @@ export default function DailyFollowupQueueTable({
                           <td style={{ padding: '0.85rem 1rem', fontSize: '0.8rem' }}>
                             {log.is_order_placed ? (
                               <div>
-                                <span style={{ fontWeight: 800, color: '#38bdf8' }}>#{log.generated_order_no}</span>
+                                <span style={{ fontWeight: 800, color: 'var(--spc-view-info)' }}>#{log.generated_order_no}</span>
                                 {Array.isArray(log.order_line_items) && log.order_line_items.length > 0 && (
                                   <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
                                     {log.order_line_items.map(it => `${it.product} (x${it.qty})`).join(', ')}
@@ -1689,11 +1690,11 @@ export default function DailyFollowupQueueTable({
                                 {log.no_order_reason}
                               </div>
                             ) : log.rescheduled_time ? (
-                              <div style={{ color: '#f59e0b', fontWeight: 600 }}>
+                              <div style={{ color: 'var(--spc-view-warning)', fontWeight: 600 }}>
                                 Callback at: {formatRescheduledDisplay(log.rescheduled_time)}
                               </div>
                             ) : (
-                              <span style={{ color: 'var(--text-muted)' }}>—</span>
+                              <span style={{ color: 'var(--spc-view-muted)' }}>—</span>
                             )}
                           </td>
 
@@ -1710,6 +1711,7 @@ export default function DailyFollowupQueueTable({
 
             {/* Standard Table Pagination for Ledger */}
             <StandardTablePagination
+              style={{ '--accent-color': 'var(--channel-action-fill)' }}
               currentPage={ledgerPage}
               totalRecords={filteredLedger.length}
               pageSize={ledgerPageSize}
@@ -1734,6 +1736,7 @@ export default function DailyFollowupQueueTable({
           padding: '1rem'
         }}>
           <div style={{
+            '--text-secondary': 'color-mix(in srgb, var(--spc-view-muted) 75%, var(--spc-view-text))',
             background: 'var(--bg-surface)',
             border: '1px solid var(--border-light)',
             borderRadius: '16px',
@@ -1751,7 +1754,7 @@ export default function DailyFollowupQueueTable({
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              background: 'linear-gradient(135deg, rgba(16,185,129,0.1) 0%, transparent 100%)'
+              background: 'linear-gradient(135deg, var(--spc-view-success-bg) 0%, transparent 100%)'
             }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)' }}>
@@ -1760,7 +1763,7 @@ export default function DailyFollowupQueueTable({
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
                   <span>{selectedParty.party?.firm_name} • {selectedParty.party?.owner_name} ({selectedParty.party?.primary_mobile})</span>
                   {selectedParty.party?.our_company && (
-                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '1px 6px', borderRadius: '4px', background: 'rgba(56,189,248,0.15)', color: '#0284c7', border: '1px solid rgba(56,189,248,0.3)' }}>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '1px 6px', borderRadius: '4px', background: 'var(--spc-view-info-bg)', color: 'var(--spc-view-info)', border: '1px solid var(--spc-view-info-border)' }}>
                       Branch: {selectedParty.party?.our_company}
                     </span>
                   )}
@@ -1782,14 +1785,14 @@ export default function DailyFollowupQueueTable({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '0.5rem 0.85rem',
-                background: 'rgba(56,189,248,0.08)',
-                border: '1px solid rgba(56,189,248,0.2)',
+                background: 'var(--spc-view-info-bg)',
+                border: '1px solid var(--spc-view-info-border)',
                 borderRadius: '8px',
                 marginBottom: '1.2rem',
                 fontSize: '0.78rem'
               }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Calling Executive:</span>
-                <span style={{ fontWeight: 700, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span style={{ fontWeight: 700, color: 'var(--spc-view-info)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                   <User size={13} /> {userName || 'Admin'}
                 </span>
               </div>
@@ -1816,8 +1819,8 @@ export default function DailyFollowupQueueTable({
                           padding: '0.65rem 0.75rem',
                           borderRadius: '8px',
                           border: isSelected ? `2px solid ${opt.color}` : '1px solid var(--border-light)',
-                          background: isSelected ? `${opt.color}20` : 'var(--bg-primary)',
-                          color: isSelected ? opt.color : 'var(--text-secondary)',
+                          background: isSelected ? `color-mix(in srgb, ${opt.color} 13%, var(--spc-view-surface))` : 'var(--bg-primary)',
+                          color: isSelected ? `color-mix(in srgb, ${opt.color} 30%, var(--spc-view-text))` : 'var(--text-secondary)',
                           fontWeight: 700,
                           fontSize: '0.8rem',
                           cursor: 'pointer',
@@ -1835,15 +1838,15 @@ export default function DailyFollowupQueueTable({
               {/* DISPOSITION 1: ORDER PLACED */}
               {callOutcome === 'ORDER_PLACED' && (
                 <div style={{
-                  background: 'rgba(16,185,129,0.05)',
-                  border: '1px solid rgba(16,185,129,0.2)',
+                  background: 'var(--spc-view-success-bg)',
+                  border: '1px solid var(--spc-view-success-border)',
                   borderRadius: '10px',
                   padding: '1rem',
                   marginBottom: '1.25rem'
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#34d399', letterSpacing: '0.02em' }}>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--spc-view-success)', letterSpacing: '0.02em' }}>
                         PUNCH SALES ORDER ITEMS
                       </div>
                       {availableProducts.length > 0 ? (
@@ -1855,14 +1858,14 @@ export default function DailyFollowupQueueTable({
                           fontWeight: 700,
                           padding: '0.2rem 0.55rem',
                           borderRadius: '6px',
-                          background: 'rgba(16,185,129,0.15)',
-                          color: '#10b981',
-                          border: '1px solid rgba(16,185,129,0.3)'
+                          background: 'var(--spc-view-success-bg)',
+                          color: 'var(--spc-view-success)',
+                          border: '1px solid var(--spc-view-success-border)'
                         }}>
                           <Sparkles size={12} /> Auto-synced with Settings ({availableProducts.length} Products{selectedParty?.party?.our_company ? ` • ${selectedParty.party.our_company}` : ''})
                         </span>
                       ) : (
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
                           (Default Catalog)
                         </span>
                       )}
@@ -1875,9 +1878,9 @@ export default function DailyFollowupQueueTable({
                         alignItems: 'center',
                         gap: '0.35rem',
                         padding: '0.35rem 0.8rem',
-                        background: 'rgba(16,185,129,0.2)',
-                        border: '1px solid #10b981',
-                        color: '#34d399',
+                        background: 'var(--spc-view-success-bg)',
+                        border: '1px solid var(--spc-view-success-border)',
+                        color: 'var(--spc-view-success)',
                         borderRadius: '6px',
                         fontSize: '0.78rem',
                         fontWeight: 700,
@@ -1975,11 +1978,11 @@ export default function DailyFollowupQueueTable({
                             padding: '0.52rem 0.65rem',
                             fontSize: '0.82rem',
                             fontWeight: 700,
-                            color: '#059669',
+                            color: 'var(--spc-view-success)',
                             textAlign: 'right',
-                            background: 'rgba(16,185,129,0.08)',
+                            background: 'var(--spc-view-success-bg)',
                             borderRadius: '8px',
-                            border: '1px solid rgba(16,185,129,0.2)'
+                            border: '1px solid var(--spc-view-success-border)'
                           }}>
                             ₹{itemSubtotal.toLocaleString('en-IN')}
                           </div>
@@ -1990,9 +1993,9 @@ export default function DailyFollowupQueueTable({
                               onClick={() => handleRemoveItem(idx)}
                               title="Remove item"
                               style={{
-                                background: 'rgba(239,68,68,0.1)',
-                                border: '1px solid rgba(239,68,68,0.25)',
-                                color: '#ef4444',
+                                background: 'var(--spc-view-danger-bg)',
+                                border: '1px solid var(--spc-view-danger-border)',
+                                color: 'var(--spc-view-danger)',
                                 cursor: 'pointer',
                                 borderRadius: '6px',
                                 padding: '0.45rem',
@@ -2015,8 +2018,8 @@ export default function DailyFollowupQueueTable({
                   <div style={{
                     marginTop: '0.85rem',
                     padding: '0.65rem 1rem',
-                    background: 'rgba(16,185,129,0.12)',
-                    border: '1px solid rgba(16,185,129,0.3)',
+                    background: 'var(--spc-view-success-bg)',
+                    border: '1px solid var(--spc-view-success-border)',
                     borderRadius: '8px',
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -2028,7 +2031,7 @@ export default function DailyFollowupQueueTable({
                       <span>Total Lines: <strong style={{ color: 'var(--text-primary)' }}>{orderItems.length}</strong></span>
                       <span>Total Units: <strong style={{ color: 'var(--text-primary)' }}>{orderTotalQuantity}</strong></span>
                     </div>
-                    <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#059669' }}>
+                    <div style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--spc-view-success)' }}>
                       Order Estimated Total: ₹{orderTotalAmount.toLocaleString('en-IN')}
                     </div>
                   </div>
@@ -2068,8 +2071,8 @@ export default function DailyFollowupQueueTable({
               {/* DISPOSITION 2: STOCK FULL / NO ORDER */}
               {callOutcome === 'NO_ORDER' && (
                 <div style={{
-                  background: 'rgba(148,163,184,0.06)',
-                  border: '1px solid rgba(148,163,184,0.2)',
+                  background: 'var(--spc-view-raised)',
+                  border: '1px solid var(--spc-view-border)',
                   borderRadius: '10px',
                   padding: '1rem',
                   marginBottom: '1.25rem'
@@ -2110,8 +2113,8 @@ export default function DailyFollowupQueueTable({
               {/* DISPOSITION 3: CALLBACK LATER */}
               {callOutcome === 'RESCHEDULED' && (
                 <div style={{
-                  background: 'rgba(245,158,11,0.06)',
-                  border: '1px solid rgba(245,158,11,0.2)',
+                  background: 'var(--spc-view-warning-bg)',
+                  border: '1px solid var(--spc-view-warning-border)',
                   borderRadius: '10px',
                   padding: '1rem',
                   marginBottom: '1.25rem'
@@ -2154,8 +2157,8 @@ export default function DailyFollowupQueueTable({
               {/* DISPOSITION 4: RINGING / UNREACHABLE */}
               {callOutcome === 'UNREACHABLE' && (
                 <div style={{
-                  background: 'rgba(239,68,68,0.06)',
-                  border: '1px solid rgba(239,68,68,0.2)',
+                  background: 'var(--spc-view-danger-bg)',
+                  border: '1px solid var(--spc-view-danger-border)',
                   borderRadius: '10px',
                   padding: '1rem',
                   marginBottom: '1.25rem'
@@ -2210,7 +2213,7 @@ export default function DailyFollowupQueueTable({
               </div>
 
               {feedbackSuccess && (
-                <div style={{ padding: '0.65rem 1rem', background: 'rgba(16,185,129,0.2)', border: '1px solid #10b981', color: '#34d399', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.84rem' }}>
+                <div style={{ padding: '0.65rem 1rem', background: 'var(--spc-view-success-bg)', border: '1px solid var(--spc-view-success-border)', color: 'var(--spc-view-success)', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.84rem' }}>
                   {feedbackSuccess}
                 </div>
               )}
@@ -2227,7 +2230,7 @@ export default function DailyFollowupQueueTable({
               }}>
                 <div>
                   {callOutcome === 'ORDER_PLACED' && orderTotalAmount > 0 && (
-                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#059669' }}>
+                    <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--spc-view-success)' }}>
                       Booking: {orderTotalQuantity} Units • ₹{orderTotalAmount.toLocaleString('en-IN')}
                     </div>
                   )}
@@ -2246,8 +2249,8 @@ export default function DailyFollowupQueueTable({
                     style={{
                       padding: '0.6rem 1.6rem',
                       background: callOutcome === 'ORDER_PLACED'
-                        ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                        : 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                        ? 'var(--spc-view-success-fill)'
+                        : 'var(--channel-action-fill)',
                       border: 'none',
                       color: '#fff',
                       fontWeight: 700,
@@ -2299,7 +2302,7 @@ export default function DailyFollowupQueueTable({
             }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <History size={16} style={{ color: '#38bdf8' }} />
+                  <History size={16} style={{ color: 'var(--spc-view-info)' }} />
                   <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                     Call Audit History
                   </h3>
@@ -2325,7 +2328,7 @@ export default function DailyFollowupQueueTable({
                   <div>Loading complete call history...</div>
                 </div>
               ) : historyLogs.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--spc-view-muted)' }}>
                   <PhoneOff size={32} style={{ margin: '0 auto 0.75rem', opacity: 0.4 }} />
                   <div style={{ fontWeight: 600 }}>No prior calls logged yet for this partner.</div>
                   <div style={{ fontSize: '0.78rem', marginTop: '0.35rem' }}>
@@ -2346,7 +2349,7 @@ export default function DailyFollowupQueueTable({
                           width: '14px',
                           height: '14px',
                           borderRadius: '50%',
-                          background: isOrder ? '#10b981' : log.call_status === 'RESCHEDULED' ? '#f59e0b' : log.call_status === 'UNREACHABLE' ? '#ef4444' : '#64748b',
+                          background: isOrder ? 'var(--spc-view-success)' : log.call_status === 'RESCHEDULED' ? 'var(--spc-view-warning)' : log.call_status === 'UNREACHABLE' ? 'var(--spc-view-danger-fill)' : 'var(--spc-view-raised)',
                           border: '3px solid var(--bg-surface)'
                         }} />
 
@@ -2360,53 +2363,53 @@ export default function DailyFollowupQueueTable({
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.4rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                               {log.call_status === 'ORDER_PLACED' && (
-                                <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'var(--spc-view-success-bg)', color: 'var(--spc-view-success)' }}>
                                   📦 Order Placed
                                 </span>
                               )}
                               {log.call_status === 'NO_ORDER' && (
-                                <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'rgba(148,163,184,0.15)', color: '#94a3b8' }}>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'var(--spc-view-raised)', color: 'var(--spc-view-muted)' }}>
                                   ❌ Stock Full / No Order
                                 </span>
                               )}
                               {log.call_status === 'RESCHEDULED' && (
-                                <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'var(--spc-view-warning-bg)', color: 'var(--spc-view-warning)' }}>
                                   ⏰ Callback Later
                                 </span>
                               )}
                               {log.call_status === 'UNREACHABLE' && (
-                                <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '4px', background: 'var(--spc-view-danger-bg)', color: 'var(--spc-view-danger)' }}>
                                   📵 Ringing / Unreachable
                                 </span>
                               )}
                               {log.generated_order_no && (
-                                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#38bdf8' }}>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--spc-view-info)' }}>
                                   #{log.generated_order_no}
                                 </span>
                               )}
                             </div>
 
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--spc-view-muted)' }}>
                               🕒 {formatISTDateTime(log.created_at)}
                             </span>
                           </div>
 
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <User size={12} style={{ color: '#38bdf8' }} />
+                            <User size={12} style={{ color: 'var(--spc-view-info)' }} />
                             <span>Caller: <strong style={{ color: 'var(--text-primary)' }}>{log.assigned_caller_name || 'Staff'}</strong></span>
                           </div>
 
                           {/* Order Details or Specific Reason */}
                           {isOrder && Array.isArray(log.order_line_items) && log.order_line_items.length > 0 && (
                             <div style={{
-                              background: 'rgba(16,185,129,0.06)',
-                              border: '1px solid rgba(16,185,129,0.15)',
+                              background: 'var(--spc-view-success-bg)',
+                              border: '1px solid var(--spc-view-success-border)',
                               borderRadius: '6px',
                               padding: '0.5rem 0.75rem',
                               fontSize: '0.76rem',
                               marginBottom: '0.4rem'
                             }}>
-                              <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '0.2rem' }}>Items Booked:</div>
+                              <div style={{ fontWeight: 700, color: 'var(--spc-view-success)', marginBottom: '0.2rem' }}>Items Booked:</div>
                               {log.order_line_items.map((it, idx) => (
                                 <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-primary)' }}>
                                   <span>• {it.product}</span>
@@ -2423,13 +2426,13 @@ export default function DailyFollowupQueueTable({
                           )}
 
                           {log.rescheduled_time && (
-                            <div style={{ fontSize: '0.76rem', color: '#f59e0b', marginBottom: '0.35rem' }}>
+                            <div style={{ fontSize: '0.76rem', color: 'var(--spc-view-warning)', marginBottom: '0.35rem' }}>
                               <strong>Callback Time:</strong> {formatRescheduledDisplay(log.rescheduled_time)}
                             </div>
                           )}
 
                           {log.notes && (
-                            <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', background: 'var(--bg-surface)', padding: '0.4rem 0.6rem', borderRadius: '6px' }}>
+                            <div style={{ fontSize: '0.76rem', color: 'var(--spc-view-muted)', background: 'var(--bg-surface)', padding: '0.4rem 0.6rem', borderRadius: '6px' }}>
                               📝 &ldquo;{log.notes}&rdquo;
                             </div>
                           )}

@@ -1549,7 +1549,7 @@ export default function ClientRegistration({
         const queueSubmission = async () => {
           const check = canPerformOfflineAction('clientRegistration');
           if (!check.allowed) throw new Error(check.reason);
-          const queued = await enqueueOfflineAction('submit', 'registration_lifecycle', { ...draftPayload, userCompany });
+          const queued = await enqueueOfflineAction('submit', 'registration_lifecycle', { ...draftPayload, userCompany, actor });
           if (!queued) throw new Error('Could not save submission on this device. Your draft has been preserved.');
           showSyncToast('Submission queued safely on this device. Lead Registered Report and Lead Data will update after cloud sync.', 'info', 6000);
         };

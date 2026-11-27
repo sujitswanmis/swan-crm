@@ -15,9 +15,18 @@ export default async function SaasStudioPage({ params, searchParams }) {
   const viewAsUserId = resolvedSearchParams?.view_as || resolvedSearchParams?.impersonate;
 
   let initialTheme = 'default';
+  let initialSidebarCollapsed = false;
+  let initialExpandedCategories = null;
   try {
     const cookieStore = await cookies();
     initialTheme = cookieStore.get('crm-theme')?.value || 'default';
+    initialSidebarCollapsed = cookieStore.get('crm-sidebar-collapsed')?.value === 'true';
+    const rawCategories = cookieStore.get('crm-expanded-categories')?.value;
+    if (rawCategories) {
+      try {
+        initialExpandedCategories = JSON.parse(decodeURIComponent(rawCategories));
+      } catch (_e) {}
+    }
   } catch (_e) {}
 
   const supabase = await createClient();
@@ -162,6 +171,8 @@ export default async function SaasStudioPage({ params, searchParams }) {
           initialRoute={initialRoute}
           initialSearchParams={resolvedSearchParams}
           initialTheme={initialTheme}
+          initialSidebarCollapsed={initialSidebarCollapsed}
+          initialExpandedCategories={initialExpandedCategories}
           tenantId={userTenantId}
           tenantEntitlements={tenantEntitlements}
           tenantSubscription={tenantSubscription}

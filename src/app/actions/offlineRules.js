@@ -45,6 +45,8 @@ const DEFAULT_OFFLINE_RULES = {
     clientReport: false,
 
     // 📊 General & Analytics
+    homeWorkspace: true,
+    taskPlanner: false,
     analytics: false,
 
     // 📦 Purchase & Production
@@ -56,6 +58,7 @@ const DEFAULT_OFFLINE_RULES = {
     joining: false,
 
     // 🏢 System & Workplace WMS
+    userManagement: false,
     teamManagement: false,
     workplaceWms: false,
     publicUsers: false,
@@ -170,7 +173,7 @@ export async function saveOfflineRuleSettings(newSettings) {
       monthlyQuotaHours: Math.min(300, Math.max(5, Number(newSettings.monthlyQuotaHours) || 50)),
       features,
       autoSyncOnReconnect: Boolean(newSettings.autoSyncOnReconnect),
-      maxQueueItemsPerDevice: Number(newSettings.maxQueueItemsPerDevice) || 500,
+      maxQueueItemsPerDevice: Math.min(2000, Math.max(50, Number(newSettings.maxQueueItemsPerDevice) || 500)),
       updated_at: new Date().toISOString(),
       updated_by: roleData?.emp_name || user.email
     };

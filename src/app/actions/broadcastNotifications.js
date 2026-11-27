@@ -393,6 +393,19 @@ export async function sendBroadcastNotification(input) {
       }
     } catch {}
 
+    // Non-blocking FCM push dispatch for killed/background Android app users
+    if (!isScheduled) {
+      try {
+        const { sendFcmPushToUsers } = await import('@/utils/fcmPushSender');
+        const recipientIds = recipients.map(r => r.user_id).filter(Boolean);
+        await sendFcmPushToUsers(recipientIds, {
+          title: broadcastTitle,
+          body: String(message || '').slice(0, 240),
+          data: { broadcastId: String(id), type: 'crm_broadcast' }
+        });
+      } catch {}
+    }
+
     return { success: true, id, count: recipients.length, is_test, is_scheduled: isScheduled };
   } catch (error) { return { success: false, error: error.message }; }
 }

@@ -1298,8 +1298,14 @@ export async function reportEmployeeDeviceHealth(snapshot = {}) {
       }
     }
 
-    const policyRes = await getAppReleasePolicy();
-    const policy = policyRes.policy;
+    const allPoliciesRes = await getAllAppReleasePolicies();
+    const allPolicies = allPoliciesRes.policies;
+    const targetPlatKey = String(snapshot?.platform || resolvedReqPlatform?.platform || '').toLowerCase();
+    const policy = targetPlatKey.includes('windows')
+      ? allPolicies.windows
+      : targetPlatKey.includes('ios')
+        ? allPolicies.ios
+        : allPolicies.android;
     const nowIso = new Date().toISOString();
 
     const rawTenantCandidate = tenantInfo?.tenantId || snapshot?.tenantId || null;
@@ -1360,7 +1366,7 @@ export async function reportEmployeeDeviceHealth(snapshot = {}) {
       location_mode: snapshot?.locationMode || snapshot?.location_mode || 'unknown'
     };
 
-    const evaluation = classifyDeviceHealth(rawRecord, policy);
+    const evaluation = classifyDeviceHealth(rawRecord, allPolicies.android, allPolicies);
     const dbPayload = {
       ...rawRecord,
       location_mode: evaluation.locationMode,
@@ -1370,10 +1376,51 @@ export async function reportEmployeeDeviceHealth(snapshot = {}) {
       updated_at: nowIso
     };
 
-    // Always update JSON fallback store in memory/disk gracefully
+    // Always inspect existing telemetry first so desktop web browser logins NEVER erase
+    // a field user's active native Android APK / GPS / Battery diagnostics row.
     const paths = await resolveHealthStorePaths();
     const store = await readJsonFileSafe(paths.primary, paths.tmp, {});
     const storeKey = `${effectiveUserId}::${canonicalCompany}`;
+    let existingRecord = store[storeKey] || null;
+    if (admin) {
+      try {
+        const { data: existingDb } = await admin
+          .from('employee_device_health')
+          .select('*')
+          .eq('user_id', effectiveUserId)
+          .eq('company', canonicalCompany)
+          .maybeSingle();
+        if (existingDb && (!existingRecord?.last_checked_at || Date.parse(existingDb.last_checked_at) >= Date.parse(existingRecord.last_checked_at))) {
+          existingRecord = existingDb;
+        }
+      } catch {
+        // Non-blocking lookup
+      }
+    }
+
+    const incomingIsGenericWeb = !String(dbPayload.platform || '').toLowerCase().includes('android') &&
+      !String(dbPayload.platform || '').toLowerCase().includes('windows') &&
+      !String(dbPayload.platform || '').toLowerCase().includes('ios') &&
+      !String(dbPayload.platform || '').toLowerCase().includes('macos');
+    const isIncomingDesktopWeb = incomingIsGenericWeb && dbPayload.location_mode !== 'browser';
+    if (isIncomingDesktopWeb) {
+      return { success: true, skippedOverwrite: true, record: existingRecord || dbPayload, evaluation, policy };
+    }
+    const existingIsNativeMobile = Boolean(
+      existingRecord &&
+      (String(existingRecord.platform || '').toLowerCase().includes('android') ||
+       String(existingRecord.platform || '').toLowerCase().includes('ios') ||
+       existingRecord.app_version_code != null)
+    );
+    const incomingIsDesktopApp = String(dbPayload.platform || '').toLowerCase().includes('windows') ||
+      String(dbPayload.platform || '').toLowerCase().includes('macos');
+
+    // Preserve recent native Android/iOS telemetry (within 14 days) if same employee opens CRM on office PC
+    const existingAgeMs = existingRecord?.last_checked_at ? (Date.now() - Date.parse(existingRecord.last_checked_at)) : Infinity;
+    if (existingIsNativeMobile && (incomingIsGenericWeb || (incomingIsDesktopApp && existingAgeMs < 14 * 86400 * 1000 && existingRecord.platform?.includes('Android')))) {
+      return { success: true, skippedOverwrite: true, record: existingRecord, evaluation, policy };
+    }
+
     store[storeKey] = dbPayload;
     await writeJsonFileSafe(paths.primary, paths.tmp, store);
 
@@ -1536,8 +1583,9 @@ export async function getEmployeeDeviceHealthSummary(userId, company = 'TNT00001
   try {
     if (!isUuid(userId)) return { success: false, summary: null };
     const { classifyDeviceHealth, HEALTH_STATUS_META } = await import('@/config/appReleaseConfig');
-    const policyRes = await getAppReleasePolicy();
-    const policy = policyRes.policy;
+    const allPoliciesRes = await getAllAppReleasePolicies();
+    const allPolicies = allPoliciesRes.policies;
+    const policy = allPolicies.android;
     const admin = getAdminClient();
 
     let latestRecord = null;
@@ -1593,7 +1641,7 @@ export async function getEmployeeDeviceHealthSummary(userId, company = 'TNT00001
       }
     }
 
-    const evaluation = classifyDeviceHealth(latestRecord, policy);
+    const evaluation = classifyDeviceHealth(latestRecord, policy, allPolicies);
     const meta = HEALTH_STATUS_META[evaluation.status] || HEALTH_STATUS_META.OFFLINE;
 
     return {
@@ -1760,8 +1808,9 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
       }
     }
 
-    const policyRes = await getAppReleasePolicy();
-    const policy = policyRes.policy;
+    const allPoliciesRes = await getAllAppReleasePolicies();
+    const allPolicies = allPoliciesRes.policies;
+    const policy = allPolicies.android;
     const companyFilter = targetTenantCode === 'ALL'
       ? { isAll: true, aliases: [] }
       : await buildCompanyMatchAliases(targetTenantObj?.tenantCode || targetTenantCode);
@@ -1837,12 +1886,20 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
     Object.values(jsonStore || {}).forEach(considerHealth);
 
     const mobileSessionByUser = new Map();
+    const desktopSessionByUser = new Map();
+    const latestSessionByUser = new Map();
     for (const s of sessionRows || []) {
       const uid = String(s?.user_id || '');
-      if (!uid || mobileSessionByUser.has(uid)) continue;
+      if (!uid) continue;
+      if (!latestSessionByUser.has(uid)) {
+        latestSessionByUser.set(uid, s);
+      }
       const dev = String(s?.device || '');
-      if (/Android|iPhone|iPad|Mobile|SPC Workspace APK|; wv\)/i.test(dev)) {
+      const isMob = /Android|iPhone|iPad|Mobile|SPC Workspace APK|; wv\)/i.test(dev);
+      if (isMob && !mobileSessionByUser.has(uid)) {
         mobileSessionByUser.set(uid, s);
+      } else if (!isMob && dev && !desktopSessionByUser.has(uid)) {
+        desktopSessionByUser.set(uid, s);
       }
     }
 
@@ -1975,10 +2032,18 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
 
       let healthRecord = healthByUser.get(uid) || null;
       const mobSess = mobileSessionByUser.get(uid) || null;
+      const deskSess = desktopSessionByUser.get(uid) || null;
+      const latestSess = latestSessionByUser.get(uid) || null;
       const todayPing = latestPingByUser.get(uid) || null;
       const todayAtt = attByUser.get(uid) || null;
 
-      if (!healthRecord && mobSess) {
+      const isStoredDesktopBrowserOnly = Boolean(
+        healthRecord &&
+        healthRecord.platform === PLATFORM_LABELS.WEB_APP &&
+        healthRecord.location_mode !== 'browser' &&
+        healthRecord.app_version_code == null
+      );
+      if ((!healthRecord || isStoredDesktopBrowserOnly) && mobSess) {
         const ua = String(mobSess.device || '');
         const isWv = /;\s*wv\)|spcworkspaceandroid|spc workspace apk/i.test(ua);
         healthRecord = {
@@ -1989,7 +2054,7 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
           app_version_code: null,
           last_checked_at: mobSess.last_active
         };
-      } else if (!healthRecord && todayPing) {
+      } else if ((!healthRecord || isStoredDesktopBrowserOnly) && todayPing) {
         healthRecord = {
           user_id: uid,
           company: tenantCode,
@@ -1998,9 +2063,20 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
           app_version_code: null,
           last_checked_at: todayPing.recorded_at
         };
+      } else if (!healthRecord && latestSess) {
+        const ua = String(latestSess.device || '');
+        const isElec = /\belectron\/\d/i.test(ua) || /\bspc[-_\s]?workspace\b/i.test(ua);
+        healthRecord = {
+          user_id: uid,
+          company: tenantCode,
+          platform: isElec ? PLATFORM_LABELS.WINDOWS_APP : PLATFORM_LABELS.WEB_APP,
+          platform_details: isElec ? 'SPC Workspace Desktop (Windows)' : parseBrowserAndOsDetails(ua),
+          app_version_code: null,
+          last_checked_at: latestSess.last_active
+        };
       }
 
-      const evaluation = classifyDeviceHealth(healthRecord, policy);
+      const evaluation = classifyDeviceHealth(healthRecord, policy, allPolicies);
       const statusMeta = HEALTH_STATUS_META[evaluation.status] || HEALTH_STATUS_META[DEVICE_HEALTH_STATUS.OFFLINE];
 
       rows.push({
@@ -2032,7 +2108,12 @@ export async function getDeviceHealthFleetReport(company = 'ALL', branchCode = n
         pendingQueueCount: healthRecord?.pending_queue_count || 0,
         issues: evaluation.issues,
         issueSummary: evaluation.issueSummary,
-        lastCheckedAt: healthRecord?.last_checked_at || null,
+        lastCheckedAt: healthRecord?.last_checked_at || latestSess?.last_active || null,
+        lastSessionAt: latestSess?.last_active || null,
+        desktopSessionAt: deskSess?.last_active || null,
+        desktopSessionLabel: deskSess?.device ? parseBrowserAndOsDetails(deskSess.device) : null,
+        mobileSessionAt: mobSess?.last_active || null,
+        mobileSessionLabel: mobSess?.device ? parseBrowserAndOsDetails(mobSess.device) : null,
         lastGpsPingAt: todayPing?.recorded_at || null,
         punchedInToday: Boolean(todayAtt?.in_time)
       });

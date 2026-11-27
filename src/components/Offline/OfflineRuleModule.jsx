@@ -38,7 +38,12 @@ import {
   Briefcase,
   Layers,
   Settings,
-  Mail
+  Mail,
+  Home,
+  CalendarCheck,
+  Search,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { 
   getDailyOfflineUsage, 
@@ -56,12 +61,52 @@ import { getOfflineRuleSettings, saveOfflineRuleSettings } from '@/app/actions/o
 import { createClient } from '@/utils/supabase/client';
 
 const QUEUED_OFFLINE_ACTIONS = new Set([
-  'checklistSubmit', 'delegationStatusUpdate', 'delegationCreate',
+  'homeWorkspace', 'checklistSubmit', 'delegationStatusUpdate', 'delegationCreate',
   'attendancePunch', 'attendanceRegularization', 'leadStatusUpdate',
-  'leadNotes', 'leadFollowUp', 'clientRegistration', 'profileEdit', 'leadAssign'
+  'leadNotes', 'leadFollowUp', 'clientRegistration', 'profileEdit', 'leadAssign',
+  'recruiter'
 ]);
 
-export default function OfflineRuleModule({ userRole = 'admin' }) {
+const GROUP_SECTIONS = [
+  {
+    id: 'productivity',
+    label: '🏠 General & Productivity',
+    desc: 'Home Workspace, Analytics, Smart Attendance, Smart Checklist, Delegation Tasks, Task Planner & Field Force',
+    categories: ['home', 'general', 'attendance', 'checklist', 'delegation', 'field_operations']
+  },
+  {
+    id: 'sales',
+    label: '🎯 Sales & CRM',
+    desc: 'New Lead Registration, Lead Data & Pipeline, Party Master, Channel Operations & Location Master',
+    categories: ['leads', 'sales_locations']
+  },
+  {
+    id: 'purchase',
+    label: '📦 Purchase & MRP',
+    desc: 'Material Requirements Planning & Procurement Requisitions',
+    categories: ['purchase']
+  },
+  {
+    id: 'hr',
+    label: '👔 Human Resources',
+    desc: 'Recruiter Pipeline & Joining Process',
+    categories: ['hr']
+  },
+  {
+    id: 'system',
+    label: '⚙️ System & Governance',
+    desc: 'User Management, Team Access, Public Users, Workflow Builder & Settings',
+    categories: ['system']
+  },
+  {
+    id: 'comm',
+    label: '📞 Communications & AI',
+    desc: 'Softphone, Call Admin, WhatsApp, AI Assistant, Knowledge Base & Messaging Gateways',
+    categories: ['comm']
+  }
+];
+
+export default function OfflineRuleModule({ userRole = 'admin', userEmail = '' }) {
   const [isOnline, setIsOnline] = useState(true);
   const [offlineUsage, setOfflineUsage] = useState(() => getDailyOfflineUsage());
   const [monthlyUsage, setMonthlyUsage] = useState(() => getMonthlyOfflineUsage());
@@ -79,6 +124,9 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
   const [rules, setRules] = useState(() => getOfflineRules());
   const [hasChanges, setHasChanges] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'enabled' | 'disabled'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState({});
 
   const supabase = createClient();
 
@@ -119,19 +167,19 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
         setCachedNotesCount(noteCount);
       }
 
-      const cachedChecklists = await getLocalChecklists();
+      const cachedChecklists = await getLocalChecklists(userEmail);
       if (Array.isArray(cachedChecklists)) {
         setCachedChecklistsCount(cachedChecklists.length);
       }
 
-      const cachedDelegations = await getLocalDelegationTasks();
+      const cachedDelegations = await getLocalDelegationTasks(userEmail);
       if (Array.isArray(cachedDelegations)) {
         setCachedDelegationsCount(cachedDelegations.length);
       }
     } catch (err) {
       console.warn('Error loading offline rule data:', err);
     }
-  }, []);
+  }, [userEmail]);
 
   useEffect(() => {
     loadAll();
@@ -188,7 +236,13 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
     setStatusMsg({ type: 'info', text: 'Flushing pending queue to Supabase cloud...' });
     try {
       const res = await syncPendingQueue(supabase);
-      setStatusMsg({ type: 'success', text: `🎉 Successfully synced ${res.count || 0} offline updates to cloud!` });
+      if (res?.failed > 0 && res?.count > 0) {
+        setStatusMsg({ type: 'error', text: `⚠️ Synced ${res.count} item(s), but ${res.failed} item(s) failed. Check Live Queue errors below.` });
+      } else if (res?.failed > 0) {
+        setStatusMsg({ type: 'error', text: `❌ ${res.failed} offline update(s) could not sync. Check Live Queue errors below.` });
+      } else {
+        setStatusMsg({ type: 'success', text: `🎉 Successfully synced ${res?.count || 0} offline updates to cloud!` });
+      }
       await loadAll();
     } catch (e) {
       setStatusMsg({ type: 'error', text: 'Sync failed: ' + (e.message || 'Unknown error') });
@@ -206,6 +260,15 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
         [key]: val
       }
     }));
+    setHasChanges(true);
+  };
+
+  const updateGroupFeatures = (keys, val) => {
+    setRules(prev => {
+      const nextFeatures = { ...(prev.features || {}) };
+      keys.forEach((k) => { nextFeatures[k] = val; });
+      return { ...prev, features: nextFeatures };
+    });
     setHasChanges(true);
   };
 
@@ -372,8 +435,8 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
       key: 'channelOperations',
       category: 'sales_locations',
       categoryLabel: 'Sales & Locations',
-      title: 'Channel Operations',
-      desc: 'Allow Channel Operations to open offline and display available cached orders, feedback, and complaints.',
+      title: 'Channel Operations (Order Follow-up, Health Checks, Complaints & End Customers)',
+      desc: 'Allow Daily Order Follow-up, Monthly Health Checks, Complaint Management, and End Customer Master to open offline from device cache.',
       icon: Layers
     },
 
@@ -413,7 +476,26 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
       icon: UserCheck
     },
 
+    // 🏠 Home Workspace
+    {
+      key: 'homeWorkspace',
+      category: 'home',
+      categoryLabel: 'Home Workspace',
+      title: 'Home Workspace & Quick Punch',
+      desc: 'Allow Home Workspace widgets and Smart Quick Punch In/Out (queued offline) while disconnected.',
+      icon: Home
+    },
+
     // 📊 General & Analytics
+    {
+      key: 'taskPlanner',
+      category: 'general',
+      categoryLabel: 'General & Analytics',
+      title: 'Task Planner (Day / Week / Kanban)',
+      desc: 'Allow opening cached Task Planner boards and time-blocks while disconnected.',
+      icon: CalendarCheck,
+      offlineSaveNotice: 'Read-only cached view offline; task edits still require internet until planner write-queue is wired.'
+    },
     {
       key: 'analytics',
       category: 'general',
@@ -428,9 +510,18 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
       key: 'workplaceWms',
       category: 'system',
       categoryLabel: 'System & WMS',
-      title: 'Workplace WMS & Employee Master',
-      desc: 'Allow browsing company staff directory, designations, and organizational chart offline.',
+      title: 'Workflow Builder & Workplace WMS',
+      desc: 'Allow browsing workflow definitions, staff directory, designations, and organizational chart offline.',
       icon: Building2
+    },
+    {
+      key: 'userManagement',
+      category: 'system',
+      categoryLabel: 'System & WMS',
+      title: 'User Management (Users, Roles, Hierarchy, Audit & Sessions)',
+      desc: 'Allow viewing User Manage, Roles & Permissions, Org Hierarchy, Audit Logs, and Active Sessions offline.',
+      icon: Users,
+      warning: 'Recommended: Online Only to prevent security, role, and session synchronization conflicts.'
     },
     {
       key: 'teamManagement',
@@ -532,14 +623,14 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
       key: 'adminMessageConfig',
       category: 'comm',
       categoryLabel: 'Communications & AI',
-      title: 'Messaging Gateway Configuration (SMS/RCS/Email)',
-      desc: 'Manage SMTP, Twilio, and SMS gateway credentials offline.',
+      title: 'Messaging Gateway Configuration (Email / SMS / RCS / Admin Config)',
+      desc: 'Manage SMTP Email, Twilio/SMS, RCS, and Admin Message gateway configurations offline.',
       icon: Mail
     }
   ];
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: '1300px', margin: '0 auto', color: 'var(--text-color, #1e293b)' }}>
+    <div style={{ padding: '0.25rem 0', width: '100%', boxSizing: 'border-box', color: 'var(--text-color, #1e293b)' }}>
       
       {/* Top Banner & Header */}
       <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
@@ -703,6 +794,38 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
           }}>
             Status: {rules.isOfflineEnabled ? 'Supported actions use the device queue when disconnected' : 'Offline queuing blocked'}
           </div>
+
+          <div style={{ marginTop: '1rem', paddingTop: '0.85rem', borderTop: '1px solid var(--border-color, #e2e8f0)', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
+              <span style={{ fontWeight: '600', color: 'var(--text-color, #334155)' }}>Auto-Sync on Reconnect</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setRules(r => ({ ...r, autoSyncOnReconnect: !r.autoSyncOnReconnect }));
+                  setHasChanges(true);
+                }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: rules.autoSyncOnReconnect ? '#10b981' : '#94a3b8', padding: 0, display: 'flex', alignItems: 'center' }}
+              >
+                {rules.autoSyncOnReconnect ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
+              </button>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
+              <span style={{ fontWeight: '600', color: 'var(--text-color, #334155)' }}>Max Queue Items / Device</span>
+              <input
+                type="number"
+                min="50"
+                max="2000"
+                step="50"
+                value={rules.maxQueueItemsPerDevice ?? 500}
+                onChange={(e) => {
+                  const val = Math.min(2000, Math.max(50, parseInt(e.target.value, 10) || 500));
+                  setRules(r => ({ ...r, maxQueueItemsPerDevice: val }));
+                  setHasChanges(true);
+                }}
+                style={{ width: '82px', padding: '0.25rem 0.45rem', borderRadius: '6px', border: '1px solid var(--border-color, #cbd5e1)', fontSize: '0.8rem', fontWeight: '700', textAlign: 'right' }}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Daily Quota Control */}
@@ -858,40 +981,84 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
         marginBottom: '2rem',
         boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
       }}>
-        <div style={{ marginBottom: '1.25rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Sliders size={20} style={{ color: '#2563eb' }} />
-            <h2 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0 }}>Process-Level Permissions (Online vs. Offline)</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Sliders size={20} style={{ color: '#2563eb' }} />
+              <h2 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0 }}>Process-Level Permissions (Group & Module Wise)</h2>
+            </div>
+            <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.875rem', color: 'var(--text-muted, #64748b)' }}>
+              Organized by CRM Sidebar Groups and Modules — choose which workflows work offline.
+            </p>
           </div>
-          <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.875rem', color: 'var(--text-muted, #64748b)' }}>
-            Choose which specific operational workflows are permitted without active internet connection.
-          </p>
+
+          {/* Search + Status Filter Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', minWidth: '220px' }}>
+              <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search module or permission..."
+                style={{
+                  width: '100%',
+                  padding: '0.45rem 0.75rem 0.45rem 2rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color, #cbd5e1)',
+                  fontSize: '0.8rem',
+                  background: 'var(--card-bg, #ffffff)',
+                  color: 'var(--text-color, #1e293b)'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'inline-flex', borderRadius: '8px', border: '1px solid var(--border-color, #cbd5e1)', overflow: 'hidden' }}>
+              {[
+                { id: 'all', label: `All (${featureConfigs.length})` },
+                { id: 'enabled', label: `🟢 Offline (${featureConfigs.filter(f => Boolean(rules.features?.[f.key])).length})` },
+                { id: 'disabled', label: `🔒 Online (${featureConfigs.filter(f => !rules.features?.[f.key]).length})` }
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setStatusFilter(st.id)}
+                  style={{
+                    padding: '0.42rem 0.7rem',
+                    fontSize: '0.75rem',
+                    fontWeight: statusFilter === st.id ? '700' : '500',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: statusFilter === st.id ? '#1e293b' : 'var(--card-bg, #ffffff)',
+                    color: statusFilter === st.id ? '#ffffff' : 'var(--text-muted, #475569)'
+                  }}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* Category Filter Tabs */}
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+        {/* Clean 6 Sidebar Group Filter Tabs */}
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
           {[
-            { id: 'all', label: 'All Modules', count: featureConfigs.length },
-            { id: 'checklist', label: '📋 Smart Checklist', count: featureConfigs.filter(f => f.category === 'checklist').length },
-            { id: 'delegation', label: '👥 Delegation Tasks', count: featureConfigs.filter(f => f.category === 'delegation').length },
-            { id: 'attendance', label: '⏰ Smart Attendance', count: featureConfigs.filter(f => f.category === 'attendance').length },
-            { id: 'field_operations', label: 'Field Operations', count: featureConfigs.filter(f => f.category === 'field_operations').length },
-            { id: 'leads', label: '🎯 Leads & Sales', count: featureConfigs.filter(f => f.category === 'leads').length },
-            { id: 'sales_locations', label: '🏢 Sales & Locations', count: featureConfigs.filter(f => f.category === 'sales_locations').length },
-            { id: 'purchase', label: '📦 Purchase & MRP', count: featureConfigs.filter(f => f.category === 'purchase').length },
-            { id: 'hr', label: '👔 Human Resources', count: featureConfigs.filter(f => f.category === 'hr').length },
-            { id: 'general', label: '📊 General & Analytics', count: featureConfigs.filter(f => f.category === 'general').length },
-            { id: 'system', label: '⚙️ System & WMS', count: featureConfigs.filter(f => f.category === 'system').length },
-            { id: 'comm', label: '📞 Telecom & AI', count: featureConfigs.filter(f => f.category === 'comm').length }
+            { id: 'all', label: 'All Groups', count: featureConfigs.length },
+            ...GROUP_SECTIONS.map((g) => ({
+              id: g.id,
+              label: g.label,
+              count: featureConfigs.filter(f => g.categories.includes(f.category)).length
+            }))
           ].map(cat => (
             <button
               key={cat.id}
+              type="button"
               onClick={() => setCategoryFilter(cat.id)}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.4rem',
-                padding: '0.4rem 0.85rem',
+                padding: '0.42rem 0.85rem',
                 borderRadius: '8px',
                 fontSize: '0.8rem',
                 fontWeight: categoryFilter === cat.id ? '700' : '500',
@@ -905,7 +1072,7 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
               <span>{cat.label}</span>
               <span style={{
                 fontSize: '0.7rem',
-                padding: '0.1rem 0.35rem',
+                padding: '0.1rem 0.38rem',
                 borderRadius: '10px',
                 background: categoryFilter === cat.id ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.06)',
                 color: categoryFilter === cat.id ? '#ffffff' : 'var(--text-muted, #64748b)'
@@ -916,82 +1083,222 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
           ))}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem' }}>
-          {featureConfigs.filter(f => categoryFilter === 'all' || f.category === categoryFilter).map((feat) => {
-            const IconComp = feat.icon;
-            const isEnabled = Boolean(rules.features?.[feat.key]);
+        {/* Grouped Sections -> Module Sub-Groups -> Cards */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {GROUP_SECTIONS
+            .filter(g => categoryFilter === 'all' || categoryFilter === g.id)
+            .map((group) => {
+              const groupAllItems = featureConfigs.filter(f => group.categories.includes(f.category));
+              const q = searchQuery.trim().toLowerCase();
+              const visibleItems = groupAllItems.filter((f) => {
+                const isEnabled = Boolean(rules.features?.[f.key]);
+                if (statusFilter === 'enabled' && !isEnabled) return false;
+                if (statusFilter === 'disabled' && isEnabled) return false;
+                if (q) {
+                  const hay = `${f.title} ${f.desc} ${f.categoryLabel} ${group.label}`.toLowerCase();
+                  if (!hay.includes(q)) return false;
+                }
+                return true;
+              });
+              if (visibleItems.length === 0) return null;
 
-            return (
-              <div 
-                key={feat.key}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  padding: '1rem',
-                  borderRadius: '12px',
-                  background: isEnabled ? 'rgba(16, 185, 129, 0.03)' : 'rgba(241, 245, 249, 0.5)',
-                  border: `1px solid ${isEnabled ? 'rgba(16, 185, 129, 0.25)' : 'var(--border-color, #e2e8f0)'}`,
-                  transition: 'all 0.2s'
-                }}
-              >
-                <div style={{ display: 'flex', gap: '0.75rem', paddingRight: '0.75rem' }}>
-                  <div style={{
-                    width: '36px',
-                    height: '36px',
-                    borderRadius: '8px',
-                    background: isEnabled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(148, 163, 184, 0.15)',
-                    color: isEnabled ? '#10b981' : '#64748b',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                    marginTop: '0.1rem'
-                  }}>
-                    <IconComp size={18} />
-                  </div>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '0.65rem', fontWeight: '700', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.1)', color: '#2563eb' }}>
-                        {feat.categoryLabel}
-                      </span>
-                      <span style={{ fontWeight: '700', fontSize: '0.95rem' }}>
-                        {feat.title}
-                      </span>
-                    </div>
-                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted, #64748b)', lineHeight: 1.4 }}>
-                      {feat.desc}
-                    </p>
-                    {feat.warning && (
-                      <div style={{ marginTop: '0.35rem', fontSize: '0.7rem', color: '#d97706', fontWeight: '500' }}>
-                        ⚠️ {feat.warning}
-                      </div>
-                    )}
-                    {!QUEUED_OFFLINE_ACTIONS.has(feat.key) && (
-                      <div style={{ marginTop: '0.35rem', fontSize: '0.7rem', color: '#b45309', fontWeight: '600' }}>
-                        {feat.offlineSaveNotice || 'No offline save queue for this action. Internet is still required to submit changes.'}
-                      </div>
-                    )}
-                  </div>
-                </div>
+              const enabledCount = groupAllItems.filter(f => Boolean(rules.features?.[f.key])).length;
+              const isCollapsed = Boolean(collapsedGroups[group.id]);
+              const moduleSubGroups = group.categories
+                .map((catId) => {
+                  const items = visibleItems.filter(f => f.category === catId);
+                  if (items.length === 0) return null;
+                  return { catId, label: items[0].categoryLabel, items };
+                })
+                .filter(Boolean);
 
-                <button
-                  onClick={() => updateFeature(feat.key, !isEnabled)}
+              return (
+                <div
+                  key={group.id}
                   style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: isEnabled ? '#10b981' : '#94a3b8',
-                    padding: 0,
-                    flexShrink: 0
+                    border: '1px solid var(--border-color, #e2e8f0)',
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                    background: 'var(--bg-surface, #ffffff)'
                   }}
-                  title={isEnabled ? "Click to require Online" : "Click to allow Offline"}
                 >
-                  {isEnabled ? <ToggleRight size={38} /> : <ToggleLeft size={38} />}
-                </button>
-              </div>
-            );
-          })}
+                  {/* Group Header */}
+                  <div
+                    onClick={() => setCollapsedGroups(prev => ({ ...prev, [group.id]: !prev[group.id] }))}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '0.75rem',
+                      padding: '0.9rem 1.25rem',
+                      background: 'var(--bg-hover, #f8fafc)',
+                      borderBottom: isCollapsed ? 'none' : '1px solid var(--border-color, #e2e8f0)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      {isCollapsed ? <ChevronRight size={18} color="#64748b" /> : <ChevronDown size={18} color="#2563eb" />}
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '1rem', fontWeight: '800', color: 'var(--text-color, #0f172a)' }}>{group.label}</span>
+                          <span style={{
+                            fontSize: '0.72rem',
+                            fontWeight: '700',
+                            padding: '0.15rem 0.55rem',
+                            borderRadius: '9999px',
+                            background: enabledCount > 0 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(148, 163, 184, 0.15)',
+                            color: enabledCount > 0 ? '#059669' : '#64748b'
+                          }}>
+                            {enabledCount} / {groupAllItems.length} Offline Enabled
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.76rem', color: 'var(--text-muted, #64748b)', marginTop: '2px' }}>
+                          {group.desc}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }} onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => updateGroupFeatures(groupAllItems.map(f => f.key), true)}
+                        style={{
+                          padding: '0.3rem 0.65rem',
+                          fontSize: '0.72rem',
+                          fontWeight: '600',
+                          borderRadius: '6px',
+                          border: '1px solid rgba(16, 185, 129, 0.35)',
+                          background: 'rgba(16, 185, 129, 0.08)',
+                          color: '#059669',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Enable All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateGroupFeatures(groupAllItems.map(f => f.key), false)}
+                        style={{
+                          padding: '0.3rem 0.65rem',
+                          fontSize: '0.72rem',
+                          fontWeight: '600',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-color, #cbd5e1)',
+                          background: 'var(--card-bg, #ffffff)',
+                          color: 'var(--text-muted, #475569)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Online Only
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Module Sub-Sections inside this Group */}
+                  {!isCollapsed && (
+                    <div style={{ padding: '1.15rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '1.35rem' }}>
+                      {moduleSubGroups.map((mod) => {
+                        const modEnabled = mod.items.filter(f => Boolean(rules.features?.[f.key])).length;
+                        return (
+                          <div key={mod.catId}>
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              marginBottom: '0.75rem',
+                              paddingBottom: '0.4rem',
+                              borderBottom: '1px dashed var(--border-color, #e2e8f0)'
+                            }}>
+                              <span style={{ fontSize: '0.82rem', fontWeight: '800', color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                                {mod.label}
+                              </span>
+                              <span style={{ fontSize: '0.72rem', fontWeight: '600', color: 'var(--text-muted, #64748b)' }}>
+                                {modEnabled}/{mod.items.length} Offline
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '0.85rem' }}>
+                              {mod.items.map((feat) => {
+                                const IconComp = feat.icon;
+                                const isEnabled = Boolean(rules.features?.[feat.key]);
+
+                                return (
+                                  <div
+                                    key={feat.key}
+                                    style={{
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'flex-start',
+                                      padding: '0.95rem',
+                                      borderRadius: '10px',
+                                      background: isEnabled ? 'rgba(16, 185, 129, 0.03)' : 'rgba(241, 245, 249, 0.55)',
+                                      border: `1px solid ${isEnabled ? 'rgba(16, 185, 129, 0.28)' : 'var(--border-color, #e2e8f0)'}`,
+                                      transition: 'all 0.2s'
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', gap: '0.75rem', paddingRight: '0.75rem' }}>
+                                      <div style={{
+                                        width: '34px',
+                                        height: '34px',
+                                        borderRadius: '8px',
+                                        background: isEnabled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(148, 163, 184, 0.15)',
+                                        color: isEnabled ? '#10b981' : '#64748b',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        flexShrink: 0,
+                                        marginTop: '0.1rem'
+                                      }}>
+                                        <IconComp size={17} />
+                                      </div>
+                                      <div>
+                                        <div style={{ fontWeight: '700', fontSize: '0.92rem', marginBottom: '0.2rem' }}>
+                                          {feat.title}
+                                        </div>
+                                        <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted, #64748b)', lineHeight: 1.4 }}>
+                                          {feat.desc}
+                                        </p>
+                                        {feat.warning && (
+                                          <div style={{ marginTop: '0.35rem', fontSize: '0.7rem', color: '#d97706', fontWeight: '500' }}>
+                                            ⚠️ {feat.warning}
+                                          </div>
+                                        )}
+                                        {!QUEUED_OFFLINE_ACTIONS.has(feat.key) && (
+                                          <div style={{ marginTop: '0.35rem', fontSize: '0.7rem', color: '#b45309', fontWeight: '600' }}>
+                                            {feat.offlineSaveNotice || 'No offline save queue for this action. Internet is still required to submit changes.'}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => updateFeature(feat.key, !isEnabled)}
+                                      style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        color: isEnabled ? '#10b981' : '#94a3b8',
+                                        padding: 0,
+                                        flexShrink: 0
+                                      }}
+                                      title={isEnabled ? 'Click to require Online' : 'Click to allow Offline'}
+                                    >
+                                      {isEnabled ? <ToggleRight size={36} /> : <ToggleLeft size={36} />}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
         </div>
 
         {/* Locked Cloud Operations */}
@@ -1082,25 +1389,61 @@ export default function OfflineRuleModule({ userRole = 'admin' }) {
               <div style={{ fontSize: '0.75rem' }}>No pending offline changes on this device.</div>
             </div>
           ) : (
-            <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+            <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
               {pendingQueue.map((item, i) => (
                 <div key={item.queueId || i} style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  padding: '0.5rem 0.75rem',
+                  gap: '0.75rem',
+                  padding: '0.55rem 0.75rem',
                   borderBottom: '1px solid var(--border-color, #f1f5f9)',
                   fontSize: '0.8rem'
                 }}>
-                  <div>
-                    <strong style={{ textTransform: 'capitalize' }}>{item.entityType}</strong> ({item.actionType})
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #64748b)' }}>
-                      {new Date(item.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontWeight: '700', color: 'var(--text-color, #1e293b)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {item.title || `${item.entityType} (${item.actionType})`}
                     </div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted, #64748b)' }}>
+                      {item.entityType} • {item.actionType} • {new Date(item.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })} IST
+                    </div>
+                    {item.lastError && (
+                      <div style={{ fontSize: '0.7rem', color: '#dc2626', marginTop: '2px', wordBreak: 'break-word' }}>
+                        ⚠️ {item.lastError}
+                      </div>
+                    )}
                   </div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: '#d97706' }}>Queued</span>
+                  <span style={{
+                    fontSize: '0.72rem',
+                    fontWeight: '700',
+                    padding: '0.15rem 0.45rem',
+                    borderRadius: '6px',
+                    background: item.lastError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                    color: item.lastError ? '#dc2626' : '#d97706',
+                    flexShrink: 0
+                  }}>
+                    {item.lastError ? 'FAILED' : 'Queued'}
+                  </span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {syncHistory.length > 0 && (
+            <div style={{ marginTop: '1rem', paddingTop: '0.85rem', borderTop: '1px solid var(--border-color, #e2e8f0)' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-muted, #64748b)', marginBottom: '0.5rem' }}>
+                RECENTLY SYNCHRONIZED ({syncHistory.length})
+              </div>
+              <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                {syncHistory.slice(0, 5).map((h, idx) => (
+                  <div key={h.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', padding: '0.35rem 0.5rem', background: 'var(--bg-hover, #f8fafc)', borderRadius: '6px' }}>
+                    <span style={{ fontWeight: '600', color: 'var(--text-color, #334155)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '0.5rem' }}>{h.title}</span>
+                    <span style={{ color: '#16a34a', fontWeight: '600', flexShrink: 0 }}>
+                      ✓ {new Date(h.syncedAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

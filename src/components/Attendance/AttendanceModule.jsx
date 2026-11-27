@@ -8,7 +8,7 @@ import {
   UserCheck, ShieldCheck, FileSpreadsheet, Filter, Search, ChevronLeft,
   ChevronRight, ChevronsLeft, ChevronsRight, ArrowRight, Check, X, Building, MapPin, Laptop, Smartphone,
   Info, AlertTriangle, FileText, User, Users, Download, Volume2, VolumeX, Play, Sparkles, BookOpen,
-  Award, Sliders, Settings, Plus, Edit2, Trash2, Navigation, ShieldAlert
+  Award, Sliders, Settings, Plus, Edit2, Trash2, Navigation, ShieldAlert, Database
 } from 'lucide-react';
 import DateRangePicker from '@/components/common/DateRangePicker';
 import {
@@ -21,6 +21,7 @@ import {
   getHodPendingRequests,
   approveRegularizationRequest,
   rejectRegularizationRequest,
+  cancelRegularizationRequest,
   bulkApproveRegularizationRequests,
   bulkRejectRegularizationRequests,
   getTeamAttendanceMaster,
@@ -31,13 +32,15 @@ import {
   getHodPendingLeaveRequests,
   approveLeaveRequest,
   rejectLeaveRequest,
+  cancelEmployeeLeave,
   grantEmployeeCPLCredit,
   updateTenantLeavePolicy,
   getAllTenantLeavePolicies,
   getTeamLeaveReport,
   getTenantAttendancePolicy,
   saveTenantAttendancePolicy,
-  directCorrectAttendanceRecord
+  directCorrectAttendanceRecord,
+  getAttendanceDeltaDigest
 } from '@/app/actions/attendance';
 import { 
   formatMinutesToHours, 
@@ -53,6 +56,17 @@ import { enqueueOfflineAction, canPerformOfflineAction } from '@/utils/offlineSy
 import { useTableColumnResize, ColumnResizer } from '@/utils/tableColumnResize';
 import { filterVisibleSubTabs, getSubItemPermissions } from '@/utils/permissionUtils';
 import { getUserBranchAccess, matchesCompanyToken } from '@/utils/branchAccess';
+import { createClient } from '@/utils/supabase/client';
+import {
+  buildAttendanceScopeKey,
+  getAttendanceFastSnapshot,
+  getAttendanceLocalCache,
+  saveAttendanceLocalCache,
+  getAllAttendanceLocalCachesForScope,
+  getAttendanceSyncMeta,
+  saveAttendanceSyncMeta,
+  clearAttendanceScopeCaches
+} from '@/utils/attendanceLocalCache';
 import LiveFieldTrackingMap from './LiveFieldTrackingMap';
 
 const ALL_ATTENDANCE_TABS = [
@@ -193,12 +207,12 @@ export const formatDateIST = (dateInput, options = { day: '2-digit', month: 'sho
 };
 
 const LEAVE_TABLE_COLUMNS = [
+  { key: 'applied', label: 'Applied On (IST)', width: 190 },
   { key: 'employee', label: 'Employee', width: 190 },
   { key: 'type', label: 'Leave Type', width: 125 },
   { key: 'dates', label: 'Leave Dates', width: 210 },
   { key: 'days', label: 'Days', width: 80 },
   { key: 'reason', label: 'Reason', width: 250 },
-  { key: 'applied', label: 'Applied On (IST)', width: 190 },
   { key: 'status', label: 'Status', width: 125 },
   { key: 'decision', label: 'HOD Decision / Remarks', width: 260 },
   { key: 'actions', label: 'Actions', width: 190 }
@@ -208,7 +222,7 @@ const LEAVE_TABLE_MIN_WIDTHS = Object.fromEntries(LEAVE_TABLE_COLUMNS.map(column
 const LEAVE_STICKY_HEADER = { position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface)', boxShadow: 'inset 0 -1px 0 var(--border-light)' };
 
 export function LeaveApplicationsTable({ records = [], loading = false, error = null, onRefresh,
-  teamView = false, scope = '', filterKey = '', processing = false, onDecision }) {
+  teamView = false, scope = '', filterKey = '', processing = false, onDecision, onCancel = null, hideRefresh = false }) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('ALL');
   const [pageSize, setPageSize] = useState(() => {
@@ -226,7 +240,7 @@ export function LeaveApplicationsTable({ records = [], loading = false, error = 
   const { colWidths, resizingCol, handleResizeStart, resetColWidth } = useTableColumnResize(
     teamView ? 'hod_leave_application_columns_v1' : 'my_leave_application_columns_v1', LEAVE_TABLE_WIDTHS, LEAVE_TABLE_MIN_WIDTHS
   );
-  const columns = LEAVE_TABLE_COLUMNS.filter(column => (teamView || column.key !== 'employee') && (onDecision || column.key !== 'actions'));
+  const columns = LEAVE_TABLE_COLUMNS.filter(column => (teamView || column.key !== 'employee') && (onDecision || onCancel || column.key !== 'actions'));
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return (Array.isArray(records) ? records : []).filter(record => (teamView || status === 'ALL' || record.status === status)
@@ -247,16 +261,25 @@ export function LeaveApplicationsTable({ records = [], loading = false, error = 
     if (key === 'days') return Number(record.total_days ?? record.days_count ?? 0);
     if (key === 'reason') return record.reason || '—';
     if (key === 'applied') return formatDateIST(record.applied_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
-    if (key === 'status') return <span style={{ fontWeight: 700, color: record.status === 'APPROVED' ? '#15803d' : record.status === 'REJECTED' ? '#b91c1c' : '#92400e' }}>{record.status || 'PENDING'}</span>;
+    if (key === 'status') return <span style={{ fontWeight: 700, color: record.status === 'APPROVED' ? '#15803d' : record.status === 'REJECTED' ? '#b91c1c' : record.status === 'CANCELLED' ? '#64748b' : '#92400e' }}>{record.status || 'PENDING'}</span>;
     if (key === 'decision') return record.status === 'PENDING' ? 'Awaiting HOD approval' : <>
-      <strong>{record.approver_name || 'HOD'}</strong>
+      <strong>{record.approver_name || (record.status === 'CANCELLED' ? 'Employee' : 'HOD')}</strong>
       {record.action_at && <div>{formatDateIST(record.action_at, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })} IST</div>}
       <div>{record.approver_remarks || record.remarks || '—'}</div>
     </>;
-    if (key === 'actions') return record.status === 'PENDING' ? <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-      <button type="button" className="btn-action-success" disabled={processing} onClick={() => onDecision('APPROVE', record)}>Approve</button>
-      <button type="button" className="btn-action-danger" disabled={processing} onClick={() => onDecision('REJECT', record)}>Reject</button>
-    </div> : record.status === 'APPROVED' ? <button type="button" className="btn-action-secondary" disabled={processing} onClick={() => onDecision('APPROVE', record)} title="Retry attendance sync without changing the saved approval">Sync Attendance</button> : '—';
+    if (key === 'actions') {
+      if (!teamView && onCancel) {
+        return record.status === 'PENDING' ? (
+          <button type="button" className="btn-action-danger" disabled={processing} onClick={() => onCancel(record)}>
+            Cancel
+          </button>
+        ) : '—';
+      }
+      return record.status === 'PENDING' ? <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+        <button type="button" className="btn-action-success" disabled={processing} onClick={() => onDecision('APPROVE', record)}>Approve</button>
+        <button type="button" className="btn-action-danger" disabled={processing} onClick={() => onDecision('REJECT', record)}>Reject</button>
+      </div> : record.status === 'APPROVED' ? <button type="button" className="btn-action-secondary" disabled={processing} onClick={() => onDecision('APPROVE', record)} title="Retry attendance sync without changing the saved approval">Sync Attendance</button> : '—';
+    }
     return '—';
   };
   return <div className="card" style={{ padding: '1.25rem', border: '1px solid var(--border-light)', borderRadius: '16px', background: 'var(--bg-surface)' }}>
@@ -266,10 +289,12 @@ export function LeaveApplicationsTable({ records = [], loading = false, error = 
         <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Track and manage submitted leave applications and approval statuses</p>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-        <button type="button" className="btn-action-secondary" onClick={onRefresh} disabled={loading || processing} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh History
-        </button>
-        <TableViewToggle view={leaveViewMode} onChange={setLeaveViewMode} />
+        {!hideRefresh && onRefresh && (
+          <button type="button" className="btn-action-secondary" onClick={onRefresh} disabled={loading || processing} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.45rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-light)', background: 'var(--bg-primary)', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh History
+          </button>
+        )}
+        <TableViewToggle view={leaveViewMode} onChange={setLeaveViewMode} style={{ marginLeft: 0 }} />
       </div>
     </div>
     {!teamView && <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', background: 'var(--bg-primary)', padding: '0.65rem 0.85rem', borderRadius: '10px', border: '1px solid var(--border-light)' }}>
@@ -278,7 +303,7 @@ export function LeaveApplicationsTable({ records = [], loading = false, error = 
         <input aria-label="Search my leave applications" placeholder="Search type, dates, reason or HOD remarks…" value={search} onChange={event => setSearch(event.target.value)} style={{ width: '100%', padding: '0.45rem 0.75rem 0.45rem 2.2rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem' }} />
       </div>
       <select aria-label="Leave application status" value={status} onChange={event => setStatus(event.target.value)} style={{ padding: '0.45rem 0.75rem', border: '1px solid var(--border-light)', borderRadius: '8px', background: 'var(--bg-surface)', color: 'var(--text-primary)', fontSize: '0.82rem', fontWeight: 600 }}>
-        <option value="ALL">All Statuses</option><option value="PENDING">Pending</option><option value="APPROVED">Approved</option><option value="REJECTED">Rejected</option>
+        <option value="ALL">All Statuses</option><option value="PENDING">Pending</option><option value="APPROVED">Approved</option><option value="REJECTED">Rejected</option><option value="CANCELLED">Cancelled</option>
       </select>
     </div>}
     {error && <div role="alert" style={{ padding: '0.75rem', marginBottom: '0.75rem', color: '#92400e', background: '#fffbeb', borderRadius: '8px' }}>{error}</div>}
@@ -421,6 +446,50 @@ export default function AttendanceModule({
     selectedFilter: adminCompanyFilter || 'All'
   }), [effectiveBranchAccess, adminCompanyFilter]);
 
+  const branchScopeKeyStr = useMemo(() => JSON.stringify(activeBranchScope), [activeBranchScope]);
+  const attCacheScopeKey = useMemo(() => buildAttendanceScopeKey({
+    userId,
+    userEmail,
+    tenantId: effectiveTenantId,
+    userCompany,
+    adminCompanyFilter,
+    branchScopeKey: branchScopeKeyStr
+  }), [userId, userEmail, effectiveTenantId, userCompany, adminCompanyFilter, branchScopeKeyStr]);
+
+  const attCacheMapRef = useRef(new Map());
+  const attDirtyKeysRef = useRef(new Set());
+  const attDeltaInFlightRef = useRef(false);
+  const attPrevScopeRef = useRef('');
+  const attDeltaSyncFnRef = useRef(null);
+  const [attSyncStatus, setAttSyncStatus] = useState('syncing'); // 'syncing' | 'synced' | 'offline'
+  const [attLastSyncedAt, setAttLastSyncedAt] = useState(null);
+
+  const persistScopedCache = useCallback((subKey, data) => {
+    if (!attCacheScopeKey || !subKey || data === undefined) return;
+    const fullKey = `${attCacheScopeKey}::${subKey}`;
+    const nowIso = new Date().toISOString();
+    attCacheMapRef.current.set(fullKey, { cacheKey: fullKey, scopeKey: attCacheScopeKey, data, syncedAt: nowIso, updatedAt: Date.now() });
+    void saveAttendanceLocalCache(fullKey, attCacheScopeKey, data, nowIso);
+  }, [attCacheScopeKey]);
+
+  const readScopedCacheEntry = useCallback(async (subKey) => {
+    if (!attCacheScopeKey || !subKey) return null;
+    const fullKey = `${attCacheScopeKey}::${subKey}`;
+    const inMem = attCacheMapRef.current.get(fullKey);
+    if (inMem && inMem.data !== undefined) return inMem;
+    const fast = getAttendanceFastSnapshot(fullKey);
+    if (fast && fast.data !== undefined) {
+      attCacheMapRef.current.set(fullKey, { cacheKey: fullKey, scopeKey: attCacheScopeKey, data: fast.data, updatedAt: fast.savedAt || Date.now() });
+      return fast;
+    }
+    const idb = await getAttendanceLocalCache(fullKey);
+    if (idb && idb.data !== undefined) {
+      attCacheMapRef.current.set(fullKey, idb);
+      return idb;
+    }
+    return null;
+  }, [attCacheScopeKey]);
+
   const scopedPolicyBranches = useMemo(() => {
     if (!Array.isArray(availablePolicyBranches)) return [];
     if (effectiveBranchAccess?.isAllBranches || isAdmin || isMasterAdmin) return availablePolicyBranches;
@@ -503,14 +572,24 @@ export default function AttendanceModule({
     })();
   }, [selectedShiftPolicyCompany]);
 
-  // Fetch dynamic shift policy from backend
-  const fetchTenantShiftPolicy = async (comp = selectedShiftPolicyCompany, branch = selectedShiftPolicyBranch) => {
-    setLoadingShiftPolicy(true);
+  // Fetch dynamic shift policy from backend (LocalDB + Delta Sync aware)
+  const fetchTenantShiftPolicy = async (comp = selectedShiftPolicyCompany, branch = selectedShiftPolicyBranch, force = false) => {
+    const cacheKey = `shift_policy|${comp || ''}|${branch || 'All Branches'}`;
+    if (!force && !attDirtyKeysRef.current.has('shift_policy')) {
+      const cached = await readScopedCacheEntry(cacheKey);
+      if (cached?.data) {
+        setTenantShiftPolicy(cached.data);
+        return;
+      }
+    }
+    if (!tenantShiftPolicy) setLoadingShiftPolicy(true);
     try {
       const targetTenantId = getCompanyTenantId(comp);
       const res = await getTenantAttendancePolicy(targetTenantId, comp, branch);
       if (res?.success && res.data) {
         setTenantShiftPolicy(res.data);
+        attDirtyKeysRef.current.delete('shift_policy');
+        persistScopedCache(cacheKey, res.data);
       }
     } catch (e) {
       console.warn('Failed to fetch tenant shift policy:', e);
@@ -521,11 +600,11 @@ export default function AttendanceModule({
 
   useEffect(() => {
     if (activeTab === 'shift_rules' || activeTab === 'geofencing') {
-      fetchTenantShiftPolicy(selectedShiftPolicyCompany, selectedShiftPolicyBranch);
+      fetchTenantShiftPolicy(selectedShiftPolicyCompany, selectedShiftPolicyBranch, false);
     } else if (activeTab === 'my_attendance') {
-      fetchTenantShiftPolicy(initialCompany, 'All Branches');
+      fetchTenantShiftPolicy(initialCompany, 'All Branches', false);
     }
-  }, [activeTab, selectedShiftPolicyCompany, selectedShiftPolicyBranch, initialCompany]);
+  }, [activeTab, selectedShiftPolicyCompany, selectedShiftPolicyBranch, initialCompany, attCacheScopeKey]);
 
   // Sync Geofence Settings with Loaded Policy
   useEffect(() => {
@@ -1263,59 +1342,89 @@ export default function AttendanceModule({
   }, [isMasterAdmin, resolvedWorkspaceCompany, selectedShiftPolicyCompany, selectedLeaveCompany]);
 
   // Fetch Leave Balance for Current Employee
-  const fetchLeaveBalance = async () => {
+  const fetchLeaveBalance = async (silent = false, force = false) => {
     if (!userEmail) return;
-    setLoadingLeaveBalance(true);
+    if (!force && !attDirtyKeysRef.current.has('leave_balance')) {
+      const cached = await readScopedCacheEntry('leave_balance');
+      if (cached?.data) {
+        setLeaveBalance(cached.data);
+        return;
+      }
+    }
+    if (!silent && !leaveBalance) setLoadingLeaveBalance(true);
     try {
       const res = await getEmployeeLeaveBalance({ email: userEmail, tenantId: effectiveTenantId, userCompany });
       if (res?.success && res.data) {
         setLeaveBalance(res.data);
+        attDirtyKeysRef.current.delete('leave_balance');
+        persistScopedCache('leave_balance', res.data);
       }
     } catch (e) {
       console.warn('Failed to fetch leave balance:', e);
     } finally {
-      setLoadingLeaveBalance(false);
+      if (!silent) setLoadingLeaveBalance(false);
     }
   };
 
   // Fetch Employee's own leaves
-  const fetchMyLeaves = useCallback(async () => {
+  const fetchMyLeaves = useCallback(async (silent = false, force = false) => {
     if (!userEmail) return;
     const scope = attendanceScope;
     if (scope !== attendanceScopeRef.current) return;
+    if (!force && !attDirtyKeysRef.current.has('my_leaves')) {
+      const cached = await readScopedCacheEntry('my_leaves');
+      if (cached?.data && Array.isArray(cached.data)) {
+        setMyLeaveState({ scope: leaveHistoryScope, records: cached.data, loading: false, error: null });
+        return;
+      }
+    }
     const requestId = ++myLeaveLoadRef.current;
-    setMyLeaveState(previous => ({ scope: leaveHistoryScope, records: previous.scope === leaveHistoryScope ? previous.records : [], loading: true, error: null }));
+    setMyLeaveState(previous => ({
+      scope: leaveHistoryScope,
+      records: previous.scope === leaveHistoryScope ? previous.records : [],
+      loading: !silent && !(previous.scope === leaveHistoryScope && previous.records.length > 0),
+      error: null
+    }));
     try {
       const res = await getMyLeaveRequests({ email: userEmail, tenantId: effectiveTenantId, userCompany });
       if (scope !== attendanceScopeRef.current || requestId !== myLeaveLoadRef.current) return;
-      setMyLeaveState(previous => ({ scope: leaveHistoryScope,
-        records: res?.success && Array.isArray(res.data) ? res.data : previous.scope === leaveHistoryScope ? previous.records : [],
-        loading: false, error: res?.warning || (!res?.success ? res?.error || 'Leave history is unavailable. Please retry.' : null) }));
+      const nextRecords = res?.success && Array.isArray(res.data) ? res.data : null;
+      if (nextRecords) {
+        attDirtyKeysRef.current.delete('my_leaves');
+        persistScopedCache('my_leaves', nextRecords);
+      }
+      setMyLeaveState(previous => ({
+        scope: leaveHistoryScope,
+        records: nextRecords ?? (previous.scope === leaveHistoryScope ? previous.records : []),
+        loading: false,
+        error: res?.warning || (!res?.success ? res?.error || 'Leave history is unavailable. Please retry.' : null)
+      }));
     } catch (error) {
       if (scope === attendanceScopeRef.current && requestId === myLeaveLoadRef.current) setMyLeaveState(previous => ({ ...previous, loading: false, error: 'Leave history is unavailable. Please retry.' }));
     }
-  }, [userEmail, effectiveTenantId, userCompany, attendanceScope, leaveHistoryScope]);
-
-  useEffect(() => {
-    let active = true;
-    const refreshHistory = () => { if (active && (activeTab === 'my_attendance' || activeTab === 'my_leaves')) fetchMyLeaves(); };
-    queueMicrotask(refreshHistory);
-    window.addEventListener('focus', refreshHistory);
-    window.addEventListener('online', refreshHistory);
-    return () => { active = false; window.removeEventListener('focus', refreshHistory); window.removeEventListener('online', refreshHistory); };
-  }, [activeTab, fetchMyLeaves]);
+  }, [userEmail, effectiveTenantId, userCompany, attendanceScope, leaveHistoryScope, readScopedCacheEntry, persistScopedCache]);
 
   // Fetch Pending Leaves for HOD
-  const fetchHodLeaves = async () => {
+  const fetchHodLeaves = async (silent = false, force = false) => {
     if (!isHodOrManager) return;
     const scope = attendanceScope;
-    setLoadingHodLeaves(true);
+    if (!force && !attDirtyKeysRef.current.has('hod_leaves')) {
+      const cached = await readScopedCacheEntry('hod_leaves');
+      if (cached?.data && Array.isArray(cached.data)) {
+        setHodLeaveRequests(cached.data);
+        setLoadingHodLeaves(false);
+        return;
+      }
+    }
+    if (!silent && hodLeaveRequests.length === 0) setLoadingHodLeaves(true);
     setHodLeavesError(null);
     try {
       const res = await getHodPendingLeaveRequests({ tenantId: effectiveTenantId, userCompany, branchScope: activeBranchScope });
       if (scope !== attendanceScopeRef.current) return;
       if (res?.success && res.data) {
         setHodLeaveRequests(res.data);
+        attDirtyKeysRef.current.delete('hod_leaves');
+        persistScopedCache('hod_leaves', res.data);
       }
       setHodLeavesError(res?.warning || (!res?.success ? res?.error || 'Leave approvals are unavailable.' : null));
     } catch (e) {
@@ -1327,9 +1436,18 @@ export default function AttendanceModule({
   };
 
   // Fetch Comprehensive Team Leave Report
-  const fetchTeamLeaveReport = async () => {
+  const fetchTeamLeaveReport = async (force = false) => {
     if (!isHodOrManager) return;
-    setLoadingLeaveReport(true);
+    const cacheKey = `team_leave_report|${matrixYear}|${leaveReportDept}`;
+    if (!force && !attDirtyKeysRef.current.has('team_leave_report')) {
+      const cached = await readScopedCacheEntry(cacheKey);
+      if (cached?.data) {
+        setTeamLeaveReportData(cached.data);
+        setLoadingLeaveReport(false);
+        return;
+      }
+    }
+    if (!teamLeaveReportData) setLoadingLeaveReport(true);
     setLeaveReportError(null);
     try {
       const res = await getTeamLeaveReport({
@@ -1341,6 +1459,8 @@ export default function AttendanceModule({
       });
       if (res?.success && res.data) {
         setTeamLeaveReportData(res.data);
+        attDirtyKeysRef.current.delete('team_leave_report');
+        persistScopedCache(cacheKey, res.data);
       }
       setLeaveReportError(res?.warning || (!res?.success ? res?.error || 'Leave report is unavailable.' : null));
     } catch (e) {
@@ -1487,8 +1607,8 @@ export default function AttendanceModule({
       if (res?.success) {
         setLeaveToast({ type: 'success', message: res.message || 'CPL credited successfully!' });
         setCplGrantModal({ show: false, email: '', empName: '', days: 1.0, reason: '', workDate: getTodayDateString(), validityDays: 60 });
-        fetchTeamLeaveReport();
-        fetchLeaveBalance();
+        fetchTeamLeaveReport(true);
+        fetchLeaveBalance(true, true);
       } else {
         setLeaveToast({ type: 'error', message: res?.error || 'Failed to grant CPL' });
       }
@@ -1643,8 +1763,9 @@ export default function AttendanceModule({
       if (res?.success) {
         setLeaveToast({ type: 'success', message: res.message || 'Leave applied successfully!' });
         setShowApplyLeaveModal(false);
-        fetchLeaveBalance();
-        if (isHodOrManager) fetchHodLeaves();
+        fetchLeaveBalance(true, true);
+        if (isHodOrManager) fetchHodLeaves(true, true);
+        emitAttendanceRealtimeSync('LEAVE_APPLIED', { targetEmail: userEmail });
       } else {
         setLeaveToast({ type: 'error', message: res?.error || 'Failed to apply leave' });
       }
@@ -1653,7 +1774,76 @@ export default function AttendanceModule({
     } finally {
       leaveApplyingRef.current = false;
       setApplyingLeave(false);
-      if (scope === attendanceScopeRef.current) fetchMyLeaves();
+      if (scope === attendanceScopeRef.current) fetchMyLeaves(true, true);
+    }
+  };
+
+  const [cancellingLeaveId, setCancellingLeaveId] = useState(null);
+  const [cancellingRequestId, setCancellingRequestId] = useState(null);
+  const [cancelConfirmModal, setCancelConfirmModal] = useState(null);
+
+  const handleCancelMyLeave = (record) => {
+    if (!record?.id || cancellingLeaveId) return;
+    setCancelConfirmModal({ type: 'LEAVE', record });
+  };
+
+  const handleCancelRegularization = (req) => {
+    if (!req?.id || cancellingRequestId) return;
+    setCancelConfirmModal({ type: 'REGULARIZATION', record: req });
+  };
+
+  const handleConfirmCancelAction = async () => {
+    if (!cancelConfirmModal?.record?.id) return;
+    const { type, record } = cancelConfirmModal;
+    if (type === 'LEAVE') {
+      if (cancellingLeaveId) return;
+      setCancellingLeaveId(record.id);
+      try {
+        const res = await cancelEmployeeLeave({
+          requestId: record.id,
+          email: userEmail,
+          tenantId: effectiveTenantId,
+          userCompany
+        });
+        if (res?.success) {
+          setCancelConfirmModal(null);
+          setLeaveToast({ type: 'success', message: res.message || 'Leave application cancelled.' });
+          fetchMyLeaves(true, true);
+          fetchLeaveBalance(true, true);
+          if (isHodOrManager) fetchHodLeaves(true, true);
+          emitAttendanceRealtimeSync('LEAVE_CANCELLED', { targetEmail: userEmail, requestId: record.id });
+        } else {
+          setLeaveToast({ type: 'error', message: res?.error || 'Could not cancel leave application.' });
+        }
+      } catch (err) {
+        setLeaveToast({ type: 'error', message: err?.message || 'Could not cancel leave application.' });
+      } finally {
+        setCancellingLeaveId(null);
+      }
+      return;
+    }
+
+    if (cancellingRequestId) return;
+    setCancellingRequestId(record.id);
+    try {
+      const res = await cancelRegularizationRequest({
+        requestId: record.id,
+        email: userEmail,
+        tenantId: effectiveTenantId
+      });
+      if (res?.success) {
+        setCancelConfirmModal(null);
+        setLeaveToast({ type: 'success', message: res.message || 'Missing punch application cancelled.' });
+        fetchMyRequests(true, true);
+        if (isHodOrManager) fetchHodRequests(false, true, true);
+        emitAttendanceRealtimeSync('REGULARIZATION_CANCELLED', { targetEmail: userEmail, requestId: record.id });
+      } else {
+        setLeaveToast({ type: 'error', message: res?.error || 'Could not cancel missing punch application.' });
+      }
+    } catch (err) {
+      setLeaveToast({ type: 'error', message: err?.message || 'Could not cancel missing punch application.' });
+    } finally {
+      setCancellingRequestId(null);
     }
   };
 
@@ -1688,16 +1878,20 @@ export default function AttendanceModule({
       if (res?.success) {
         setLeaveToast({ type: res.warning ? 'warning' : 'success', message: res.message || `Leave request ${type.toLowerCase()}d successfully!` });
         setLeaveActionModal(null);
-        fetchHodLeaves();
-        fetchMyLeaves();
-        fetchLeaveBalance();
-        fetchHistory();
-        fetchTeamLeaveReport();
+        fetchHodLeaves(true, true);
+        fetchMyLeaves(true, true);
+        fetchLeaveBalance(true, true);
+        fetchHistory(true, true);
+        fetchTeamLeaveReport(true);
         if (teamReportView === 'MONTHLY_MATRIX') {
-          fetchTeamMonthlyMatrix();
+          fetchTeamMonthlyMatrix(true);
         } else {
-          fetchTeamMaster();
+          fetchTeamMaster(true);
         }
+        emitAttendanceRealtimeSync(type === 'APPROVE' ? 'LEAVE_APPROVED' : 'LEAVE_REJECTED', {
+          targetEmail: request.email,
+          requestId: request.id
+        });
       } else {
         setLeaveToast({ type: 'error', message: res?.error || `Failed to ${type.toLowerCase()} leave` });
       }
@@ -2016,8 +2210,12 @@ export default function AttendanceModule({
   }, [userEmail, userId, effectiveTenantId, userCompany, effectiveBranchAccess?.primaryBranchName, attendanceScope, updateTodayRecord]);
 
   useEffect(() => {
-    // Window focus / online event runs silently without blocking Punch In/Out buttons
-    const refreshPunch = () => { fetchTodayAttendance(true, true); };
+    // Only re-verify pending offline punches on focus/online; normal delta sync handles other changes
+    const refreshPunch = () => {
+      if (!todayRecordRef.current || todayRecordRef.current._offlinePending) {
+        fetchTodayAttendance(true, true);
+      }
+    };
     window.addEventListener('focus', refreshPunch);
     window.addEventListener('online', refreshPunch);
     return () => {
@@ -2026,46 +2224,80 @@ export default function AttendanceModule({
     };
   }, [fetchTodayAttendance]);
 
-  // 4. Load Monthly History
-  const fetchHistory = async () => {
+  // 4. Load Monthly History (LocalDB + Delta Sync aware)
+  const fetchHistory = async (silent = false, force = false) => {
     if (!userEmail) return;
-    setLoadingHistory(true);
+    const cacheKey = `history|${historyYear}|${historyMonth}`;
+    if (!force && !attDirtyKeysRef.current.has('history')) {
+      const cached = await readScopedCacheEntry(cacheKey);
+      if (cached?.data) {
+        setHistoryRecords(cached.data.records || []);
+        setHistorySummary(cached.data.summary || {});
+        if (cached.data.summary?.shortLeaveUsage) {
+          setShortLeaveUsage(cached.data.summary.shortLeaveUsage);
+        }
+        return;
+      }
+    }
+    if (!silent && historyRecords.length === 0) setLoadingHistory(true);
     try {
       const res = await getMyAttendanceHistory(userEmail, historyYear, historyMonth, effectiveTenantId, userCompany);
       if (res.success) {
-        setHistoryRecords(res.records || []);
-        setHistorySummary(res.summary || {});
-        if (res.summary?.shortLeaveUsage) {
-          setShortLeaveUsage(res.summary.shortLeaveUsage);
+        const recs = res.records || [];
+        const sum = res.summary || {};
+        setHistoryRecords(recs);
+        setHistorySummary(sum);
+        if (sum?.shortLeaveUsage) {
+          setShortLeaveUsage(sum.shortLeaveUsage);
         }
+        attDirtyKeysRef.current.delete('history');
+        persistScopedCache(cacheKey, { records: recs, summary: sum });
       }
     } catch (e) {
       console.error(e);
     } finally {
-      setLoadingHistory(false);
+      if (!silent) setLoadingHistory(false);
     }
   };
 
-  // 5. Load User's Regularization Requests
-  const fetchMyRequests = async () => {
+  // 5. Load User's Regularization Requests (LocalDB + Delta Sync aware)
+  const fetchMyRequests = async (silent = false, force = false) => {
     if (!userEmail) return;
-    setLoadingMyRequests(true);
+    if (!force && !attDirtyKeysRef.current.has('my_requests')) {
+      const cached = await readScopedCacheEntry('my_requests');
+      if (cached?.data && Array.isArray(cached.data)) {
+        setMyRequests(cached.data);
+        return;
+      }
+    }
+    if (!silent && myRequests.length === 0) setLoadingMyRequests(true);
     try {
       const res = await getMyRegularizationRequests(userEmail, effectiveTenantId);
       if (res.success) {
-        setMyRequests(res.requests || []);
+        const reqs = res.requests || [];
+        setMyRequests(reqs);
+        attDirtyKeysRef.current.delete('my_requests');
+        persistScopedCache('my_requests', reqs);
       }
     } catch (e) {
       console.error(e);
     } finally {
-      setLoadingMyRequests(false);
+      if (!silent) setLoadingMyRequests(false);
     }
   };
 
-  // 6. Load HOD Requests (if manager/admin) - Instant 0ms Memory Caching
-  const fetchHodRequests = async (showLoading = false) => {
+  // 6. Load HOD Requests (if manager/admin) - Instant 0ms LocalDB Caching
+  const fetchHodRequests = async (showLoading = false, silent = false, force = false) => {
     if (!isHodOrManager) return;
-    if (showLoading || hodRequests.length === 0) {
+    if (!force && !attDirtyKeysRef.current.has('hod_requests')) {
+      const cached = await readScopedCacheEntry('hod_requests');
+      if (cached?.data && Array.isArray(cached.data.allRequests)) {
+        setHodRequests(cached.data.allRequests);
+        setHodPendingCount(cached.data.pendingCount || 0);
+        return;
+      }
+    }
+    if (showLoading || (!silent && hodRequests.length === 0)) {
       setLoadingHodRequests(true);
     }
     try {
@@ -2078,8 +2310,12 @@ export default function AttendanceModule({
         branchScope: activeBranchScope
       });
       if (res.success) {
-        setHodRequests(res.allRequests || res.requests || []);
-        setHodPendingCount(res.pendingCount || 0);
+        const allReqs = res.allRequests || res.requests || [];
+        const pCount = res.pendingCount || 0;
+        setHodRequests(allReqs);
+        setHodPendingCount(pCount);
+        attDirtyKeysRef.current.delete('hod_requests');
+        persistScopedCache('hod_requests', { allRequests: allReqs, pendingCount: pCount });
       }
     } catch (e) {
       console.error(e);
@@ -2088,16 +2324,26 @@ export default function AttendanceModule({
     }
   };
 
-  // 7. Load Team Master Attendance (Single Date or Range via Quick Date Presets) - Fast Deduplicated
+  // 7. Load Team Master Attendance (Single Date or Range via Quick Date Presets) - Fast LocalDB + Deduplicated
   const fetchTeamMaster = async (force = false) => {
     if (!isHodOrManager) return;
     const currentParamsKey = `${effectiveTenantId}_${userCompany}_${teamStartDate}_${teamEndDate}_${teamMasterDepartment}_${adminCompanyFilter}`;
-    if (!force && lastTeamMasterParamsRef.current === currentParamsKey && teamMasterData?.records?.length > 0) {
+    const cacheKey = `team_master|${teamStartDate}|${teamEndDate}|${teamMasterDepartment}`;
+    const isDirty = attDirtyKeysRef.current.has('team_master');
+    if (!force && !isDirty && lastTeamMasterParamsRef.current === currentParamsKey && teamMasterData?.records?.length > 0) {
       return;
+    }
+    if (!force && !isDirty) {
+      const cached = await readScopedCacheEntry(cacheKey);
+      if (cached?.data && Array.isArray(cached.data.records)) {
+        setTeamMasterData(cached.data);
+        lastTeamMasterParamsRef.current = currentParamsKey;
+        return;
+      }
     }
     if (teamMasterInFlightRef.current) return;
     teamMasterInFlightRef.current = true;
-    setLoadingTeamMaster(true);
+    if (!teamMasterData?.records?.length) setLoadingTeamMaster(true);
     try {
       const res = await getTeamAttendanceMaster({
         date: teamStartDate,
@@ -2109,13 +2355,16 @@ export default function AttendanceModule({
         branchScope: activeBranchScope
       });
       if (res.success) {
-        setTeamMasterData({
+        const nextData = {
           records: res.records || [],
           roster: res.roster || [],
           summary: res.summary || {},
           isRange: res.isRange
-        });
+        };
+        setTeamMasterData(nextData);
         lastTeamMasterParamsRef.current = currentParamsKey;
+        attDirtyKeysRef.current.delete('team_master');
+        persistScopedCache(cacheKey, nextData);
       }
     } catch (e) {
       console.error(e);
@@ -2125,15 +2374,25 @@ export default function AttendanceModule({
     }
   };
 
-  // Fetch Team Monthly Matrix - Fast In-Memory Cache & In-Flight Guard (< 1s load)
+  // Fetch Team Monthly Matrix - Fast LocalDB Cache & In-Flight Guard (0ms on refresh)
   const fetchTeamMonthlyMatrix = async (force = false) => {
     const currentParamsKey = `${effectiveTenantId}_${userCompany}_${matrixYear}_${matrixMonth}_${teamMasterDepartment}_${matrixPeriodType}_${matrixCustomStartDay}_${matrixCustomEndDay}_${adjustLeavesInReport}_${adminCompanyFilter}`;
-    if (!force && lastFetchedParamsRef.current === currentParamsKey && monthlyMatrixData?.rows?.length > 0) {
+    const cacheKey = `team_matrix|${matrixYear}|${matrixMonth}|${teamMasterDepartment}|${matrixPeriodType}|${matrixCustomStartDay}|${matrixCustomEndDay}|${adjustLeavesInReport}`;
+    const isDirty = attDirtyKeysRef.current.has('team_matrix');
+    if (!force && !isDirty && lastFetchedParamsRef.current === currentParamsKey && monthlyMatrixData?.rows?.length > 0) {
       return;
+    }
+    if (!force && !isDirty) {
+      const cached = await readScopedCacheEntry(cacheKey);
+      if (cached?.data && Array.isArray(cached.data.rows)) {
+        setMonthlyMatrixData(cached.data);
+        lastFetchedParamsRef.current = currentParamsKey;
+        return;
+      }
     }
     if (matrixInFlightRef.current) return;
     matrixInFlightRef.current = true;
-    setLoadingMonthlyMatrix(true);
+    if (!monthlyMatrixData?.rows?.length) setLoadingMonthlyMatrix(true);
     try {
       const res = await getTeamMonthlyMatrix({
         year: matrixYear,
@@ -2150,6 +2409,8 @@ export default function AttendanceModule({
       if (res.success) {
         setMonthlyMatrixData(res);
         lastFetchedParamsRef.current = currentParamsKey;
+        attDirtyKeysRef.current.delete('team_matrix');
+        persistScopedCache(cacheKey, res);
       }
     } catch (err) {
       console.error("Fetch Monthly Matrix Error:", err);
@@ -2324,7 +2585,7 @@ export default function AttendanceModule({
         id: record.id || null,
         email: record.email || '',
         emp_name: record.emp_name || '',
-        emp_code: record.emp_code || '',
+        emp_code: record.emp_code || record.emp_id || '',
         department: record.department || 'General',
         designation: record.designation || '',
         attendance_date: record.attendance_date || teamStartDate || getTodayDateString(),
@@ -2334,7 +2595,7 @@ export default function AttendanceModule({
         is_regularized: (currentStatus === 'WEEK_OFF' || currentStatus === 'LWP' || currentStatus === 'ABSENT') ? false : (record.is_regularized ?? true),
         remarks: record.remarks || ''
       });
-      setEmpSearchQuery(formatEmpDisplayName(record));
+      setEmpSearchQuery(formatEmpDisplayName({ ...record, emp_code: record.emp_code || record.emp_id || '' }));
     } else {
       setCorrectionTarget({
         id: null,
@@ -2386,13 +2647,18 @@ export default function AttendanceModule({
 
       if (res.success) {
         setCorrectionModalOpen(false);
+        lastTeamMasterParamsRef.current = '';
+        lastFetchedParamsRef.current = '';
         if (teamReportView === 'DAILY') {
-          fetchTeamMaster();
+          fetchTeamMaster(true);
         } else if (teamReportView === 'MONTHLY_MATRIX') {
-          fetchTeamMonthlyMatrix();
+          fetchTeamMonthlyMatrix(true);
         } else {
           fetchTeamLeaveReport();
         }
+        emitAttendanceRealtimeSync('DIRECT_CORRECTION', {
+          targetEmail: correctionTarget.email
+        });
         setLeaveToast({ type: 'success', message: res.message || 'Attendance updated successfully!' });
       } else {
         setCorrectionError(res.error || 'Failed to update attendance record.');
@@ -2404,45 +2670,540 @@ export default function AttendanceModule({
     }
   };
 
-  // Initial Load & on workspace/user change
-  useEffect(() => {
-    // Reset state to avoid stale flash when switching workspaces
-    setHodRequests([]);
-    setHodLeaveRequests([]);
-    setHodLeavesError(null);
-    setTeamLeaveReportData(null);
-    setHodPendingCount(0);
+  // Realtime Attendance & Missing Punch Synchronizer (Cross-device & Cross-tab without page refresh)
+  const attendanceRealtimeChannelRef = useRef(null);
+  const attendanceSilentRefreshRef = useRef(null);
 
-    fetchTodayAttendance();
-    fetchHistory();
-    fetchTenantShiftPolicy(initialCompany, 'All Branches');
-    fetchMyRequests();
-    fetchLeaveBalance();
-    if (isHodOrManager) {
-      fetchHodRequests();
-      fetchHodLeaves();
+  // Hydrate active Smart Attendance tabs synchronously at 0ms from fast localStorage snapshots before IndexedDB opens
+  React.useLayoutEffect(() => {
+    if (!attCacheScopeKey || !userEmail) return;
+    const isScopeSwitch = attPrevScopeRef.current && attPrevScopeRef.current !== attCacheScopeKey;
+    attPrevScopeRef.current = attCacheScopeKey;
+
+    if (isScopeSwitch) {
+      attCacheMapRef.current = new Map();
+      attDirtyKeysRef.current = new Set();
+      lastTeamMasterParamsRef.current = '';
+      lastFetchedParamsRef.current = '';
     }
-  }, [userEmail, historyYear, historyMonth, effectiveTenantId, userCompany, attendanceDate, adminCompanyFilter, effectiveBranchAccess?.scope]);
 
+    const histSnap = getAttendanceFastSnapshot(`${attCacheScopeKey}::history|${historyYear}|${historyMonth}`)?.data;
+    if (histSnap) {
+      setHistoryRecords(histSnap.records || []);
+      setHistorySummary(histSnap.summary || {});
+      if (histSnap.summary?.shortLeaveUsage) setShortLeaveUsage(histSnap.summary.shortLeaveUsage);
+    } else if (isScopeSwitch) {
+      setHistoryRecords([]);
+      setHistorySummary({});
+    }
+
+    const myReqSnap = getAttendanceFastSnapshot(`${attCacheScopeKey}::my_requests`)?.data;
+    if (Array.isArray(myReqSnap)) setMyRequests(myReqSnap);
+    else if (isScopeSwitch) setMyRequests([]);
+
+    const myLeavesSnap = getAttendanceFastSnapshot(`${attCacheScopeKey}::my_leaves`)?.data;
+    if (Array.isArray(myLeavesSnap)) {
+      setMyLeaveState({ scope: leaveHistoryScope, records: myLeavesSnap, loading: false, error: null });
+    }
+
+    const leaveBalSnap = getAttendanceFastSnapshot(`${attCacheScopeKey}::leave_balance`)?.data;
+    if (leaveBalSnap) setLeaveBalance(leaveBalSnap);
+
+    if (isHodOrManager) {
+      const hodReqSnap = getAttendanceFastSnapshot(`${attCacheScopeKey}::hod_requests`)?.data;
+      if (hodReqSnap && Array.isArray(hodReqSnap.allRequests)) {
+        setHodRequests(hodReqSnap.allRequests);
+        setHodPendingCount(hodReqSnap.pendingCount || 0);
+      } else if (isScopeSwitch) {
+        setHodRequests([]);
+        setHodPendingCount(0);
+      }
+
+      const hodLeavesSnap = getAttendanceFastSnapshot(`${attCacheScopeKey}::hod_leaves`)?.data;
+      if (Array.isArray(hodLeavesSnap)) setHodLeaveRequests(hodLeavesSnap);
+      else if (isScopeSwitch) setHodLeaveRequests([]);
+
+      const tmKey = `${attCacheScopeKey}::team_master|${teamStartDate}|${teamEndDate}|${teamMasterDepartment}`;
+      const tmSnap = getAttendanceFastSnapshot(tmKey)?.data;
+      if (tmSnap && Array.isArray(tmSnap.records)) setTeamMasterData(tmSnap);
+
+      const mxKey = `${attCacheScopeKey}::team_matrix|${matrixYear}|${matrixMonth}|${teamMasterDepartment}|${matrixPeriodType}|${matrixCustomStartDay}|${matrixCustomEndDay}|${adjustLeavesInReport}`;
+      const mxSnap = getAttendanceFastSnapshot(mxKey)?.data;
+      if (mxSnap && Array.isArray(mxSnap.rows)) setMonthlyMatrixData(mxSnap);
+
+      const lrKey = `${attCacheScopeKey}::team_leave_report|${matrixYear}|${leaveReportDept}`;
+      const lrSnap = getAttendanceFastSnapshot(lrKey)?.data;
+      if (lrSnap) setTeamLeaveReportData(lrSnap);
+      else if (isScopeSwitch) setTeamLeaveReportData(null);
+    }
+  }, [attCacheScopeKey, userEmail]);
+
+  attendanceSilentRefreshRef.current = () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setAttSyncStatus('offline');
+      return;
+    }
+    attDirtyKeysRef.current.add('history');
+    attDirtyKeysRef.current.add('my_requests');
+    attDirtyKeysRef.current.add('my_leaves');
+    attDirtyKeysRef.current.add('leave_balance');
+    attDirtyKeysRef.current.add('hod_requests');
+    attDirtyKeysRef.current.add('hod_leaves');
+    attDirtyKeysRef.current.add('team_master');
+    attDirtyKeysRef.current.add('team_matrix');
+    attDirtyKeysRef.current.add('team_leave_report');
+
+    fetchMyRequests(true, true);
+    fetchTodayAttendance(true, true);
+    fetchHistory(true, true);
+    fetchMyLeaves(true, true);
+    fetchLeaveBalance(true, true);
+    if (isHodOrManager) {
+      fetchHodRequests(false, true, true);
+      fetchHodLeaves(true, true);
+      lastTeamMasterParamsRef.current = '';
+      lastFetchedParamsRef.current = '';
+      if (activeTab === 'team_report') {
+        if (teamReportView === 'DAILY') {
+          fetchTeamMaster(true);
+        } else if (teamReportView === 'LEAVE_LEDGER') {
+          fetchTeamLeaveReport(true);
+        } else {
+          fetchTeamMonthlyMatrix(true);
+        }
+      }
+    }
+  };
+
+  // Master LocalDB + Delta Sync Coordinator (0ms refresh + minimal network egress)
+  const runAttendanceDeltaSync = useCallback(async ({ forceFull = false, silent = false } = {}) => {
+    if (!userEmail || !attCacheScopeKey) return;
+    if (attDeltaInFlightRef.current && !forceFull) return;
+
+    attDeltaInFlightRef.current = true;
+    try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setAttSyncStatus('offline');
+        return;
+      }
+
+      setAttSyncStatus('syncing');
+
+      if (forceFull) {
+        await clearAttendanceScopeCaches(attCacheScopeKey);
+        attCacheMapRef.current = new Map();
+        lastTeamMasterParamsRef.current = '';
+        lastFetchedParamsRef.current = '';
+        attDirtyKeysRef.current = new Set([
+          'history', 'my_requests', 'my_leaves', 'leave_balance',
+          'hod_requests', 'hod_leaves', 'team_master', 'team_matrix',
+          'team_leave_report', 'shift_policy'
+        ]);
+      } else {
+        // Hydrate full IndexedDB store for current scope
+        const [idbMap, meta] = await Promise.all([
+          getAllAttendanceLocalCachesForScope(attCacheScopeKey),
+          getAttendanceSyncMeta(attCacheScopeKey)
+        ]);
+
+        if (idbMap && idbMap.size > 0) {
+          for (const [k, v] of idbMap.entries()) {
+            attCacheMapRef.current.set(k, v);
+          }
+
+          const histEntry = idbMap.get(`${attCacheScopeKey}::history|${historyYear}|${historyMonth}`);
+          if (histEntry?.data) {
+            setHistoryRecords(histEntry.data.records || []);
+            setHistorySummary(histEntry.data.summary || {});
+            if (histEntry.data.summary?.shortLeaveUsage) setShortLeaveUsage(histEntry.data.summary.shortLeaveUsage);
+          }
+
+          const myReqEntry = idbMap.get(`${attCacheScopeKey}::my_requests`);
+          if (Array.isArray(myReqEntry?.data)) setMyRequests(myReqEntry.data);
+
+          const myLeaveEntry = idbMap.get(`${attCacheScopeKey}::my_leaves`);
+          if (Array.isArray(myLeaveEntry?.data)) {
+            setMyLeaveState({ scope: leaveHistoryScope, records: myLeaveEntry.data, loading: false, error: null });
+          }
+
+          const balEntry = idbMap.get(`${attCacheScopeKey}::leave_balance`);
+          if (balEntry?.data) setLeaveBalance(balEntry.data);
+
+          const spEntry = idbMap.get(`${attCacheScopeKey}::shift_policy|${initialCompany}|All Branches`);
+          if (spEntry?.data) setTenantShiftPolicy(spEntry.data);
+
+          if (isHodOrManager) {
+            const hodReqEntry = idbMap.get(`${attCacheScopeKey}::hod_requests`);
+            if (hodReqEntry?.data && Array.isArray(hodReqEntry.data.allRequests)) {
+              setHodRequests(hodReqEntry.data.allRequests);
+              setHodPendingCount(hodReqEntry.data.pendingCount || 0);
+            }
+
+            const hodLeaveEntry = idbMap.get(`${attCacheScopeKey}::hod_leaves`);
+            if (Array.isArray(hodLeaveEntry?.data)) setHodLeaveRequests(hodLeaveEntry.data);
+
+            const tmEntry = idbMap.get(`${attCacheScopeKey}::team_master|${teamStartDate}|${teamEndDate}|${teamMasterDepartment}`);
+            if (tmEntry?.data && Array.isArray(tmEntry.data.records)) {
+              setTeamMasterData(tmEntry.data);
+              lastTeamMasterParamsRef.current = `${effectiveTenantId}_${userCompany}_${teamStartDate}_${teamEndDate}_${teamMasterDepartment}_${adminCompanyFilter}`;
+            }
+
+            const mxEntry = idbMap.get(`${attCacheScopeKey}::team_matrix|${matrixYear}|${matrixMonth}|${teamMasterDepartment}|${matrixPeriodType}|${matrixCustomStartDay}|${matrixCustomEndDay}|${adjustLeavesInReport}`);
+            if (mxEntry?.data && Array.isArray(mxEntry.data.rows)) {
+              setMonthlyMatrixData(mxEntry.data);
+              lastFetchedParamsRef.current = `${effectiveTenantId}_${userCompany}_${matrixYear}_${matrixMonth}_${teamMasterDepartment}_${matrixPeriodType}_${matrixCustomStartDay}_${matrixCustomEndDay}_${adjustLeavesInReport}_${adminCompanyFilter}`;
+            }
+
+            const lrEntry = idbMap.get(`${attCacheScopeKey}::team_leave_report|${matrixYear}|${leaveReportDept}`);
+            if (lrEntry?.data) setTeamLeaveReportData(lrEntry.data);
+          }
+        }
+
+        const fullSyncAgeMs = meta?.fullSyncedAt && Number.isFinite(Date.parse(meta.fullSyncedAt))
+          ? (Date.now() - Date.parse(meta.fullSyncedAt))
+          : Infinity;
+        const hasCoreCaches = idbMap.has(`${attCacheScopeKey}::my_requests`)
+          && idbMap.has(`${attCacheScopeKey}::history|${historyYear}|${historyMonth}`)
+          && (!isHodOrManager || idbMap.has(`${attCacheScopeKey}::hod_requests`));
+
+        if (hasCoreCaches && meta?.syncedAt && meta.date === attendanceDate && fullSyncAgeMs < 24 * 60 * 60 * 1000) {
+          // DELTA SYNC MODE: Check only lightweight digest since last sync
+          const digest = await getAttendanceDeltaDigest({
+            tenantId: effectiveTenantId,
+            userCompany,
+            email: userEmail,
+            sinceIso: meta.syncedAt,
+            isHodOrManager
+          });
+
+          if (digest?.success && !digest.requiresFullSync) {
+            const nextMeta = { ...meta, syncedAt: digest.serverNow };
+            await saveAttendanceSyncMeta(attCacheScopeKey, nextMeta);
+            setAttLastSyncedAt(digest.serverNow);
+
+            if (!digest.hasChanges) {
+              // Ensure todayRecord exists if somehow absent from localStorage
+              if (!todayRecordRef.current) {
+                void fetchTodayAttendance(true, true);
+              }
+              setAttSyncStatus('synced');
+              return;
+            }
+
+            // Selectively refresh ONLY sections that changed in delta
+            const tasks = [];
+            if (digest.hasRegularizationChanges) {
+              attDirtyKeysRef.current.add('my_requests');
+              attDirtyKeysRef.current.add('hod_requests');
+              tasks.push(fetchMyRequests(true, true));
+              if (isHodOrManager) tasks.push(fetchHodRequests(false, true, true));
+            }
+            if (digest.hasAttendanceChanges) {
+              attDirtyKeysRef.current.add('history');
+              attDirtyKeysRef.current.add('team_master');
+              attDirtyKeysRef.current.add('team_matrix');
+              lastTeamMasterParamsRef.current = '';
+              lastFetchedParamsRef.current = '';
+              tasks.push(fetchTodayAttendance(true, true));
+              tasks.push(fetchHistory(true, true));
+              if (isHodOrManager && activeTab === 'team_report') {
+                if (teamReportView === 'DAILY') tasks.push(fetchTeamMaster(true));
+                else if (teamReportView !== 'LEAVE_LEDGER') tasks.push(fetchTeamMonthlyMatrix(true));
+              }
+            }
+            if (digest.hasLeaveChanges) {
+              attDirtyKeysRef.current.add('my_leaves');
+              attDirtyKeysRef.current.add('leave_balance');
+              attDirtyKeysRef.current.add('hod_leaves');
+              attDirtyKeysRef.current.add('team_leave_report');
+              attDirtyKeysRef.current.add('team_matrix');
+              lastFetchedParamsRef.current = '';
+              tasks.push(fetchMyLeaves(true, true));
+              tasks.push(fetchLeaveBalance(true, true));
+              if (isHodOrManager) {
+                tasks.push(fetchHodLeaves(true, true));
+                if (activeTab === 'team_report' && teamReportView === 'LEAVE_LEDGER') {
+                  tasks.push(fetchTeamLeaveReport(true));
+                } else if (activeTab === 'team_report' && teamReportView !== 'DAILY') {
+                  tasks.push(fetchTeamMonthlyMatrix(true));
+                }
+              }
+            }
+
+            if (tasks.length > 0) await Promise.all(tasks);
+            setAttSyncStatus('synced');
+            return;
+          }
+        }
+      }
+
+      // FULL SYNC MODE (Cold Start / Empty Cache / > 24h Reconcile / Manual Force Resync)
+      const syncNow = new Date().toISOString();
+      const tasks = [
+        fetchTodayAttendance(true, Boolean(silent || todayRecordRef.current)),
+        fetchHistory(silent, true),
+        fetchTenantShiftPolicy(initialCompany, 'All Branches', forceFull),
+        fetchMyRequests(silent, true),
+        fetchLeaveBalance(silent, true),
+        fetchMyLeaves(silent, true)
+      ];
+      if (isHodOrManager) {
+        tasks.push(fetchHodRequests(false, silent, true));
+        tasks.push(fetchHodLeaves(silent, true));
+        if (activeTab === 'team_report') {
+          if (teamReportView === 'DAILY') tasks.push(fetchTeamMaster(true));
+          else if (teamReportView === 'LEAVE_LEDGER') tasks.push(fetchTeamLeaveReport(true));
+          else tasks.push(fetchTeamMonthlyMatrix(true));
+        }
+      }
+      await Promise.all(tasks);
+
+      const fullMeta = {
+        syncedAt: syncNow,
+        fullSyncedAt: syncNow,
+        date: attendanceDate
+      };
+      await saveAttendanceSyncMeta(attCacheScopeKey, fullMeta);
+      setAttLastSyncedAt(syncNow);
+      setAttSyncStatus('synced');
+    } catch (e) {
+      console.warn('Attendance delta sync fallback:', e);
+      setAttSyncStatus(typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'synced');
+    } finally {
+      attDeltaInFlightRef.current = false;
+    }
+  }, [
+    userEmail, attCacheScopeKey, effectiveTenantId, userCompany, isHodOrManager,
+    historyYear, historyMonth, initialCompany, leaveHistoryScope, attendanceDate,
+    teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth,
+    matrixPeriodType, matrixCustomStartDay, matrixCustomEndDay, adjustLeavesInReport,
+    leaveReportDept, adminCompanyFilter, activeTab, teamReportView, fetchMyLeaves, fetchTodayAttendance
+  ]);
+
+  useEffect(() => {
+    attDeltaSyncFnRef.current = runAttendanceDeltaSync;
+  }, [runAttendanceDeltaSync]);
+
+  // Initial Load & on workspace/user change (LocalDB + Delta Sync)
+  useEffect(() => {
+    if (!userEmail) return;
+    void runAttendanceDeltaSync({ forceFull: false, silent: false });
+  }, [userEmail, attCacheScopeKey]);
+
+  // Monthly history year/month selector change -> LocalDB first, network only if not cached
+  useEffect(() => {
+    if (!userEmail) return;
+    void fetchHistory(false, false);
+  }, [historyYear, historyMonth, attCacheScopeKey]);
+
+  // Tab & Sub-filter Switch -> 0ms LocalDB restore first; fetch only if uncached or dirty
   useEffect(() => {
     if (activeTab === 'monthly_logs') {
-      fetchHistory();
+      void fetchHistory(false, false);
+    } else if (activeTab === 'regularization') {
+      void fetchMyRequests(true, false);
     } else if (activeTab === 'my_leaves') {
-      fetchMyLeaves();
-      fetchLeaveBalance();
+      void fetchMyLeaves(true, false);
+      void fetchLeaveBalance(true, false);
     } else if (activeTab === 'hod_approvals') {
-      fetchHodRequests();
-      fetchHodLeaves();
+      void fetchHodRequests(false, true, false);
+      void fetchHodLeaves(true, false);
     } else if (activeTab === 'team_report') {
       if (teamReportView === 'DAILY') {
-        fetchTeamMaster();
+        void fetchTeamMaster(false);
       } else if (teamReportView === 'LEAVE_LEDGER') {
-        fetchTeamLeaveReport();
+        void fetchTeamLeaveReport(false);
       } else {
-        fetchTeamMonthlyMatrix();
+        void fetchTeamMonthlyMatrix(false);
       }
     }
   }, [activeTab, teamReportView, teamDatePreset, teamStartDate, teamEndDate, teamMasterDepartment, matrixYear, matrixMonth, matrixPeriodType, matrixCustomStartDay, matrixCustomEndDay, effectiveTenantId, userCompany, adjustLeavesInReport, leaveReportDept, adminCompanyFilter, effectiveBranchAccess?.scope]);
+
+  const emitAttendanceRealtimeSync = useCallback((actionType, details = {}) => {
+    const payload = {
+      actionType,
+      tenantId: effectiveTenantId,
+      senderEmail: (userEmail || '').toLowerCase(),
+      timestamp: Date.now(),
+      ...details
+    };
+
+    try {
+      const ch = attendanceRealtimeChannelRef.current;
+      if (ch && ch.state === 'joined') {
+        void ch.send({
+          type: 'broadcast',
+          event: 'attendance_regularization_updated',
+          payload
+        });
+      } else {
+        const sb = createClient();
+        void sb.channel('crm_attendance_realtime_sync').send({
+          type: 'broadcast',
+          event: 'attendance_regularization_updated',
+          payload
+        });
+      }
+    } catch {}
+
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('crm_attendance_sync');
+        bc.postMessage(payload);
+        bc.close();
+      }
+    } catch {}
+
+    try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('attendance_updated', { detail: { ...payload, fromAttendanceModule: true } }));
+      }
+    } catch {}
+  }, [effectiveTenantId, userEmail]);
+
+  useEffect(() => {
+    if (!userEmail) return;
+    let debounceTimer = null;
+    let channel = null;
+    let bc = null;
+
+    const shouldProcessForUser = (targetEmail, targetEmails) => {
+      if (isHodOrManager) return true;
+      const me = (userEmail || '').toLowerCase().trim();
+      if (!me) return false;
+      if (Array.isArray(targetEmails) && targetEmails.length > 0) {
+        return targetEmails.some(em => String(em || '').toLowerCase().trim() === me);
+      }
+      if (targetEmail) {
+        return String(targetEmail).toLowerCase().trim() === me;
+      }
+      return true;
+    };
+
+    const scheduleSilentRefresh = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        attendanceSilentRefreshRef.current?.();
+      }, 250);
+    };
+
+    try {
+      const sb = createClient();
+      channel = sb
+        .channel('crm_attendance_realtime_sync', {
+          config: { broadcast: { self: false } }
+        })
+        .on('broadcast', { event: 'attendance_regularization_updated' }, (msg) => {
+          const p = msg?.payload || {};
+          if (p.tenantId && effectiveTenantId && p.tenantId !== effectiveTenantId) return;
+          if (!shouldProcessForUser(p.targetEmail, p.targetEmails)) return;
+          scheduleSilentRefresh();
+        })
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'attendance_regularization_requests'
+        }, (payload) => {
+          const row = payload?.new || payload?.old || {};
+          if (row.tenant_id && effectiveTenantId && row.tenant_id !== effectiveTenantId) return;
+          if (!shouldProcessForUser(row.email)) return;
+          scheduleSilentRefresh();
+        })
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'attendance_records'
+        }, (payload) => {
+          const row = payload?.new || payload?.old || {};
+          if (row.tenant_id && effectiveTenantId && row.tenant_id !== effectiveTenantId) return;
+          if (!shouldProcessForUser(row.email)) return;
+          scheduleSilentRefresh();
+        })
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'employee_leaves'
+        }, (payload) => {
+          const row = payload?.new || payload?.old || {};
+          if (row.tenant_id && effectiveTenantId && row.tenant_id !== effectiveTenantId) return;
+          if (!shouldProcessForUser(row.email)) return;
+          scheduleSilentRefresh();
+        })
+        .subscribe();
+
+      attendanceRealtimeChannelRef.current = channel;
+    } catch (err) {
+      console.warn('Attendance realtime subscription unavailable:', err);
+    }
+
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('crm_attendance_sync');
+        bc.onmessage = (event) => {
+          const p = event?.data || {};
+          if (p.tenantId && effectiveTenantId && p.tenantId !== effectiveTenantId) return;
+          if (!shouldProcessForUser(p.targetEmail, p.targetEmails)) return;
+          scheduleSilentRefresh();
+        };
+      }
+    } catch {}
+
+    const handleExternalAttendanceEvent = (e) => {
+      if (e?.detail?.fromAttendanceModule) return;
+      scheduleSilentRefresh();
+      emitAttendanceRealtimeSync('EXTERNAL_ATTENDANCE_UPDATED', { targetEmail: userEmail });
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setAttSyncStatus('offline');
+        return;
+      }
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        void attDeltaSyncFnRef.current?.({ forceFull: false, silent: true });
+      }, 250);
+    };
+
+    const handleOfflineStatus = () => {
+      setAttSyncStatus('offline');
+    };
+
+    window.addEventListener('attendance_updated', handleExternalAttendanceEvent);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    window.addEventListener('online', handleVisibilityOrFocus);
+    window.addEventListener('offline', handleOfflineStatus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    const heartbeat = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void attDeltaSyncFnRef.current?.({ forceFull: false, silent: true });
+      }
+    }, 25000);
+
+    return () => {
+      clearTimeout(debounceTimer);
+      clearInterval(heartbeat);
+      window.removeEventListener('attendance_updated', handleExternalAttendanceEvent);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      window.removeEventListener('online', handleVisibilityOrFocus);
+      window.removeEventListener('offline', handleOfflineStatus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      if (bc) {
+        try { bc.close(); } catch {}
+      }
+      if (channel) {
+        if (attendanceRealtimeChannelRef.current === channel) {
+          attendanceRealtimeChannelRef.current = null;
+        }
+        try {
+          const sb = createClient();
+          void sb.removeChannel(channel);
+        } catch {}
+      }
+    };
+  }, [userEmail, effectiveTenantId, isHodOrManager, emitAttendanceRealtimeSync]);
 
   // Handle Punch In click — instant 1-click reaction, show confirm popup first & pre-warm GPS
   const handlePunchIn = () => {
@@ -2623,7 +3384,8 @@ export default function AttendanceModule({
           accepted = res.data;
         }
         if (res.monthlyUsage) setShortLeaveUsage(res.monthlyUsage);
-        fetchHistory(); // Refresh monthly history
+        fetchHistory(true, true); // Refresh monthly history & update LocalDB
+        emitAttendanceRealtimeSync('PUNCH_IN', { targetEmail: userEmail });
         try {
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('crm_attendance_changed', { detail: { type: 'IN', record: res.data } }));
@@ -2639,12 +3401,15 @@ export default function AttendanceModule({
       }
     } catch (err) {
       console.warn('Network punch-in failed, queueing offline:', err);
-      // An online error can have an ambiguous result; verify it before retrying.
-      if (!navigator.onLine && isCurrent()
+      const msg = String(err?.message || '');
+      const isDeploymentError = msg.includes('Failed to find Server Action') || msg.includes('older or newer deployment');
+      const isNetworkFailure = (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        (!isDeploymentError && (err?.name === 'TypeError' || /failed to fetch|network\s*error|load\s*failed|fetch failed|network request failed/i.test(msg)));
+
+      if (isNetworkFailure && isCurrent()
         && await saveOfflinePunch('IN', offlineRecord, punchLocation, scope)) accepted = offlineRecord;
       else {
-        const msg = String(err?.message || '');
-        if (msg.includes('Failed to find Server Action') || msg.includes('older or newer deployment')) {
+        if (isDeploymentError) {
           setPunchError('Naya update aaya hai. Kripya page refresh (Ctrl + Shift + R) karein aur Punch In karein.');
         } else {
           setPunchError(err?.message ? `Punch In error: ${err.message}` : 'Punch In confirm nahi ho saka. Status dobara verify karein.');
@@ -2779,7 +3544,8 @@ export default function AttendanceModule({
           accepted = true;
         }
         if (res.monthlyUsage) setShortLeaveUsage(res.monthlyUsage);
-        fetchHistory(); // Refresh monthly history
+        fetchHistory(true, true); // Refresh monthly history & update LocalDB
+        emitAttendanceRealtimeSync('PUNCH_OUT', { targetEmail: userEmail });
         try {
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('crm_attendance_changed', { detail: { type: 'OUT', record: res.data } }));
@@ -2795,10 +3561,14 @@ export default function AttendanceModule({
       }
     } catch (err) {
       console.warn('Network punch-out failed, queueing offline:', err);
-      if (!navigator.onLine && isCurrent()) accepted = await saveOfflinePunch('OUT', offlineRecord, punchLocation, scope);
+      const msg = String(err?.message || '');
+      const isDeploymentError = msg.includes('Failed to find Server Action') || msg.includes('older or newer deployment');
+      const isNetworkFailure = (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        (!isDeploymentError && (err?.name === 'TypeError' || /failed to fetch|network\s*error|load\s*failed|fetch failed|network request failed/i.test(msg)));
+
+      if (isNetworkFailure && isCurrent()) accepted = await saveOfflinePunch('OUT', offlineRecord, punchLocation, scope);
       else {
-        const msg = String(err?.message || '');
-        if (msg.includes('Failed to find Server Action') || msg.includes('older or newer deployment')) {
+        if (isDeploymentError) {
           setPunchError('Naya update aaya hai. Kripya page refresh (Ctrl + Shift + R) karein aur Punch Out karein.');
         } else {
           setPunchError(err?.message ? `Punch Out error: ${err.message}` : 'Punch Out confirm nahi ho saka. Status dobara verify karein.');
@@ -2897,8 +3667,12 @@ export default function AttendanceModule({
 
       if (res.success) {
         setApplySuccess(res.message);
-        fetchMyRequests();
-        if (isHodOrManager) fetchHodRequests();
+        fetchMyRequests(true, true);
+        if (isHodOrManager) fetchHodRequests(false, true, true);
+        emitAttendanceRealtimeSync('REGULARIZATION_APPLIED', {
+          targetEmail: userEmail,
+          attendanceDate: applyForm.attendanceDate
+        });
         setTimeout(() => {
           setShowApplyModal(false);
           setApplySuccess(null);
@@ -2956,11 +3730,23 @@ export default function AttendanceModule({
           tenantId: effectiveTenantId
         });
         if (res.success) {
+          const reqEmail = actionModal.request?.email || '';
+          const reqId = actionModal.request?.id;
           setActionModal(null);
           setActionRemarks('');
-          fetchHodRequests();
-          fetchHistory();
-          fetchTodayAttendance();
+          fetchHodRequests(false, true, true);
+          fetchHistory(true, true);
+          fetchTodayAttendance(true, true);
+          lastTeamMasterParamsRef.current = '';
+          lastFetchedParamsRef.current = '';
+          if (activeTab === 'team_report') {
+            if (teamReportView === 'DAILY') fetchTeamMaster(true);
+            else if (teamReportView !== 'LEAVE_LEDGER') fetchTeamMonthlyMatrix(true);
+          }
+          emitAttendanceRealtimeSync('REGULARIZATION_APPROVED', {
+            targetEmail: reqEmail,
+            requestId: reqId
+          });
         } else {
           alert('Approval error: ' + res.error);
         }
@@ -2978,9 +3764,15 @@ export default function AttendanceModule({
           tenantId: effectiveTenantId
         });
         if (res.success) {
+          const reqEmail = actionModal.request?.email || '';
+          const reqId = actionModal.request?.id;
           setActionModal(null);
           setActionRemarks('');
-          fetchHodRequests();
+          fetchHodRequests(false, true, true);
+          emitAttendanceRealtimeSync('REGULARIZATION_REJECTED', {
+            targetEmail: reqEmail,
+            requestId: reqId
+          });
         } else {
           alert('Rejection error: ' + res.error);
         }
@@ -3025,9 +3817,19 @@ export default function AttendanceModule({
       });
       if (res.success) {
         speakHumanFemaleAnnouncement(`Approved regularization for ${request.emp_name}`);
-        fetchHodRequests();
-        fetchHistory();
-        fetchTodayAttendance();
+        fetchHodRequests(false, true, true);
+        fetchHistory(true, true);
+        fetchTodayAttendance(true, true);
+        lastTeamMasterParamsRef.current = '';
+        lastFetchedParamsRef.current = '';
+        if (activeTab === 'team_report') {
+          if (teamReportView === 'DAILY') fetchTeamMaster(true);
+          else if (teamReportView !== 'LEAVE_LEDGER') fetchTeamMonthlyMatrix(true);
+        }
+        emitAttendanceRealtimeSync('REGULARIZATION_APPROVED', {
+          targetEmail: request.email,
+          requestId: request.id
+        });
         if (selectedHodRequests.has(request.id)) {
           setSelectedHodRequests(prev => {
             const next = new Set(prev);
@@ -3061,13 +3863,26 @@ export default function AttendanceModule({
           tenantId: effectiveTenantId
         });
         if (res.success) {
+          const targetEmails = ids
+            .map(id => hodRequests.find(r => r.id === id)?.email)
+            .filter(Boolean);
           speakHumanFemaleAnnouncement(`Batch approved ${res.approvedCount} requests`);
           setBulkActionModal(null);
           setBulkRemarks('');
           setSelectedHodRequests(new Set());
-          fetchHodRequests();
-          fetchHistory();
-          fetchTodayAttendance();
+          fetchHodRequests(false, true, true);
+          fetchHistory(true, true);
+          fetchTodayAttendance(true, true);
+          lastTeamMasterParamsRef.current = '';
+          lastFetchedParamsRef.current = '';
+          if (activeTab === 'team_report') {
+            if (teamReportView === 'DAILY') fetchTeamMaster(true);
+            else if (teamReportView !== 'LEAVE_LEDGER') fetchTeamMonthlyMatrix(true);
+          }
+          emitAttendanceRealtimeSync('REGULARIZATION_BULK_APPROVED', {
+            targetEmails,
+            requestIds: ids
+          });
         } else {
           alert('Bulk approval error: ' + (res.error || res.errors?.join('\n')));
         }
@@ -3085,10 +3900,17 @@ export default function AttendanceModule({
           tenantId: effectiveTenantId
         });
         if (res.success) {
+          const targetEmails = ids
+            .map(id => hodRequests.find(r => r.id === id)?.email)
+            .filter(Boolean);
           setBulkActionModal(null);
           setBulkRemarks('');
           setSelectedHodRequests(new Set());
-          fetchHodRequests();
+          fetchHodRequests(false, true, true);
+          emitAttendanceRealtimeSync('REGULARIZATION_BULK_REJECTED', {
+            targetEmails,
+            requestIds: ids
+          });
         } else {
           alert('Bulk rejection error: ' + (res.error || res.errors?.join('\n')));
         }
@@ -4107,6 +4929,59 @@ export default function AttendanceModule({
               }}>
                 🏢 Workspace: {resolvedWorkspaceCompany || userCompany || 'New Swan Group'} ({resolvedTenantCode})
               </span>
+              <button
+                type="button"
+                onClick={(e) => void runAttendanceDeltaSync({ forceFull: Boolean(e.shiftKey), silent: false })}
+                title={
+                  attSyncStatus === 'offline'
+                    ? 'Offline Mode: Serving Attendance from Local DB (IndexedDB)'
+                    : attSyncStatus === 'syncing'
+                      ? 'Delta Sync in progress: Checking changed attendance records...'
+                      : `Local DB (IndexedDB) Active${attLastSyncedAt ? ` • Last synced: ${formatTimeIST(attLastSyncedAt)} IST` : ''}\nClick: Instant Delta Sync • Shift+Click: Full Resync`
+                }
+                style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  background: attSyncStatus === 'syncing'
+                    ? 'rgba(59, 130, 246, 0.08)'
+                    : attSyncStatus === 'offline'
+                      ? 'rgba(245, 158, 11, 0.12)'
+                      : 'rgba(16, 185, 129, 0.08)',
+                  color: attSyncStatus === 'syncing'
+                    ? '#2563eb'
+                    : attSyncStatus === 'offline'
+                      ? '#b45309'
+                      : '#059669',
+                  border: attSyncStatus === 'syncing'
+                    ? '1px solid rgba(59, 130, 246, 0.25)'
+                    : attSyncStatus === 'offline'
+                      ? '1px solid rgba(245, 158, 11, 0.3)'
+                      : '1px solid rgba(16, 185, 129, 0.25)'
+                }}
+              >
+                {attSyncStatus === 'syncing' ? (
+                  <>
+                    <RefreshCw size={11} className="animate-spin" />
+                    <span>Delta Syncing…</span>
+                  </>
+                ) : attSyncStatus === 'offline' ? (
+                  <>
+                    <Database size={11} />
+                    <span>Local DB (Offline)</span>
+                  </>
+                ) : (
+                  <>
+                    <Database size={11} />
+                    <span>Local DB Active</span>
+                  </>
+                )}
+              </button>
             </div>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
               Daily 1-Time Punch In & Out • Missing Punch Applications • HOD Approvals & Auto Update
@@ -5113,7 +5988,7 @@ export default function AttendanceModule({
               </button>
               <button
                 type="button"
-                onClick={fetchMyLeaves}
+                onClick={() => fetchMyLeaves(false, true)}
                 className="btn-action-secondary"
                 style={{
                   display: 'flex',
@@ -5200,7 +6075,10 @@ export default function AttendanceModule({
             loading={myLeaveState.scope !== leaveHistoryScope || myLeaveState.loading}
             error={myLeaveState.scope === leaveHistoryScope ? myLeaveState.error : null}
             scope={leaveHistoryScope}
-            onRefresh={fetchMyLeaves}
+            onRefresh={() => { fetchMyLeaves(false, true); fetchLeaveBalance(false, true); }}
+            processing={Boolean(cancellingLeaveId)}
+            onCancel={handleCancelMyLeave}
+            hideRefresh={true}
           />
         </div>
       )}
@@ -5223,7 +6101,7 @@ export default function AttendanceModule({
                 </p>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginLeft: 'auto', flexShrink: 0, justifyContent: 'flex-end' }}>
                 {/* Month selector */}
                 <select
                   value={historyMonth}
@@ -5268,7 +6146,7 @@ export default function AttendanceModule({
 
                 <button
                   type="button"
-                  onClick={fetchHistory}
+                  onClick={() => fetchHistory(false, true)}
                   title="Refresh Data"
                   style={{
                     padding: '0.45rem 0.75rem',
@@ -5287,7 +6165,7 @@ export default function AttendanceModule({
                   <RefreshCw size={14} className={loadingHistory ? 'animate-spin' : ''} /> Refresh
                 </button>
 
-                <TableViewToggle view={monthlyViewMode} onChange={setMonthlyViewMode} />
+                <TableViewToggle view={monthlyViewMode} onChange={setMonthlyViewMode} style={{ marginLeft: 0 }} />
               </div>
             </div>
 
@@ -5494,10 +6372,10 @@ export default function AttendanceModule({
                 <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Application Records</h3>
                 <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Track submission history and approval decisions ({myRequests.length} records)</p>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <button
                   type="button"
-                  onClick={fetchMyRequests}
+                  onClick={() => fetchMyRequests(false, true)}
                   disabled={loadingMyRequests}
                   style={{
                     padding: '0.45rem 0.75rem',
@@ -5515,7 +6393,7 @@ export default function AttendanceModule({
                 >
                   <RefreshCw size={14} className={loadingMyRequests ? 'animate-spin' : ''} /> Refresh
                 </button>
-                <TableViewToggle view={regularizationViewMode} onChange={setRegularizationViewMode} />
+                <TableViewToggle view={regularizationViewMode} onChange={setRegularizationViewMode} style={{ marginLeft: 0 }} />
               </div>
             </div>
 
@@ -5523,20 +6401,21 @@ export default function AttendanceModule({
               <MobileTableView id="Attendance/AttendanceModule-2" view={regularizationViewMode} hideToggle={true}><table style={{ width: '100%', minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.84rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}>
-                    <th style={{ width: '12%', padding: '0.75rem 1rem', fontWeight: 600 }}>Applied On</th>
-                    <th style={{ width: '11%', padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Date</th>
-                    <th style={{ width: '11%', padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Type</th>
-                    <th style={{ width: '15%', padding: '0.75rem 1rem', fontWeight: 600 }}>Requested Punch Times</th>
-                    <th style={{ width: '18%', padding: '0.75rem 1rem', fontWeight: 600 }}>Reason & Remarks</th>
-                    <th style={{ width: '13%', padding: '0.75rem 1rem', fontWeight: 600 }}>Assigned HOD</th>
+                    <th style={{ width: '11%', padding: '0.75rem 1rem', fontWeight: 600 }}>Applied On</th>
+                    <th style={{ width: '10%', padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Date</th>
+                    <th style={{ width: '10%', padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Type</th>
+                    <th style={{ width: '14%', padding: '0.75rem 1rem', fontWeight: 600 }}>Requested Punch Times</th>
+                    <th style={{ width: '16%', padding: '0.75rem 1rem', fontWeight: 600 }}>Reason & Remarks</th>
+                    <th style={{ width: '12%', padding: '0.75rem 1rem', fontWeight: 600 }}>Assigned HOD</th>
                     <th style={{ width: '10%', padding: '0.75rem 1rem', fontWeight: 600 }}>Status</th>
                     <th style={{ width: '10%', padding: '0.75rem 1rem', fontWeight: 600 }}>HOD Action / Remarks</th>
+                    <th style={{ width: '7%', padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'right' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {myRequests.length === 0 ? (
                     <tr>
-                      <td colSpan={8} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <td colSpan={9} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                         You have not submitted any regularization requests yet.
                       </td>
                     </tr>
@@ -5548,7 +6427,8 @@ export default function AttendanceModule({
                       return (
                         <tr key={r.id || idx} style={{ borderBottom: '1px solid var(--border-light)', backgroundColor: idx % 2 === 0 ? 'transparent' : 'var(--table-alt-row, rgba(0,0,0,0.01))' }}>
                           <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>
-                            {formatDateIST(r.created_at)}
+                            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{formatDateIST(r.created_at)}</div>
+                            <div style={{ fontSize: '0.72rem' }}>{formatTimeIST(r.created_at)} IST</div>
                           </td>
                           <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>{r.attendance_date}</td>
                           <td style={{ padding: '0.75rem 1rem' }}>
@@ -5587,15 +6467,44 @@ export default function AttendanceModule({
                                 <XCircle size={12} /> Rejected
                               </span>
                             )}
+                            {r.status === 'CANCELLED' && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.55rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600, background: '#f1f5f9', color: '#475569' }}>
+                                <XCircle size={12} /> Cancelled
+                              </span>
+                            )}
                           </td>
                           <td style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                             {r.action_at ? (
                               <div>
-                                <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{r.action_by_name || 'HOD'}: </span>
-                                <span>{r.action_remarks || (r.status === 'APPROVED' ? 'Approved' : 'Rejected')}</span>
+                                <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{r.action_by_name || (r.status === 'CANCELLED' ? 'You' : 'HOD')}: </span>
+                                <span>{r.action_remarks || (r.status === 'APPROVED' ? 'Approved' : (r.status === 'CANCELLED' ? 'Cancelled by employee' : 'Rejected'))}</span>
                               </div>
                             ) : (
                               'Waiting for review'
+                            )}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
+                            {r.status === 'PENDING' ? (
+                              <button
+                                type="button"
+                                disabled={cancellingRequestId === r.id}
+                                onClick={() => handleCancelRegularization(r)}
+                                style={{
+                                  padding: '0.28rem 0.65rem',
+                                  borderRadius: '6px',
+                                  border: '1px solid #fecaca',
+                                  background: '#fef2f2',
+                                  color: '#dc2626',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  cursor: cancellingRequestId === r.id ? 'not-allowed' : 'pointer',
+                                  opacity: cancellingRequestId === r.id ? 0.65 : 1
+                                }}
+                              >
+                                {cancellingRequestId === r.id ? 'Cancelling...' : 'Cancel'}
+                              </button>
+                            ) : (
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>—</span>
                             )}
                           </td>
                         </tr>
@@ -5719,6 +6628,27 @@ export default function AttendanceModule({
             {/* 1. Regularization Filters */}
             {hodApprovalSubTab === 'regularization' && (
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem', width: '100%', marginTop: '0.5rem' }}>
+              {/* Search Box (Sabse Aage — matching Team Attendance Report) */}
+              <div style={{ position: 'relative' }}>
+                <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                <input
+                  type="text"
+                  placeholder="Search employee, date, reason..."
+                  value={hodSearchQuery}
+                  onChange={(e) => setHodSearchQuery(e.target.value)}
+                  style={{
+                    padding: '0.45rem 0.75rem 0.45rem 2rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '0.82rem',
+                    outline: 'none',
+                    width: '240px'
+                  }}
+                />
+              </div>
+
               <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-primary)', padding: '0.25rem', borderRadius: '10px', border: '1px solid var(--border-light)', gap: '0.25rem', flexWrap: 'wrap' }}>
                 {/* 1. Pending Pill */}
                 <button
@@ -5865,55 +6795,57 @@ export default function AttendanceModule({
                 </button>
               </div>
 
-              {/* Search Box */}
-              <div style={{ position: 'relative', marginLeft: 'auto' }}>
-                <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-                <input
-                  type="text"
-                  placeholder="Search employee, date, reason..."
-                  value={hodSearchQuery}
-                  onChange={(e) => setHodSearchQuery(e.target.value)}
+              {/* Refresh Button & View Toggle (grouped tightly on the right) */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
+                <button
+                  type="button"
+                  onClick={() => fetchHodRequests(true, false, true)}
                   style={{
-                    padding: '0.45rem 0.75rem 0.45rem 2rem',
+                    padding: '0.45rem 0.85rem',
                     borderRadius: '8px',
                     border: '1px solid var(--border-light)',
                     background: 'var(--bg-primary)',
                     color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
                     fontSize: '0.82rem',
-                    outline: 'none',
-                    width: '240px'
+                    fontWeight: 600
                   }}
-                />
+                >
+                  <RefreshCw size={14} className={loadingHodRequests ? 'animate-spin' : ''} /> Refresh
+                </button>
+
+                <TableViewToggle view={hodViewMode} onChange={setHodViewMode} style={{ marginLeft: 0 }} />
               </div>
-
-              {/* Refresh Button & View Toggle */}
-              <button
-                type="button"
-                onClick={() => fetchHodRequests(true)}
-                style={{
-                  padding: '0.45rem 0.85rem',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-light)',
-                  background: 'var(--bg-primary)',
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  fontSize: '0.82rem',
-                  fontWeight: 600
-                }}
-              >
-                <RefreshCw size={14} className={loadingHodRequests ? 'animate-spin' : ''} /> Refresh
-              </button>
-
-              <TableViewToggle view={hodViewMode} onChange={setHodViewMode} />
             </div>
           )}
 
             {/* 2. Leave Applications Filters */}
             {hodApprovalSubTab === 'leaves' && (
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem', width: '100%', marginTop: '0.5rem' }}>
+                {/* Search Box (Sabse Aage — matching Team Attendance Report) */}
+                <div style={{ position: 'relative' }}>
+                  <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                  <input
+                    type="text"
+                    placeholder="Search employee, leave type, reason..."
+                    value={hodLeaveSearch}
+                    onChange={(e) => setHodLeaveSearch(e.target.value)}
+                    style={{
+                      padding: '0.45rem 0.75rem 0.45rem 2rem',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-light)',
+                      background: 'var(--bg-primary)',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.82rem',
+                      outline: 'none',
+                      width: '240px'
+                    }}
+                  />
+                </div>
+
                 <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-primary)', padding: '0.25rem', borderRadius: '10px', border: '1px solid var(--border-light)', gap: '0.25rem', flexWrap: 'wrap' }}>
                   {/* 1. Pending Pill */}
                   <button
@@ -6048,69 +6980,50 @@ export default function AttendanceModule({
                   </button>
                 </div>
 
-                {/* Search Box */}
-                <div style={{ position: 'relative', marginLeft: 'auto' }}>
-                  <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-                  <input
-                    type="text"
-                    placeholder="Search employee, leave type, reason..."
-                    value={hodLeaveSearch}
-                    onChange={(e) => setHodLeaveSearch(e.target.value)}
+                {/* Refresh & Grant CPL Credit grouped tightly on the right */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={() => fetchHodLeaves(false, true)}
                     style={{
-                      padding: '0.45rem 0.75rem 0.45rem 2rem',
+                      padding: '0.45rem 0.85rem',
                       borderRadius: '8px',
                       border: '1px solid var(--border-light)',
                       background: 'var(--bg-primary)',
                       color: 'var(--text-primary)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
                       fontSize: '0.82rem',
-                      outline: 'none',
-                      width: '240px'
+                      fontWeight: 600
                     }}
-                  />
+                  >
+                    <RefreshCw size={14} className={loadingHodLeaves ? 'animate-spin' : ''} /> Refresh
+                  </button>
+
+                  {/* Grant CPL Credit Button */}
+                  <button
+                    type="button"
+                    onClick={() => setCplGrantModal({ show: true, email: '', empName: '', days: 1.0, reason: '', workDate: getTodayDateString(), validityDays: 60 })}
+                    style={{
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: '#4f46e5',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      boxShadow: '0 2px 6px rgba(79, 70, 229, 0.25)'
+                    }}
+                  >
+                    <Award size={14} /> ➕ Grant CPL Credit
+                  </button>
                 </div>
-
-                {/* Refresh Button */}
-                <button
-                  type="button"
-                  onClick={() => fetchHodLeaves()}
-                  style={{
-                    padding: '0.45rem 0.85rem',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-light)',
-                    background: 'var(--bg-primary)',
-                    color: 'var(--text-primary)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.35rem',
-                    fontSize: '0.82rem',
-                    fontWeight: 600
-                  }}
-                >
-                  <RefreshCw size={14} className={loadingHodLeaves ? 'animate-spin' : ''} /> Refresh
-                </button>
-
-                {/* Grant CPL Credit Button */}
-                <button
-                  type="button"
-                  onClick={() => setCplGrantModal({ show: true, email: '', empName: '', days: 1.0, reason: '', workDate: getTodayDateString(), validityDays: 60 })}
-                  style={{
-                    padding: '0.45rem 0.85rem',
-                    borderRadius: '8px',
-                    border: 'none',
-                    background: '#4f46e5',
-                    color: '#ffffff',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.35rem',
-                    fontSize: '0.82rem',
-                    fontWeight: 700,
-                    boxShadow: '0 2px 6px rgba(79, 70, 229, 0.25)'
-                  }}
-                >
-                  <Award size={14} /> ➕ Grant CPL Credit
-                </button>
               </div>
             )}
           </div>
@@ -6216,19 +7129,20 @@ export default function AttendanceModule({
                         style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#2563eb' }}
                       />
                     </th>
-                    <th style={{ width: '21%', padding: '0.75rem 1rem', fontWeight: 600 }}>Employee</th>
-                    <th style={{ width: '12%', padding: '0.75rem 1rem', fontWeight: 600 }}>Date of Missing Punch</th>
-                    <th style={{ width: '11%', padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Type</th>
-                    <th style={{ width: '14%', padding: '0.75rem 1rem', fontWeight: 600 }}>Proposed In / Out Times</th>
-                    <th style={{ width: '18%', padding: '0.75rem 1rem', fontWeight: 600 }}>Reason & Explanation</th>
-                    <th style={{ width: '12%', padding: '0.75rem 1rem', fontWeight: 600 }}>Status</th>
+                    <th style={{ width: '11%', padding: '0.75rem 1rem', fontWeight: 600 }}>Applied On (IST)</th>
+                    <th style={{ width: '18%', padding: '0.75rem 1rem', fontWeight: 600 }}>Employee</th>
+                    <th style={{ width: '10%', padding: '0.75rem 1rem', fontWeight: 600 }}>Date of Missing Punch</th>
+                    <th style={{ width: '10%', padding: '0.75rem 1rem', fontWeight: 600 }}>Missing Type</th>
+                    <th style={{ width: '13%', padding: '0.75rem 1rem', fontWeight: 600 }}>Proposed In / Out Times</th>
+                    <th style={{ width: '16%', padding: '0.75rem 1rem', fontWeight: 600 }}>Reason & Explanation</th>
+                    <th style={{ width: '10%', padding: '0.75rem 1rem', fontWeight: 600 }}>Status</th>
                     <th style={{ width: '12%', padding: '0.75rem 1rem', fontWeight: 600, textAlign: 'right' }}>HOD Action / Decision</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredHodRequests.length === 0 ? (
                     <tr>
-                      <td colSpan={8} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <td colSpan={9} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                         No regularization requests found in <strong>{hodStatusFilter === 'ALL' ? 'All Requests' : hodStatusFilter}</strong>.
                       </td>
                     </tr>
@@ -6250,6 +7164,10 @@ export default function AttendanceModule({
                             ) : (
                               <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>—</span>
                             )}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{formatDateIST(r.created_at)}</div>
+                            <div style={{ fontSize: '0.72rem' }}>{formatTimeIST(r.created_at)} IST</div>
                           </td>
                           <td style={{ padding: '0.75rem 1rem' }}>
                             <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.emp_name}</div>
@@ -6387,9 +7305,9 @@ export default function AttendanceModule({
       {/* 2. Leave Applications Sub-Tab Content */}
       {hodApprovalSubTab === 'leaves' && (
         <LeaveApplicationsTable teamView records={filteredHodLeaveRequests} loading={loadingHodLeaves}
-          error={hodLeavesError} onRefresh={fetchHodLeaves} scope={leaveHistoryScope}
+          error={hodLeavesError} onRefresh={() => fetchHodLeaves(false, true)} scope={leaveHistoryScope}
           filterKey={`${hodLeaveFilter}_${hodLeaveSearch}`} processing={processingLeaveAction}
-          onDecision={(type, request) => setLeaveActionModal({ type, request, remarks: '' })} />
+          onDecision={(type, request) => setLeaveActionModal({ type, request, remarks: '' })} hideRefresh={true} />
       )}
 
         </div>
@@ -6549,8 +7467,9 @@ export default function AttendanceModule({
               </div>
             </div>
 
-            {/* Filter Controls */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
+            {/* Filter Controls (Daily / Matrix / Timesheet only — Leave Ledger has its own dedicated toolbar) */}
+            {teamReportView !== 'LEAVE_LEDGER' && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.85rem' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem' }}>
                 <div style={{ position: 'relative' }}>
                   <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
@@ -6820,11 +7739,11 @@ export default function AttendanceModule({
                 )}
               </div>
 
-              {/* Action Buttons: Refresh, CSV Export & View Toggle */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              {/* Action Buttons: Always anchored cleanly on the right across Daily, Matrix & Timesheet */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginLeft: 'auto', flexShrink: 0, justifyContent: 'flex-end' }}>
                 <button
                   type="button"
-                  onClick={() => teamReportView === 'DAILY' ? fetchTeamMaster(true) : (teamReportView === 'LEAVE_LEDGER' ? fetchTeamLeaveReport() : fetchTeamMonthlyMatrix(true))}
+                  onClick={() => teamReportView === 'DAILY' ? fetchTeamMaster(true) : (teamReportView === 'LEAVE_LEDGER' ? fetchTeamLeaveReport(true) : fetchTeamMonthlyMatrix(true))}
                   style={{
                     padding: '0.45rem 0.75rem',
                     borderRadius: '8px',
@@ -6896,9 +7815,10 @@ export default function AttendanceModule({
                   </button>
                 )}
 
-                <TableViewToggle view={teamViewMode} onChange={setTeamViewMode} />
+                <TableViewToggle view={teamViewMode} onChange={setTeamViewMode} style={{ marginLeft: 0 }} />
               </div>
-            </div>
+              </div>
+            )}
           </div>
 
           {/* ========================================================================= */}
@@ -7206,10 +8126,13 @@ export default function AttendanceModule({
                       }}
                     />
                   </div>
+                </div>
 
+                {/* Refresh & CSV Export Actions (always right-aligned) */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginLeft: 'auto', flexShrink: 0, justifyContent: 'flex-end' }}>
                   <button
                     type="button"
-                    onClick={() => fetchTeamLeaveReport()}
+                    onClick={() => fetchTeamLeaveReport(true)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -7220,15 +8143,12 @@ export default function AttendanceModule({
                       background: 'var(--bg-primary)',
                       color: 'var(--text-primary)',
                       fontSize: '0.82rem',
+                      fontWeight: 600,
                       cursor: 'pointer'
                     }}
                   >
                     <RefreshCw size={13} className={loadingLeaveReport ? 'animate-spin' : ''} /> Refresh
                   </button>
-                </div>
-
-                {/* CSV Export Actions */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <button
                     type="button"
                     onClick={handleExportLeaveRosterCSV}
@@ -7283,11 +8203,11 @@ export default function AttendanceModule({
                     <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>All-Employee Leave Balances Ledger</h3>
                     <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', background: 'var(--bg-primary)', padding: '0.15rem 0.5rem', borderRadius: '6px' }}>Annual Quota vs Balance</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: 'auto', flexShrink: 0 }}>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                       Total: {teamLeaveReportData?.roster?.length || 0} employees
                     </span>
-                    <TableViewToggle view={teamViewMode} onChange={setTeamViewMode} />
+                    <TableViewToggle view={teamViewMode} onChange={setTeamViewMode} style={{ marginLeft: 0 }} />
                   </div>
                 </div>
 
@@ -7416,11 +8336,11 @@ export default function AttendanceModule({
                     <Calendar size={18} color="#9333ea" />
                     <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Leave Applications Audit History Log</h3>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginLeft: 'auto', flexShrink: 0 }}>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                       Total requests: {teamLeaveReportData?.history?.length || 0}
                     </span>
-                    <TableViewToggle view={teamViewMode} onChange={setTeamViewMode} />
+                    <TableViewToggle view={teamViewMode} onChange={setTeamViewMode} style={{ marginLeft: 0 }} />
                   </div>
                 </div>
 
@@ -7687,6 +8607,8 @@ export default function AttendanceModule({
 
                             {/* 1st to Last Day Cells */}
                             {(row.days || []).map((day, dIdx) => {
+                              const cellDateStr = day.dateStr || monthlyMatrixData?.monthDates?.[dIdx]?.dateStr || '';
+                              const isClickable = (isAdmin || isHodOrManager) && day.code !== '—' && Boolean(cellDateStr);
                               let cellBg = 'transparent';
                               let cellColor = 'inherit';
                               let cellFontWeight = 400;
@@ -7756,11 +8678,31 @@ export default function AttendanceModule({
                               return (
                                 <td 
                                   key={dIdx}
-                                  title={`${row.emp_name} - Day ${dIdx + 1}: ${day.label}`}
+                                  onClick={() => {
+                                    if (!isClickable) return;
+                                    handleOpenDirectCorrectionModal({
+                                      id: day.record?.id || null,
+                                      emp_id: row.emp_id,
+                                      emp_code: row.emp_code || row.emp_id || '',
+                                      emp_name: row.emp_name,
+                                      email: row.email,
+                                      department: row.department,
+                                      attendance_date: cellDateStr,
+                                      in_time: day.record?.in_time,
+                                      out_time: day.record?.out_time,
+                                      status: day.code === 'A'
+                                        ? 'PRESENT'
+                                        : (day.record?.status || (day.code === 'P' ? 'PRESENT' : (day.code === 'HD' ? 'HALF_DAY' : (day.code === 'PR' || day.code === 'R' ? 'REGULARIZED' : (day.code === 'WO' ? 'WEEK_OFF' : day.code))))),
+                                      is_regularized: day.code === 'A' ? true : day.record?.is_regularized,
+                                      remarks: day.record?.remarks || (day.code === 'A' ? 'Manual Attendance by Admin/HOD' : '')
+                                    });
+                                  }}
+                                  title={`${row.emp_name} - Day ${dIdx + 1}: ${day.label}${isClickable ? ' (Click to Add Manual Attendance)' : ''}`}
                                   style={{
                                     padding: '0.35rem 0.2rem',
                                     borderLeft: '1px solid var(--border-light)',
-                                    background: day.code === 'WO' ? 'rgba(0,0,0,0.02)' : (day.code === 'H' ? 'rgba(14, 165, 233, 0.05)' : 'transparent')
+                                    background: day.code === 'WO' ? 'rgba(0,0,0,0.02)' : (day.code === 'H' ? 'rgba(14, 165, 233, 0.05)' : 'transparent'),
+                                    cursor: isClickable ? 'pointer' : 'default'
                                   }}
                                 >
                                   {day.code === '—' ? (
@@ -8111,14 +9053,18 @@ export default function AttendanceModule({
                                       onClick={() => {
                                         if (!isClickable) return;
                                         handleOpenDirectCorrectionModal({
+                                          id: day.record?.id || null,
                                           emp_id: row.emp_id,
+                                          emp_code: row.emp_code || row.emp_id || '',
                                           emp_name: row.emp_name,
                                           email: row.email,
+                                          department: row.department,
                                           attendance_date: cellDateStr,
                                           in_time: day.record?.in_time,
                                           out_time: day.record?.out_time,
-                                          status: day.record?.status || (day.code === 'P' ? 'PRESENT' : day.code),
-                                          remarks: day.record?.remarks
+                                          status: day.code === 'A' ? 'PRESENT' : (day.record?.status || (day.code === 'P' ? 'PRESENT' : day.code)),
+                                          is_regularized: day.code === 'A' ? true : day.record?.is_regularized,
+                                          remarks: day.record?.remarks || (day.code === 'A' ? 'Manual Attendance by Admin/HOD' : '')
                                         });
                                       }}
                                       style={{
@@ -8556,7 +9502,7 @@ export default function AttendanceModule({
                 </p>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginLeft: 'auto', flexShrink: 0, justifyContent: 'flex-end' }}>
                 {(isAdmin || isMasterAdmin) && (
                   <button
                     type="button"
@@ -8579,7 +9525,7 @@ export default function AttendanceModule({
                     <Plus size={15} /> Add / Manage Shifts
                   </button>
                 )}
-                <TableViewToggle view={shiftViewMode} onChange={setShiftViewMode} />
+                <TableViewToggle view={shiftViewMode} onChange={setShiftViewMode} style={{ marginLeft: 0 }} />
               </div>
             </div>
 
@@ -9691,7 +10637,7 @@ export default function AttendanceModule({
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginLeft: 'auto', flexShrink: 0, justifyContent: 'flex-end' }}>
                     <button
                       type="button"
                       onClick={() => {
@@ -9717,7 +10663,7 @@ export default function AttendanceModule({
                       <RefreshCw size={13} className={loadingAllLeavePolicies ? 'spin' : ''} />
                       Refresh
                     </button>
-                    <TableViewToggle view={leavePolicyViewMode} onChange={setLeavePolicyViewMode} />
+                    <TableViewToggle view={leavePolicyViewMode} onChange={setLeavePolicyViewMode} style={{ marginLeft: 0 }} />
                   </div>
                 </div>
 
@@ -10326,7 +11272,7 @@ export default function AttendanceModule({
                 </p>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginLeft: 'auto', flexShrink: 0, justifyContent: 'flex-end' }}>
                 {(isAdmin || isMasterAdmin) && (
                   <button
                     type="button"
@@ -10349,7 +11295,7 @@ export default function AttendanceModule({
                   </button>
                 )}
                 {geofenceSettings.geofence_locations.length > 0 && (
-                  <TableViewToggle view={geofenceViewMode} onChange={setGeofenceViewMode} />
+                  <TableViewToggle view={geofenceViewMode} onChange={setGeofenceViewMode} style={{ marginLeft: 0 }} />
                 )}
               </div>
             </div>
@@ -12507,6 +13453,146 @@ export default function AttendanceModule({
                 ) : (
                   <>
                     <Check size={15} /> Save & Sahi Karein
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Centered Cancel Confirmation Modal (Missing Punch & Leave) */}
+      {cancelConfirmModal && (
+        <div
+          onClick={() => {
+            if (!cancellingLeaveId && !cancellingRequestId) setCancelConfirmModal(null);
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.6)',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            backdropFilter: 'blur(3px)'
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-surface, #ffffff)',
+              borderRadius: '16px',
+              border: '1px solid var(--border-light, #e2e8f0)',
+              boxShadow: '0 24px 48px -12px rgba(15, 23, 42, 0.28)',
+              width: '100%',
+              maxWidth: '430px',
+              padding: '1.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.85rem' }}>
+              <div style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '12px',
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                color: '#dc2626',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <AlertTriangle size={20} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {cancelConfirmModal.type === 'LEAVE'
+                    ? 'Cancel Leave Application?'
+                    : 'Cancel Missing Punch Request?'}
+                </h3>
+                <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.84rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  {cancelConfirmModal.type === 'LEAVE' ? (
+                    <>
+                      Are you sure you want to cancel your pending{' '}
+                      <strong>
+                        {cancelConfirmModal.record.leave_type === 'HALF_DAY'
+                          ? 'Half Day'
+                          : cancelConfirmModal.record.leave_type}
+                      </strong>{' '}
+                      leave for{' '}
+                      <strong>
+                        {cancelConfirmModal.record.from_date}
+                        {cancelConfirmModal.record.to_date !== cancelConfirmModal.record.from_date
+                          ? ` to ${cancelConfirmModal.record.to_date}`
+                          : ''}
+                      </strong>
+                      ?
+                    </>
+                  ) : (
+                    <>
+                      Are you sure you want to cancel your pending missing punch application for{' '}
+                      <strong>{cancelConfirmModal.record.attendance_date}</strong>?
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '0.65rem',
+              paddingTop: '0.75rem',
+              borderTop: '1px solid var(--border-light, #e2e8f0)'
+            }}>
+              <button
+                type="button"
+                disabled={Boolean(cancellingLeaveId || cancellingRequestId)}
+                onClick={() => setCancelConfirmModal(null)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-light, #e2e8f0)',
+                  background: 'var(--bg-primary, #f8fafc)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                No, Keep It
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(cancellingLeaveId || cancellingRequestId)}
+                onClick={handleConfirmCancelAction}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  padding: '0.5rem 1.15rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  cursor: (cancellingLeaveId || cancellingRequestId) ? 'not-allowed' : 'pointer',
+                  opacity: (cancellingLeaveId || cancellingRequestId) ? 0.7 : 1
+                }}
+              >
+                {(cancellingLeaveId || cancellingRequestId) ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" /> Cancelling...
+                  </>
+                ) : (
+                  <>
+                    <XCircle size={14} /> Yes, Cancel
                   </>
                 )}
               </button>

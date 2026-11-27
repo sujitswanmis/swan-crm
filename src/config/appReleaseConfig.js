@@ -8,12 +8,12 @@
 
 export const DEFAULT_ANDROID_RELEASE_POLICY = {
   platform: 'android',
-  latest_version_code: 10,
-  latest_version_name: 'v10.0 (2.5.1333)',
+  latest_version_code: 12,
+  latest_version_name: 'v12.0 (2.5.1424)',
   min_supported_version_code: 10,
-  download_url: 'https://qosmckbxvzpdccbrttkd.supabase.co/storage/v1/object/public/app_releases/SPC-Workspace-Android-v10.apk',
+  download_url: 'https://app.supujacreations.com/apps/spcworkspacev12.apk',
   release_notes:
-    'Official direct branded APK download with universal multi-platform push notifications, background wake lock, and battery saver protection.'
+    'Firebase Cloud Messaging (FCM) instant push notifications even when app is closed, plus Dynamic On-Demand Module Permission System.'
 };
 
 export const DEFAULT_WINDOWS_RELEASE_POLICY = {
@@ -131,19 +131,19 @@ export function normalizeLocationMode(snapshot = {}) {
 }
 
 /**
- * Evaluates an employee's device telemetry record against the active release policy.
- * Handles:
- *  - Mobile Web Browser logins without APK (BROWSER_ONLY)
- *  - Legacy APKs v1/v2/v3 that predate appVersionCode reporting (FORCE_UPGRADE)
- *  - Newer APKs with missing Always-Allow GPS, Restricted Battery, or GPS OFF (NEEDS_PERMISSION_FIX)
+ * Evaluates an employee's device telemetry record against active multi-platform release policies.
+ * Supports Android APK, Windows Desktop (.exe), iOS App, Mobile Web, and Desktop Web sessions.
  */
-export function classifyDeviceHealth(record = null, policyInput = DEFAULT_ANDROID_RELEASE_POLICY) {
-  const policy = sanitizeReleasePolicy(policyInput);
+export function classifyDeviceHealth(record = null, policyInput = DEFAULT_ANDROID_RELEASE_POLICY, allPoliciesInput = null) {
+  const androidPolicy = sanitizeReleasePolicy(policyInput?.android || policyInput, 'android');
+  const windowsPolicy = sanitizeReleasePolicy(allPoliciesInput?.windows || policyInput?.windows || DEFAULT_WINDOWS_RELEASE_POLICY, 'windows');
+  const iosPolicy = sanitizeReleasePolicy(allPoliciesInput?.ios || policyInput?.ios || DEFAULT_IOS_RELEASE_POLICY, 'ios');
+
   if (!record) {
     return {
       status: DEVICE_HEALTH_STATUS.OFFLINE,
-      issues: ['No mobile app or mobile browser telemetry recorded yet'],
-      issueSummary: 'No mobile telemetry recorded yet',
+      issues: ['No app or browser session telemetry recorded yet'],
+      issueSummary: 'No device telemetry recorded yet',
       isNativeAndroid: false,
       needsApkInstall: false,
       needsApkUpgrade: false,
@@ -154,23 +154,33 @@ export function classifyDeviceHealth(record = null, policyInput = DEFAULT_ANDROI
 
   const platformStr = String(record.platform || '').toLowerCase();
   const detailsStr = String(record.platform_details || record.platformDetails || '').toLowerCase();
-  const isNativeAndroid =
-    platformStr.includes('android') ||
-    detailsStr.includes('spc workspace apk') ||
-    detailsStr.includes('capacitor') ||
-    record.app_version_code != null ||
-    record.appVersionCode != null;
+  const rawCode = record.app_version_code ?? record.appVersionCode;
+  const versionCode = rawCode != null && Number.isFinite(Number(rawCode)) ? Number(rawCode) : null;
 
-  const isDesktop =
+  const isWindowsApp =
+    platformStr === 'windows app' ||
     platformStr.includes('windows') ||
-    platformStr.includes('macos') ||
-    detailsStr.includes('electron') ||
-    detailsStr.includes('desktop') ||
-    (/\b(windows|macintosh|macos|linux)\b/i.test(detailsStr) && !/\b(android|iphone|ipad|ipod|mobile)\b/i.test(detailsStr));
+    platformStr === 'macos app' ||
+    detailsStr.includes('spc workspace desktop') ||
+    detailsStr.includes('electron');
+
+  const isIosApp =
+    platformStr === 'ios app' ||
+    detailsStr.includes('spc workspace app (ios)') ||
+    (detailsStr.includes('capacitor') && detailsStr.includes('ios'));
+
+  const isNativeAndroid =
+    !isWindowsApp &&
+    !isIosApp &&
+    (platformStr.includes('android') ||
+      detailsStr.includes('spc workspace apk') ||
+      detailsStr.includes('capacitor') ||
+      versionCode != null);
 
   const isMobileWeb =
     !isNativeAndroid &&
-    !isDesktop &&
+    !isWindowsApp &&
+    !isIosApp &&
     (detailsStr.includes('mobile') ||
       detailsStr.includes('android') ||
       detailsStr.includes('iphone') ||
@@ -179,6 +189,73 @@ export function classifyDeviceHealth(record = null, policyInput = DEFAULT_ANDROI
       detailsStr.includes('pwa') ||
       record.location_mode === 'browser' ||
       record.locationMode === 'browser');
+
+  const isDesktopWeb =
+    !isNativeAndroid &&
+    !isWindowsApp &&
+    !isIosApp &&
+    !isMobileWeb &&
+    (platformStr.includes('web') ||
+      detailsStr.includes('chrome') ||
+      detailsStr.includes('edge') ||
+      detailsStr.includes('firefox') ||
+      detailsStr.includes('safari') ||
+      detailsStr.includes('windows') ||
+      detailsStr.includes('macos'));
+
+  if (isWindowsApp) {
+    const issues = [];
+    const needsForce = versionCode == null || versionCode < windowsPolicy.min_supported_version_code;
+    const needsOptional = !needsForce && versionCode < windowsPolicy.latest_version_code;
+    if (versionCode == null) {
+      issues.push(`Legacy Desktop build — update to v${windowsPolicy.latest_version_code}`);
+    } else if (needsForce) {
+      issues.push(`Unsupported Desktop v${versionCode} — minimum v${windowsPolicy.min_supported_version_code} required`);
+    } else if (needsOptional) {
+      issues.push(`Desktop v${versionCode} behind latest v${windowsPolicy.latest_version_code}`);
+    }
+    return {
+      status: needsForce
+        ? DEVICE_HEALTH_STATUS.FORCE_UPGRADE
+        : needsOptional
+          ? DEVICE_HEALTH_STATUS.OUTDATED_APK
+          : DEVICE_HEALTH_STATUS.HEALTHY,
+      issues,
+      issueSummary: issues.length > 0 ? issues.join(' • ') : `Windows Desktop v${versionCode} up-to-date`,
+      isNativeAndroid: false,
+      needsApkInstall: false,
+      needsApkUpgrade: needsForce || needsOptional,
+      needsPermissionFix: false,
+      locationMode: 'unknown',
+      versionCode
+    };
+  }
+
+  if (isIosApp) {
+    const issues = [];
+    const needsForce = versionCode == null || versionCode < iosPolicy.min_supported_version_code;
+    const needsOptional = !needsForce && versionCode < iosPolicy.latest_version_code;
+    if (needsForce) {
+      issues.push(`Unsupported iOS v${versionCode ?? '?'} — minimum v${iosPolicy.min_supported_version_code} required`);
+    } else if (needsOptional) {
+      issues.push(`iOS v${versionCode} behind latest v${iosPolicy.latest_version_code}`);
+    }
+    return {
+      status: needsForce
+        ? DEVICE_HEALTH_STATUS.FORCE_UPGRADE
+        : needsOptional
+          ? DEVICE_HEALTH_STATUS.OUTDATED_APK
+          : DEVICE_HEALTH_STATUS.HEALTHY,
+      issues,
+      issueSummary: issues.length > 0 ? issues.join(' • ') : `iOS App v${versionCode} up-to-date`,
+      isNativeAndroid: false,
+      needsApkInstall: false,
+      needsApkUpgrade: needsForce || needsOptional,
+      needsPermissionFix: false,
+      locationMode: normalizeLocationMode(record),
+      versionCode
+    };
+  }
 
   if (!isNativeAndroid) {
     if (isMobileWeb) {
@@ -193,6 +270,18 @@ export function classifyDeviceHealth(record = null, policyInput = DEFAULT_ANDROI
         locationMode: 'browser'
       };
     }
+    if (isDesktopWeb) {
+      return {
+        status: DEVICE_HEALTH_STATUS.OFFLINE,
+        issues: ['Active on Desktop Web Browser (no native Mobile/Desktop App telemetry)'],
+        issueSummary: `Desktop Web Browser (${record.platform_details || record.platformDetails || 'Browser'})`,
+        isNativeAndroid: false,
+        needsApkInstall: false,
+        needsApkUpgrade: false,
+        needsPermissionFix: false,
+        locationMode: 'unknown'
+      };
+    }
     return {
       status: DEVICE_HEALTH_STATUS.OFFLINE,
       issues: ['No active mobile device detected (desktop session only)'],
@@ -205,8 +294,6 @@ export function classifyDeviceHealth(record = null, policyInput = DEFAULT_ANDROI
     };
   }
 
-  const rawCode = record.app_version_code ?? record.appVersionCode;
-  const versionCode = rawCode != null && Number.isFinite(Number(rawCode)) ? Number(rawCode) : null;
   const locationMode = normalizeLocationMode(record);
   const batteryUnrestricted = record.battery_unrestricted ?? record.batteryUnrestricted;
   const notificationsEnabled = record.notifications_enabled ?? record.notificationsEnabled;
@@ -214,11 +301,11 @@ export function classifyDeviceHealth(record = null, policyInput = DEFAULT_ANDROI
 
   const issues = [];
   if (versionCode == null) {
-    issues.push(`Old APK (<= v3 legacy build) — update to v${policy.latest_version_code}`);
-  } else if (versionCode < policy.min_supported_version_code) {
-    issues.push(`Unsupported APK v${versionCode} — minimum v${policy.min_supported_version_code} required`);
-  } else if (versionCode < policy.latest_version_code) {
-    issues.push(`APK v${versionCode} behind latest v${policy.latest_version_code}`);
+    issues.push(`Old APK (<= v3 legacy build) — update to v${androidPolicy.latest_version_code}`);
+  } else if (versionCode < androidPolicy.min_supported_version_code) {
+    issues.push(`Unsupported APK v${versionCode} — minimum v${androidPolicy.min_supported_version_code} required`);
+  } else if (versionCode < androidPolicy.latest_version_code) {
+    issues.push(`APK v${versionCode} behind latest v${androidPolicy.latest_version_code}`);
   }
 
   let hasPermissionBlocker = false;
@@ -242,8 +329,8 @@ export function classifyDeviceHealth(record = null, policyInput = DEFAULT_ANDROI
     issues.push('App notifications disabled');
   }
 
-  const needsForceUpgrade = versionCode == null || versionCode < policy.min_supported_version_code;
-  const needsOptionalUpgrade = !needsForceUpgrade && versionCode < policy.latest_version_code;
+  const needsForceUpgrade = versionCode == null || versionCode < androidPolicy.min_supported_version_code;
+  const needsOptionalUpgrade = !needsForceUpgrade && versionCode < androidPolicy.latest_version_code;
 
   let status = DEVICE_HEALTH_STATUS.HEALTHY;
   if (needsForceUpgrade) {

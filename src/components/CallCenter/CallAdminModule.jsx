@@ -172,12 +172,12 @@ const statusBadge = (status) => {
 };
 
 const sipBadge = (reg) => reg === 'true'
-  ? <span style={{ display:'flex',alignItems:'center',gap:'0.3rem',color:'#16a34a',fontSize:'0.8rem',fontWeight:600 }}><Wifi size={13}/>Registered</span>
-  : <span style={{ display:'flex',alignItems:'center',gap:'0.3rem',color:'#dc2626',fontSize:'0.8rem',fontWeight:600 }}><WifiOff size={13}/>Not Registered</span>;
+  ? <span style={{ display:'flex',alignItems:'center',gap:'0.3rem',color:'var(--spc-view-success)',fontSize:'0.8rem',fontWeight:600 }}><Wifi size={13}/>Registered</span>
+  : <span style={{ display:'flex',alignItems:'center',gap:'0.3rem',color:'var(--spc-view-danger)',fontSize:'0.8rem',fontWeight:600 }}><WifiOff size={13}/>Not Registered</span>;
 
 const directionBadge = (dir) => dir === 'inbound'
-  ? <span style={{color:'#7c3aed',fontSize:'0.78rem',fontWeight:600,display:'flex',alignItems:'center',gap:'0.25rem'}}><PhoneIncoming size={12}/>Inbound</span>
-  : <span style={{color:'#0369a1',fontSize:'0.78rem',fontWeight:600,display:'flex',alignItems:'center',gap:'0.25rem'}}><PhoneOutgoing size={12}/>Outbound</span>;
+  ? <span style={{color:'var(--spc-view-violet)',fontSize:'0.78rem',fontWeight:600,display:'flex',alignItems:'center',gap:'0.25rem'}}><PhoneIncoming size={12}/>Inbound</span>
+  : <span style={{color:'var(--spc-view-info)',fontSize:'0.78rem',fontWeight:600,display:'flex',alignItems:'center',gap:'0.25rem'}}><PhoneOutgoing size={12}/>Outbound</span>;
 
 const callStatusBadge = (s) => {
   const map = {
@@ -503,31 +503,31 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
   return (
     <div>
       {/* Add Agent */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', marginBottom:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0' }}>
+      <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.5rem', marginBottom:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem', flexWrap:'wrap', gap:'0.5rem' }}>
-          <h3 style={{ fontSize:'1rem', fontWeight:600, margin:0, display:'flex', alignItems:'center', gap:'0.5rem', color:'#1e293b' }}>
+          <h3 style={{ fontSize:'1rem', fontWeight:600, margin:0, display:'flex', alignItems:'center', gap:'0.5rem', color:'var(--spc-view-text)' }}>
             <UserPlus size={18} color="#3b82f6" /> Add User to Call Center
           </h3>
           {seatQuota && (
             <div style={{
               display:'flex', alignItems:'center', gap:'0.5rem',
-              background: seatQuota.canAdd ? '#f0fdf4' : '#fef2f2',
-              border: `1px solid ${seatQuota.canAdd ? '#bbf7d0' : '#fecaca'}`,
+              background: seatQuota.canAdd ? 'var(--spc-view-success-bg)' : 'var(--spc-view-danger-bg)',
+              border: `1px solid ${seatQuota.canAdd ? 'var(--spc-view-success-border)' : 'var(--spc-view-danger-border)'}`,
               padding:'0.35rem 0.85rem', borderRadius:'8px', fontSize:'0.82rem'
             }}>
               <Users size={15} color={seatQuota.canAdd ? '#16a34a' : '#dc2626'} />
-              <span style={{ fontWeight: 600, color: seatQuota.canAdd ? '#15803d' : '#b91c1c' }}>
+              <span style={{ fontWeight: 600, color: seatQuota.canAdd ? 'var(--spc-view-success)' : 'var(--spc-view-danger)' }}>
                 Calling Seats: {seatQuota.used} / {seatQuota.total} Used (HQ + Branches)
               </span>
               {!seatQuota.canAdd && (
-                <span style={{ color: '#dc2626', fontWeight: 700, marginLeft: '0.25rem', fontSize:'0.75rem' }}>
+                <span style={{ color: 'var(--spc-view-danger)', fontWeight: 700, marginLeft: '0.25rem', fontSize:'0.75rem' }}>
                   (Limit Reached)
                 </span>
               )}
             </div>
           )}
         </div>
-        <label htmlFor="calladmin-agent-select" style={{ display:'block', fontSize:'0.82rem', fontWeight:600, color:'#475569', marginBottom:'0.4rem' }}>
+        <label htmlFor="calladmin-agent-select" style={{ display:'block', fontSize:'0.82rem', fontWeight:600, color:'var(--spc-view-muted)', marginBottom:'0.4rem' }}>
           Select active employee
         </label>
         <div style={{ display:'flex', gap:'1rem', alignItems:'center', flexWrap:'wrap' }}>
@@ -541,7 +541,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
             }}
             style={{ position:'relative', flex:'1 1 260px', minWidth:0, maxWidth:'100%' }}
           >
-            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.2rem 0.5rem 0.2rem 0.85rem', border:`1px solid ${userPickerOpen ? '#3b82f6' : '#cbd5e1'}`, borderRadius:'8px', background:'white', boxShadow:userPickerOpen ? '0 0 0 2px #dbeafe' : 'none' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', padding:'0.2rem 0.5rem 0.2rem 0.85rem', border:`1px solid ${userPickerOpen ? 'var(--spc-view-info-border)' : 'var(--spc-view-border)'}`, borderRadius:'8px', background:'var(--spc-view-surface)', boxShadow:userPickerOpen ? '0 0 0 2px #dbeafe' : 'none' }}>
               <Search size={17} color="#64748b" aria-hidden="true" />
               <input
                 ref={userInputRef}
@@ -566,7 +566,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
                 aria-controls={userPickerOpen ? 'calladmin-agent-options' : undefined}
                 aria-activedescendant={userPickerOpen && highlightedUserIndex >= 0 ? `calladmin-agent-option-${highlightedUserIndex}` : undefined}
                 aria-describedby="calladmin-agent-counts"
-                style={{ flex:1, width:'100%', minWidth:0, padding:'0.5rem 0', border:'none', outline:'none', fontSize:'0.9rem', background:'transparent', color:'#1e293b' }}
+                style={{ flex:1, width:'100%', minWidth:0, padding:'0.5rem 0', border:'none', outline:'none', fontSize:'0.9rem', background:'transparent', color:'var(--spc-view-text)' }}
               />
               <button
                 type="button"
@@ -581,7 +581,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
                   }
                   setHighlightedUserIndex(-1);
                 }}
-                style={{ display:'flex', alignItems:'center', padding:'0.4rem', background:'none', border:'none', borderRadius:'4px', color:'#64748b', cursor:adding ? 'not-allowed' : 'pointer' }}
+                style={{ display:'flex', alignItems:'center', padding:'0.4rem', background:'none', border:'none', borderRadius:'4px', color:'var(--spc-view-muted)', cursor:adding ? 'not-allowed' : 'pointer' }}
               >
                 <ChevronDown size={18} aria-hidden="true" style={{ transform:userPickerOpen ? 'rotate(180deg)' : 'none' }} />
               </button>
@@ -591,10 +591,10 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
                 id="calladmin-agent-options"
                 role="listbox"
                 aria-label="Active employees"
-                style={{ position:'absolute', top:'calc(100% + 4px)', left:0, right:0, zIndex:50, maxHeight:'280px', overflowY:'auto', background:'white', border:'1px solid #cbd5e1', borderRadius:'8px', boxShadow:'0 8px 24px rgba(15,23,42,0.15)' }}
+                style={{ position:'absolute', top:'calc(100% + 4px)', left:0, right:0, zIndex:50, maxHeight:'280px', overflowY:'auto', background:'var(--spc-view-surface)', border:'1px solid var(--spc-view-border)', borderRadius:'8px', boxShadow:'0 8px 24px rgba(15,23,42,0.15)' }}
               >
                 {filteredUsers.length === 0 && (
-                  <div role="status" style={{ padding:'1rem', fontSize:'0.85rem', color:'#64748b' }}>
+                  <div role="status" style={{ padding:'1rem', fontSize:'0.85rem', color:'var(--spc-view-muted)' }}>
                     No matching active employees. Try another name, employee ID or email.
                   </div>
                 )}
@@ -610,7 +610,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
                       onMouseDown={event => event.preventDefault()}
                       onMouseEnter={() => setHighlightedUserIndex(alreadyAuthorized ? -1 : index)}
                       onClick={() => selectUser(user)}
-                      style={{ padding:'0.65rem 0.85rem', borderBottom:'1px solid #f1f5f9', cursor:alreadyAuthorized ? 'not-allowed' : 'pointer', background:highlightedUserIndex === index ? '#eff6ff' : 'white', color:alreadyAuthorized ? '#94a3b8' : '#1e293b' }}
+                      style={{ padding:'0.65rem 0.85rem', borderBottom:'1px solid var(--spc-view-border)', cursor:alreadyAuthorized ? 'not-allowed' : 'pointer', background:highlightedUserIndex === index ? 'var(--spc-view-info-bg)' : 'var(--spc-view-surface)', color:alreadyAuthorized ? 'var(--spc-view-muted)' : 'var(--spc-view-text)' }}
                     >
                       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.5rem', flexWrap:'wrap', fontSize:'0.88rem', fontWeight:600 }}>
                         <span>{getUserLabel(user)}</span>
@@ -630,7 +630,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
             disabled={adding || !selectedUser || (seatQuota && !seatQuota.canAdd)}
             style={{
               padding:'0.65rem 1.5rem',
-              background: (seatQuota && !seatQuota.canAdd) ? '#94a3b8' : '#3b82f6',
+              background: (seatQuota && !seatQuota.canAdd) ? '#94a3b8' : 'var(--spc-view-action)',
               color:'white', border:'none', borderRadius:'8px', fontWeight:600,
               cursor: (seatQuota && !seatQuota.canAdd) ? 'not-allowed' : 'pointer',
               display:'flex', alignItems:'center', gap:'0.5rem',
@@ -641,28 +641,28 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
             Authorize
           </button>
         </div>
-        <p id="calladmin-agent-counts" role="status" style={{ color:'#64748b', fontSize:'0.82rem', marginTop:'0.75rem', marginBottom:0 }}>
+        <p id="calladmin-agent-counts" role="status" style={{ color:'var(--spc-view-muted)', fontSize:'0.82rem', marginTop:'0.75rem', marginBottom:0 }}>
           {activeUsers.length} active employees • {unassigned.length} available • {activeUsers.length - unassigned.length} already authorized
           {userSearch.trim() && ` • ${filteredUsers.length} matching`}
         </p>
         {seatQuota && !seatQuota.canAdd && (
-          <p style={{ color:'#dc2626', fontSize:'0.82rem', marginTop:'0.75rem', fontWeight: 500 }}>
+          <p style={{ color:'var(--spc-view-danger)', fontSize:'0.82rem', marginTop:'0.75rem', fontWeight: 500 }}>
             ⚠️ Calling seat allocation full ({seatQuota.used}/{seatQuota.total}). To add more agents, increase the calling seat quota under Settings.
           </p>
         )}
         {activeUsers.length > 0 && unassigned.length === 0 && (!seatQuota || seatQuota.canAdd) && (
-          <p style={{ color:'#94a3b8', fontSize:'0.85rem', marginTop:'0.75rem' }}>All active employees are already authorized in the call center.</p>
+          <p style={{ color:'var(--spc-view-muted)', fontSize:'0.85rem', marginTop:'0.75rem' }}>All active employees are already authorized in the call center.</p>
         )}
       </div>
 
       {/* Agents Table */}
-      <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
-        <div data-call-toolbar="agents" style={{ padding:'0.9rem 1.25rem', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'0.75rem' }}>
-          <h3 style={{ margin:0, fontSize:'1rem', fontWeight:600, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem', flexShrink:0 }}>
+      <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', overflow:'hidden' }}>
+        <div data-call-toolbar="agents" style={{ padding:'0.9rem 1.25rem', borderBottom:'1px solid var(--spc-view-border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'0.75rem' }}>
+          <h3 style={{ margin:0, fontSize:'1rem', fontWeight:600, color:'var(--spc-view-text)', display:'flex', alignItems:'center', gap:'0.5rem', flexShrink:0 }}>
             <Phone size={18} color="#3b82f6" /> Call Agents ({filteredAgents.length}{agentSearch.trim() ? ` / ${employeeAgents.length}` : ''})
           </h3>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:'0.65rem', flex:'1 1 440px', minWidth:0, flexWrap:'wrap' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flex:'1 1 240px', maxWidth:480, minWidth:0, height:38, boxSizing:'border-box', border:'1px solid #cbd5e1', borderRadius:'8px', padding:'0 0.75rem' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flex:'1 1 240px', maxWidth:480, minWidth:0, height:38, boxSizing:'border-box', border:'1px solid var(--spc-view-border)', borderRadius:'8px', padding:'0 0.75rem' }}>
             <Search size={17} color="#64748b" aria-hidden="true" />
             <input
               type="search"
@@ -670,7 +670,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
               placeholder="Search agents, employee ID, email, SIP or caller ID…"
               value={agentSearch}
               onChange={event => { setAgentSearch(event.target.value); setPage(0); }}
-              style={{ width:'100%', minWidth:0, minHeight:0, padding:0, margin:0, border:'none', outline:'none', boxShadow:'none', lineHeight:1.3, fontSize:'0.85rem', background:'transparent', color:'#1e293b' }}
+              style={{ width:'100%', minWidth:0, minHeight:0, padding:0, margin:0, border:'none', outline:'none', boxShadow:'none', lineHeight:1.3, fontSize:'0.85rem', background:'transparent', color:'var(--spc-view-text)' }}
             />
           </div>
           <TableViewToggle view={agentView} onChange={setAgentView} style={{ marginLeft:0, height:38, boxSizing:'border-box' }} />
@@ -732,17 +732,17 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
                 const loc = u?.work_location_name || u?.work_location_type || 'Headquarter';
                 const dept = u?.emp_department || '';
                 return (
-                  <tr key={agent.id || `agent-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
-                    <td style={{ width: `${colWidths.agent}px`, padding:'1rem', fontWeight:600, fontSize:'0.9rem', color:'#1e293b', boxSizing: 'border-box', verticalAlign: 'top' }} title={getAgentLabel(agent)}>
+                  <tr key={agent.id || `agent-${i}`} style={{ borderBottom:'1px solid var(--spc-view-border)', background: i%2===0?'var(--spc-view-surface)':'var(--spc-view-canvas)' }}>
+                    <td style={{ width: `${colWidths.agent}px`, padding:'1rem', fontWeight:600, fontSize:'0.9rem', color:'var(--spc-view-text)', boxSizing: 'border-box', verticalAlign: 'top' }} title={getAgentLabel(agent)}>
                       <div style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{getAgentLabel(agent)}</div>
-                      {agent.mobile_number && <div style={{ fontSize:'0.75rem', color:'#94a3b8', whiteSpace: 'normal', wordBreak: 'break-word', marginTop: '0.2rem' }}>{agent.mobile_number}</div>}
+                      {agent.mobile_number && <div style={{ fontSize:'0.75rem', color:'var(--spc-view-muted)', whiteSpace: 'normal', wordBreak: 'break-word', marginTop: '0.2rem' }}>{agent.mobile_number}</div>}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.3rem', flexWrap: 'wrap' }}>
                         {dept && (
-                          <span style={{ fontSize: '0.72rem', background: '#f1f5f9', color: '#475569', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+                          <span style={{ fontSize: '0.72rem', background: 'var(--spc-view-raised)', color: 'var(--spc-view-muted)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
                             {dept}
                           </span>
                         )}
-                        <span style={{ fontSize: '0.72rem', background: '#ecfdf5', color: '#047857', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                        <span style={{ fontSize: '0.72rem', background: 'var(--spc-view-success-bg)', color: 'var(--spc-view-success)', padding: '0.1rem 0.4rem', borderRadius: '4px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
                           🏢 {loc}
                         </span>
                       </div>
@@ -752,7 +752,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
                       value={agent.default_calling_mode || 'browser_webrtc'}
                       disabled={saving[agent.id] || agent.is_active === false}
                       onChange={e => handleUpdate(agent.id, 'default_calling_mode', e.target.value)}
-                      style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', cursor:'pointer', width: '100%', maxWidth: '100%' }}
+                      style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid var(--spc-view-border)', fontSize:'0.85rem', background:'var(--spc-view-surface)', cursor:'pointer', width: '100%', maxWidth: '100%' }}
                     >
                       <option value="browser_webrtc">🖥️ Browser WebRTC</option>
                       <option value="mobile">📱 Mobile Number</option>
@@ -764,7 +764,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
                       value={selectedEndpoint?.endpoint_id || selectedEndpoint?.endpoint_key || agent.plivo_endpoint_key || ''}
                       disabled={!endpointsReady || saving[agent.id] || agent.is_active === false}
                       onChange={e => handleEndpoint(agent.id, e.target.value)}
-                      style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', width: '100%', maxWidth: '100%', cursor:'pointer' }}
+                      style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid var(--spc-view-border)', fontSize:'0.85rem', background:'var(--spc-view-surface)', width: '100%', maxWidth: '100%', cursor:'pointer' }}
                     >
                       <option value="">— No Endpoint —</option>
                       {endpoints.map((ep, epIdx) => {
@@ -773,7 +773,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
                       })}
                     </select>
                     {agent.plivo_sip_uri && (
-                      <div style={{ fontSize:'0.7rem', color:'#94a3b8', marginTop:'0.2rem', fontFamily:'monospace', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.25 }} title={agent.plivo_sip_uri}>
+                      <div style={{ fontSize:'0.7rem', color:'var(--spc-view-muted)', marginTop:'0.2rem', fontFamily:'monospace', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.25 }} title={agent.plivo_sip_uri}>
                         {agent.plivo_sip_uri}
                       </div>
                     )}
@@ -783,7 +783,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
                       value={Object.hasOwn(callerIdDrafts, agent.id) ? callerIdDrafts[agent.id] : getCallerId(agent)}
                       disabled={saving[agent.id] || agent.is_active === false}
                       onChange={e => handleCallerId(agent.id, e.target.value)}
-                      style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.82rem', background:'white', cursor:'pointer', width: '100%', maxWidth: '100%' }}
+                      style={{ padding:'0.4rem 0.6rem', borderRadius:'6px', border:'1px solid var(--spc-view-border)', fontSize:'0.82rem', background:'var(--spc-view-surface)', cursor:'pointer', width: '100%', maxWidth: '100%' }}
                       title="Select specific Outgoing Caller ID for this agent"
                     >
                       <option value="">🏢 Workspace Default ({defaultCallerId || '+918035340622'})</option>
@@ -805,7 +805,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
                       <button
                         onClick={() => handleSetPassword(agent.id)}
                         disabled={saving[agent.id] || agent.is_active === false}
-                        style={{ padding:'0.2rem 0.5rem', fontSize:'0.75rem', borderRadius:'4px', border:'1px solid #cbd5e1', background:'white', cursor:'pointer', color:'#475569' }}
+                        style={{ padding:'0.2rem 0.5rem', fontSize:'0.75rem', borderRadius:'4px', border:'1px solid var(--spc-view-border)', background:'var(--spc-view-surface)', cursor:'pointer', color:'var(--spc-view-muted)' }}
                         title="Manually set or update SIP Password"
                       >
                         Edit
@@ -813,20 +813,20 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
                     </div>
                   </td>
                   <td style={{ width: `${colWidths.status}px`, padding:'1rem', boxSizing: 'border-box' }}>
-                    {agent.is_active === false ? <span style={{ color:'#b91c1c', fontSize:'0.8rem', fontWeight:600 }}>Revoked</span> : statusBadge(agent.status)}
+                    {agent.is_active === false ? <span style={{ color:'var(--spc-view-danger)', fontSize:'0.8rem', fontWeight:600 }}>Revoked</span> : statusBadge(agent.status)}
                   </td>
                   <td style={{ width: `${colWidths.actions}px`, padding:'1rem', boxSizing: 'border-box', position:'sticky', right:0, zIndex:2, background:'var(--bg-surface, white)' }}>
                     <button
                       type="button"
                       onClick={() => handleAuthorization(agent)}
                       disabled={saving[agent.id] || (agent.is_active === false && seatQuota?.canAdd === false)}
-                      style={{ width:'100%', padding:'0.4rem 0.5rem', border:'1px solid', borderColor:agent.is_active === false ? '#bbf7d0' : '#fecaca', borderRadius:'6px', background:agent.is_active === false ? '#f0fdf4' : '#fff7f7', color:agent.is_active === false ? '#15803d' : '#b91c1c', fontSize:'0.78rem', fontWeight:600, cursor:saving[agent.id] ? 'wait' : 'pointer' }}
+                      style={{ width:'100%', padding:'0.4rem 0.5rem', border:'1px solid', borderColor:agent.is_active === false ? 'var(--spc-view-success-border)' : 'var(--spc-view-danger-border)', borderRadius:'6px', background:agent.is_active === false ? 'var(--spc-view-success-bg)' : 'var(--spc-view-danger-bg)', color:agent.is_active === false ? 'var(--spc-view-success)' : 'var(--spc-view-danger)', fontSize:'0.78rem', fontWeight:600, cursor:saving[agent.id] ? 'wait' : 'pointer' }}
                     >
                       {saving[agent.id] ? 'Saving…' : 'Unauthorize'}
                     </button>
-                    {saving[agent.id] && <div role="status" style={{ display:'flex', alignItems:'center', gap:'0.3rem', marginTop:'0.4rem', fontSize:'0.75rem', color:'#3b82f6' }}><Loader2 size={13} className="spin" /> Saving…</div>}
+                    {saving[agent.id] && <div role="status" style={{ display:'flex', alignItems:'center', gap:'0.3rem', marginTop:'0.4rem', fontSize:'0.75rem', color:'var(--spc-view-info)' }}><Loader2 size={13} className="spin" /> Saving…</div>}
                     {rowFeedback[agent.id] && (
-                      <div role={rowFeedback[agent.id].success ? 'status' : 'alert'} style={{ marginTop:'0.4rem', fontSize:'0.75rem', color:rowFeedback[agent.id].success ? '#15803d' : '#b91c1c', overflowWrap:'anywhere' }}>
+                      <div role={rowFeedback[agent.id].success ? 'status' : 'alert'} style={{ marginTop:'0.4rem', fontSize:'0.75rem', color:rowFeedback[agent.id].success ? 'var(--spc-view-success)' : 'var(--spc-view-danger)', overflowWrap:'anywhere' }}>
                         {rowFeedback[agent.id].text}
                       </div>
                     )}
@@ -835,7 +835,7 @@ function TabAgents({ agents, endpoints, endpointsReady = true, users, onRefresh,
               );
             })}
               {filteredAgents.length === 0 && (
-                <tr><td colSpan="7" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>{agentSearch.trim() ? 'No call agents match your search.' : 'No call center agents yet. Add a team member above.'}</td></tr>
+                <tr><td colSpan="7" style={{ padding:'3rem', textAlign:'center', color:'var(--spc-view-muted)' }}>{agentSearch.trim() ? 'No call agents match your search.' : 'No call center agents yet. Add a team member above.'}</td></tr>
               )}
             </tbody>
           </table></MobileTableView>
@@ -1071,22 +1071,22 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
           { label:'Registered',      value: registered,       color:'#16a34a', icon: Wifi },
           { label:'Not Registered',  value: endpoints.length - registered, color:'#dc2626', icon: WifiOff },
         ].map(stat => (
-          <div key={stat.label} style={{ background:'white', borderRadius:'12px', padding:'1.25rem 1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', gap:'1rem' }}>
+          <div key={stat.label} style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.25rem 1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', display:'flex', alignItems:'center', gap:'1rem' }}>
             <div style={{ width:44, height:44, borderRadius:'10px', background: stat.color+'15', display:'flex', alignItems:'center', justifyContent:'center' }}>
               <stat.icon size={22} color={stat.color} />
             </div>
             <div>
-              <div style={{ fontSize:'1.6rem', fontWeight:800, color:'#1e293b' }}>{loading ? '…' : stat.value}</div>
-              <div style={{ fontSize:'0.78rem', color:'#64748b', fontWeight:500 }}>{stat.label}</div>
+              <div style={{ fontSize:'1.6rem', fontWeight:800, color:'var(--spc-view-text)' }}>{loading ? '…' : stat.value}</div>
+              <div style={{ fontSize:'0.78rem', color:'var(--spc-view-muted)', fontWeight:500 }}>{stat.label}</div>
             </div>
           </div>
         ))}
       </div>
 
-      <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
-        <div data-call-toolbar="endpoints" style={{ padding:'0.9rem 1.25rem', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'0.75rem' }}>
+      <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', overflow:'hidden' }}>
+        <div data-call-toolbar="endpoints" style={{ padding:'0.9rem 1.25rem', borderBottom:'1px solid var(--spc-view-border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'0.75rem' }}>
           <div style={{ minWidth:0, flex:'0 1 220px' }}>
-            <h3 style={{ fontSize:'1rem', fontWeight:600, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem', margin:0 }}>
+            <h3 style={{ fontSize:'1rem', fontWeight:600, color:'var(--spc-view-text)', display:'flex', alignItems:'center', gap:'0.5rem', margin:0 }}>
               <Server size={18} color="#3b82f6" /> Plivo SIP Endpoints
             </h3>
             <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:'0.4rem', marginTop:'0.3rem' }}>
@@ -1094,17 +1094,17 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
               display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
               padding: '0.15rem 0.35rem', borderRadius: '6px', whiteSpace:'nowrap',
               fontSize: '0.7rem', fontWeight: 600,
-              background: isQuotaReached ? '#fef2f2' : '#eff6ff',
-              color: isQuotaReached ? '#dc2626' : '#1e40af',
-              border: isQuotaReached ? '1px solid #fecaca' : '1px solid #bfdbfe'
+              background: isQuotaReached ? 'var(--spc-view-danger-bg)' : 'var(--spc-view-info-bg)',
+              color: isQuotaReached ? 'var(--spc-view-danger)' : 'var(--spc-view-info)',
+              border: isQuotaReached ? '1px solid var(--spc-view-danger-border)' : '1px solid var(--spc-view-info-border)'
             }} title="Calling seats quota">
               <Users size={12} />
               {endpoints.length} / {effectiveLimit} endpoints {isQuotaReached ? '(FULL)' : ''}
             </span>
-            {lastRefresh && <span style={{ fontSize:'0.68rem', color:'#94a3b8', whiteSpace:'nowrap' }}>Updated {lastRefresh.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>}
+            {lastRefresh && <span style={{ fontSize:'0.68rem', color:'var(--spc-view-muted)', whiteSpace:'nowrap' }}>Updated {lastRefresh.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>}
             </div>
           </div>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flex:'1 1 190px', maxWidth:340, minWidth:0, height:38, boxSizing:'border-box', border:'1px solid #cbd5e1', borderRadius:'8px', padding:'0 0.75rem' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flex:'1 1 190px', maxWidth:340, minWidth:0, height:38, boxSizing:'border-box', border:'1px solid var(--spc-view-border)', borderRadius:'8px', padding:'0 0.75rem' }}>
             <Search size={17} color="#64748b" aria-hidden="true" />
             <input
               type="search"
@@ -1112,7 +1112,7 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
               placeholder="Search alias, Endpoint ID or SIP URI…"
               value={endpointSearch}
               onChange={event => { setEndpointSearch(event.target.value); setPage(0); }}
-              style={{ width:'100%', minWidth:0, minHeight:0, padding:0, margin:0, border:'none', outline:'none', boxShadow:'none', lineHeight:1.3, fontSize:'0.82rem', background:'transparent', color:'#1e293b' }}
+              style={{ width:'100%', minWidth:0, minHeight:0, padding:0, margin:0, border:'none', outline:'none', boxShadow:'none', lineHeight:1.3, fontSize:'0.82rem', background:'transparent', color:'var(--spc-view-text)' }}
             />
           </div>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', flexWrap:'wrap', gap:'0.5rem', minWidth:0 }}>
@@ -1130,7 +1130,7 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
               style={{
                 display:'flex', alignItems:'center', gap:'0.4rem',
                 padding:'0 0.75rem', height:38, whiteSpace:'nowrap',
-                background: isQuotaReached ? '#94a3b8' : '#2563eb',
+                background: isQuotaReached ? '#94a3b8' : 'var(--spc-view-action)',
                 color:'white',
                 border:'none', borderRadius:'8px',
                 cursor: isQuotaReached ? 'not-allowed' : 'pointer',
@@ -1141,13 +1141,13 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
             >
               <Plus size={15} /> Create SIP Endpoint
             </button>
-            <button disabled={loading} onClick={fetchEndpoints} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0 0.75rem', height:38, whiteSpace:'nowrap', background:'#f1f5f9', border:'none', borderRadius:'8px', cursor:'pointer', fontSize:'0.85rem', fontWeight:500 }}>
+            <button disabled={loading} onClick={fetchEndpoints} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0 0.75rem', height:38, whiteSpace:'nowrap', background:'var(--spc-view-raised)', border:'none', borderRadius:'8px', cursor:'pointer', fontSize:'0.85rem', fontWeight:500 }}>
               <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh
             </button>
             <TableViewToggle view={endpointView} onChange={setEndpointView} style={{ marginLeft:0, height:38, boxSizing:'border-box' }} />
           </div>
         </div>
-        {endpointError && <div role="alert" style={{ padding: '0.75rem 1rem', color: '#b91c1c' }}>{endpointError}</div>}
+        {endpointError && <div role="alert" style={{ padding: '0.75rem 1rem', color: 'var(--spc-view-danger)' }}>{endpointError}</div>}
         {passwordFeedback && <div role="status" style={{ padding: '0.75rem 1rem' }}>{passwordFeedback}</div>}
         {savingPassword && <div role="status" style={{ padding: '0.5rem 1rem' }}>Saving password…</div>}
         <fieldset disabled={!verified || savingPassword} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
@@ -1197,12 +1197,12 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
             </thead>
             <tbody>
               {loading && !endpoints.length ? (
-                <tr><td colSpan="6" style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}><Loader2 className="spin" size={24} /></td></tr>
+                <tr><td colSpan="6" style={{ padding:'3rem', textAlign:'center', color:'var(--spc-view-muted)' }}><Loader2 className="spin" size={24} /></td></tr>
               ) : filteredEndpoints.slice(safePage * pageSize, (safePage + 1) * pageSize).map((ep, i) => (
-                <tr key={ep.endpoint_id || ep.endpoint_key || ep.id || `ep-row-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
+                <tr key={ep.endpoint_id || ep.endpoint_key || ep.id || `ep-row-${i}`} style={{ borderBottom:'1px solid var(--spc-view-border)', background: i%2===0?'var(--spc-view-surface)':'var(--spc-view-canvas)' }}>
                   <td style={{ width: `${colWidths.alias}px`, padding:'0.85rem 1rem', boxSizing: 'border-box', verticalAlign: 'top' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
-                      <span style={{ fontWeight: 600, color: '#1e293b', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }} title={ep.alias}>
+                      <span style={{ fontWeight: 600, color: 'var(--spc-view-text)', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }} title={ep.alias}>
                         {ep.alias}
                       </span>
                       <button
@@ -1213,10 +1213,10 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
                           padding: '0.15rem 0.45rem',
                           fontSize: '0.72rem',
                           borderRadius: '4px',
-                          border: '1px solid #cbd5e1',
-                          background: 'white',
+                          border: '1px solid var(--spc-view-border)',
+                          background: 'var(--spc-view-surface)',
                           cursor: 'pointer',
-                          color: '#2563eb',
+                          color: 'var(--spc-view-info)',
                           fontWeight: 600,
                           display: 'flex',
                           alignItems: 'center',
@@ -1228,11 +1228,11 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
                       </button>
                     </div>
                   </td>
-                  <td style={{ width: `${colWidths.username}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.8rem', color:'#475569', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.endpoint_id || 'Endpoint ID unavailable'}>{ep.endpoint_id || '—'}</td>
-                  <td style={{ width: `${colWidths.sip_uri}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.78rem', color:'#64748b', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.sip_uri}>{ep.sip_uri}</td>
+                  <td style={{ width: `${colWidths.username}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.8rem', color:'var(--spc-view-muted)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.endpoint_id || 'Endpoint ID unavailable'}>{ep.endpoint_id || '—'}</td>
+                  <td style={{ width: `${colWidths.sip_uri}px`, padding:'1rem', fontFamily:'monospace', fontSize:'0.78rem', color:'var(--spc-view-muted)', boxSizing: 'border-box', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3, verticalAlign: 'top' }} title={ep.sip_uri}>{ep.sip_uri}</td>
                   <td style={{ width: `${colWidths.password}px`, padding:'1rem', boxSizing: 'border-box', verticalAlign: 'middle' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'space-between' }}>
-                      <span style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: ep.password ? '#1e293b' : '#94a3b8' }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: ep.password ? 'var(--spc-view-text)' : 'var(--spc-view-muted)' }}>
                         {(ep.password || ep.has_password)
                           ? (visiblePasswords[ep.endpoint_id || ep.endpoint_key] ? ep.password : '••••••••')
                           : 'Not Stored'}
@@ -1244,7 +1244,7 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
                               type="button"
                               onClick={() => togglePasswordVisibility(ep.endpoint_id || ep.endpoint_key)}
                               title={visiblePasswords[ep.endpoint_id || ep.endpoint_key] ? 'Hide Password' : 'Show Password'}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: '#64748b', display: 'flex' }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: 'var(--spc-view-muted)', display: 'flex' }}
                             >
                               <Eye size={14} />
                             </button>
@@ -1252,7 +1252,7 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
                               type="button"
                               onClick={() => handleCopyPassword(ep.password, ep.endpoint_id || ep.endpoint_key)}
                               title="Copy Password"
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: copiedEndpoint === (ep.endpoint_id || ep.endpoint_key) ? '#16a34a' : '#64748b', display: 'flex' }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', color: copiedEndpoint === (ep.endpoint_id || ep.endpoint_key) ? 'var(--spc-view-success)' : 'var(--spc-view-muted)', display: 'flex' }}
                             >
                               {copiedEndpoint === (ep.endpoint_id || ep.endpoint_key) ? <CheckCircle size={14} color="#16a34a" /> : <Copy size={14} />}
                             </button>
@@ -1262,7 +1262,7 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
                           type="button"
                           onClick={() => handleUpdatePassword(ep)}
                           title="Set or Change SIP Password"
-                          style={{ padding: '0.15rem 0.45rem', fontSize: '0.72rem', borderRadius: '4px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', color: '#2563eb', fontWeight: 600 }}
+                          style={{ padding: '0.15rem 0.45rem', fontSize: '0.72rem', borderRadius: '4px', border: '1px solid var(--spc-view-border)', background: 'var(--spc-view-surface)', cursor: 'pointer', color: 'var(--spc-view-info)', fontWeight: 600 }}
                         >
                           {ep.password ? 'Edit' : 'Set'}
                         </button>
@@ -1271,24 +1271,24 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
                   </td>
                   <td style={{ width: `${colWidths.app_linked}px`, padding:'1rem', boxSizing: 'border-box' }}>
                     {ep.application
-                      ? <span style={{ color:'#16a34a', fontSize:'0.8rem', display:'flex', alignItems:'center', gap:'0.3rem' }}><CheckCircle size={13}/>Linked</span>
-                      : <span style={{ color:'#dc2626', fontSize:'0.8rem', display:'flex', alignItems:'center', gap:'0.3rem' }}><XCircle size={13}/>No App</span>}
+                      ? <span style={{ color:'var(--spc-view-success)', fontSize:'0.8rem', display:'flex', alignItems:'center', gap:'0.3rem' }}><CheckCircle size={13}/>Linked</span>
+                      : <span style={{ color:'var(--spc-view-danger)', fontSize:'0.8rem', display:'flex', alignItems:'center', gap:'0.3rem' }}><XCircle size={13}/>No App</span>}
                   </td>
                   <td style={{ width: `${colWidths.status}px`, padding:'1rem', boxSizing: 'border-box' }}>{sipBadge(ep.sip_registered)}</td>
                 </tr>
               ))}
               {filteredEndpoints.length === 0 && endpoints.length > 0 && !loading && (
-                <tr><td colSpan="6" style={{ padding:'2rem', textAlign:'center', color:'#64748b' }}>No SIP endpoints match your search.</td></tr>
+                <tr><td colSpan="6" style={{ padding:'2rem', textAlign:'center', color:'var(--spc-view-muted)' }}>No SIP endpoints match your search.</td></tr>
               )}
               {endpoints.length === 0 && !loading && (
                 <tr>
-                  <td colSpan="6" style={{ padding:'3.5rem 2rem', textAlign:'center', color:'#64748b' }}>
+                  <td colSpan="6" style={{ padding:'3.5rem 2rem', textAlign:'center', color:'var(--spc-view-muted)' }}>
                     <div style={{ maxWidth: '440px', margin: '0 auto' }}>
                       <Server size={36} color="#94a3b8" style={{ margin: '0 auto 0.75rem' }} />
-                      <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '1rem', marginBottom: '0.35rem' }}>
+                      <div style={{ fontWeight: 700, color: 'var(--spc-view-text)', fontSize: '1rem', marginBottom: '0.35rem' }}>
                         No SIP Endpoints Registered
                       </div>
-                      <div style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: 1.5, marginBottom: '1rem' }}>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--spc-view-muted)', lineHeight: 1.5, marginBottom: '1rem' }}>
                         Create a Plivo SIP endpoint using the button above to assign softphone calling lines to telecallers.
                       </div>
                       <button
@@ -1298,7 +1298,7 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
                           setShowCreateModal(true);
                         }}
                         style={{
-                          padding:'0.5rem 1rem', background:'#2563eb', color:'white',
+                          padding:'0.5rem 1rem', background:'var(--spc-view-action)', color:'white',
                           border:'none', borderRadius:'8px', cursor:'pointer', fontSize:'0.85rem', fontWeight:600
                         }}
                       >
@@ -1323,23 +1323,23 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
           display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem'
         }}>
           <div style={{
-            background:'white', borderRadius:'14px', maxWidth:'520px', width:'100%',
-            boxShadow:'0 20px 25px -5px rgba(0,0,0,0.2)', border:'1px solid #e2e8f0',
+            background:'var(--spc-view-surface)', borderRadius:'14px', maxWidth:'520px', width:'100%',
+            boxShadow:'0 20px 25px -5px rgba(0,0,0,0.2)', border:'1px solid var(--spc-view-border)',
             overflow:'hidden'
           }}>
-            <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid var(--spc-view-border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
               <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
-                <div style={{ width:36, height:36, borderRadius:'8px', background:'#eff6ff', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <div style={{ width:36, height:36, borderRadius:'8px', background:'var(--spc-view-info-bg)', display:'flex', alignItems:'center', justifyContent:'center' }}>
                   <Server size={18} color="#2563eb" />
                 </div>
                 <div>
-                  <h3 style={{ margin:0, fontSize:'1.05rem', fontWeight:700, color:'#1e293b' }}>Create Plivo SIP Endpoint</h3>
-                  <p style={{ margin:0, fontSize:'0.75rem', color:'#64748b' }}>Creates live endpoint on Plivo API instantly</p>
+                  <h3 style={{ margin:0, fontSize:'1.05rem', fontWeight:700, color:'var(--spc-view-text)' }}>Create Plivo SIP Endpoint</h3>
+                  <p style={{ margin:0, fontSize:'0.75rem', color:'var(--spc-view-muted)' }}>Creates live endpoint on Plivo API instantly</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowCreateModal(false)}
-                style={{ background:'none', border:'none', color:'#94a3b8', cursor:'pointer', padding:'4px', display:'flex' }}
+                style={{ background:'none', border:'none', color:'var(--spc-view-muted)', cursor:'pointer', padding:'4px', display:'flex' }}
               >
                 <X size={20} />
               </button>
@@ -1347,14 +1347,14 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
 
             <form onSubmit={handleCreateEndpoint} style={{ padding:'1.5rem', display:'flex', flexDirection:'column', gap:'1.1rem' }}>
               {createError && (
-                <div style={{ padding:'0.75rem 1rem', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:'8px', color:'#dc2626', fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                <div style={{ padding:'0.75rem 1rem', background:'var(--spc-view-danger-bg)', border:'1px solid var(--spc-view-danger-border)', borderRadius:'8px', color:'var(--spc-view-danger)', fontSize:'0.82rem', display:'flex', alignItems:'center', gap:'0.5rem' }}>
                   <AlertCircle size={16} />
                   <span>{createError}</span>
                 </div>
               )}
 
               <div>
-                <label style={{ display:'block', fontSize:'0.82rem', fontWeight:600, color:'#334155', marginBottom:'0.35rem' }}>
+                <label style={{ display:'block', fontSize:'0.82rem', fontWeight:600, color:'var(--spc-view-text)', marginBottom:'0.35rem' }}>
                   Endpoint Alias / Friendly Name *
                 </label>
                 <input
@@ -1362,20 +1362,20 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
                   placeholder="e.g. Sales Desk 1 or Telecaller Seat 3"
                   value={newAlias}
                   onChange={e => setNewAlias(e.target.value)}
-                  style={{ width:'100%', boxSizing:'border-box', padding:'0.6rem 0.85rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.88rem' }}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.6rem 0.85rem', borderRadius:'8px', border:'1px solid var(--spc-view-border)', fontSize:'0.88rem' }}
                   required
                 />
               </div>
 
               <div>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.35rem' }}>
-                  <label style={{ fontSize:'0.82rem', fontWeight:600, color:'#334155' }}>
+                  <label style={{ fontSize:'0.82rem', fontWeight:600, color:'var(--spc-view-text)' }}>
                     SIP Username *
                   </label>
                   <button
                     type="button"
                     onClick={generateRandomCredentials}
-                    style={{ background:'none', border:'none', color:'#2563eb', fontSize:'0.75rem', fontWeight:600, cursor:'pointer' }}
+                    style={{ background:'none', border:'none', color:'var(--spc-view-info)', fontSize:'0.75rem', fontWeight:600, cursor:'pointer' }}
                   >
                     🎲 Auto Generate
                   </button>
@@ -1385,20 +1385,20 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
                   placeholder="e.g. ep_telecaller_01 (lowercase letters/digits)"
                   value={newUsername}
                   onChange={e => setNewUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                  style={{ width:'100%', boxSizing:'border-box', padding:'0.6rem 0.85rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.88rem', fontFamily:'monospace' }}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.6rem 0.85rem', borderRadius:'8px', border:'1px solid var(--spc-view-border)', fontSize:'0.88rem', fontFamily:'monospace' }}
                   required
                 />
               </div>
 
               <div>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.35rem' }}>
-                  <label style={{ fontSize:'0.82rem', fontWeight:600, color:'#334155' }}>
+                  <label style={{ fontSize:'0.82rem', fontWeight:600, color:'var(--spc-view-text)' }}>
                     SIP Password *
                   </label>
                   <button
                     type="button"
                     onClick={() => setNewPassword(`Sip#${Math.random().toString(36).substring(2, 8)}!${Math.floor(100 + Math.random() * 900)}`)}
-                    style={{ background:'none', border:'none', color:'#2563eb', fontSize:'0.75rem', fontWeight:600, cursor:'pointer' }}
+                    style={{ background:'none', border:'none', color:'var(--spc-view-info)', fontSize:'0.75rem', fontWeight:600, cursor:'pointer' }}
                   >
                     🎲 New Password
                   </button>
@@ -1408,20 +1408,20 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
                   placeholder="Secure password for WebRTC / Softphone registration"
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
-                  style={{ width:'100%', boxSizing:'border-box', padding:'0.6rem 0.85rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.88rem', fontFamily:'monospace' }}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.6rem 0.85rem', borderRadius:'8px', border:'1px solid var(--spc-view-border)', fontSize:'0.88rem', fontFamily:'monospace' }}
                   required
                 />
               </div>
 
               {agents?.length > 0 && (
                 <div>
-                  <label style={{ display:'block', fontSize:'0.82rem', fontWeight:600, color:'#334155', marginBottom:'0.35rem' }}>
+                  <label style={{ display:'block', fontSize:'0.82rem', fontWeight:600, color:'var(--spc-view-text)', marginBottom:'0.35rem' }}>
                     Assign Directly to Agent (Optional)
                   </label>
                   <select
                     value={assignAgentId}
                     onChange={e => setAssignAgentId(e.target.value)}
-                    style={{ width:'100%', boxSizing:'border-box', padding:'0.6rem 0.85rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.88rem', background:'white' }}
+                    style={{ width:'100%', boxSizing:'border-box', padding:'0.6rem 0.85rem', borderRadius:'8px', border:'1px solid var(--spc-view-border)', fontSize:'0.88rem', background:'var(--spc-view-surface)' }}
                   >
                     <option value="">— Leave Unassigned (Keep Available in Pool) —</option>
                     {agents.map(a => (
@@ -1438,7 +1438,7 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
                   type="button"
                   onClick={() => setShowCreateModal(false)}
                   disabled={creating}
-                  style={{ padding:'0.6rem 1.25rem', borderRadius:'8px', border:'1px solid #cbd5e1', background:'white', color:'#475569', fontWeight:600, fontSize:'0.85rem', cursor:'pointer' }}
+                  style={{ padding:'0.6rem 1.25rem', borderRadius:'8px', border:'1px solid var(--spc-view-border)', background:'var(--spc-view-surface)', color:'var(--spc-view-muted)', fontWeight:600, fontSize:'0.85rem', cursor:'pointer' }}
                 >
                   Cancel
                 </button>
@@ -1447,7 +1447,7 @@ function TabEndpoints({ scope = '', initialEndpoints = [], userCompany = '', ten
                   disabled={creating}
                   style={{
                     padding:'0.6rem 1.4rem', borderRadius:'8px', border:'none',
-                    background:'#2563eb', color:'white', fontWeight:700, fontSize:'0.85rem',
+                    background:'var(--spc-view-action)', color:'white', fontWeight:700, fontSize:'0.85rem',
                     cursor:'pointer', display:'flex', alignItems:'center', gap:'0.5rem',
                     opacity: creating ? 0.7 : 1
                   }}
@@ -1801,12 +1801,12 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
   return (
     <div>
       {/* Controls */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1rem 1.25rem', marginBottom:'1.25rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', gap:'0.75rem', alignItems:'center', flexWrap:'wrap' }}>
+      <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1rem 1.25rem', marginBottom:'1.25rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', display:'flex', gap:'0.75rem', alignItems:'center', flexWrap:'wrap' }}>
         {/* Source Switcher */}
-        <div style={{ display:'flex', background:'#f1f5f9', borderRadius:'8px', padding:'0.25rem' }}>
+        <div style={{ display:'flex', background:'var(--spc-view-raised)', borderRadius:'8px', padding:'0.25rem' }}>
           {[{v:'db',l:'📂 DB Records'},{v:'plivo',l:'☁️ Plivo CDR'}].map(opt => (
             <button key={opt.v} onClick={() => { setSource(opt.v); setPage(0); setCalls([]); }}
-              style={{ padding:'0.45rem 0.9rem', borderRadius:'6px', border:'none', cursor:'pointer', fontWeight:600, fontSize:'0.82rem', background: source===opt.v?'white':'transparent', color: source===opt.v?'#1e293b':'#64748b', boxShadow: source===opt.v?'0 1px 3px rgba(0,0,0,0.1)':'none' }}>
+              style={{ padding:'0.45rem 0.9rem', borderRadius:'6px', border:'none', cursor:'pointer', fontWeight:600, fontSize:'0.82rem', background: source===opt.v?'var(--spc-view-surface)':'transparent', color: source===opt.v?'var(--spc-view-text)':'var(--spc-view-muted)', boxShadow: source===opt.v?'0 1px 3px rgba(0,0,0,0.1)':'none' }}>
               {opt.l}
             </button>
           ))}
@@ -1814,12 +1814,12 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
 
         {/* Search Input */}
         <div style={{ position:'relative', flex:1, minWidth:'180px' }}>
-          <Search size={15} style={{ position:'absolute', left:'0.75rem', top:'50%', transform:'translateY(-50%)', color:'#94a3b8' }} />
+          <Search size={15} style={{ position:'absolute', left:'0.75rem', top:'50%', transform:'translateY(-50%)', color:'var(--spc-view-muted)' }} />
           <input
             placeholder="Search calls…"
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(0); }}
-            style={{ width:'100%', padding:'0.55rem 1rem 0.55rem 2.25rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white', boxSizing:'border-box' }}
+            style={{ width:'100%', padding:'0.55rem 1rem 0.55rem 2.25rem', borderRadius:'8px', border:'1px solid var(--spc-view-border)', fontSize:'0.85rem', background:'var(--spc-view-surface)', boxSizing:'border-box' }}
           />
         </div>
 
@@ -1844,7 +1844,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
           disabled={exportingExcel}
           style={{ 
             display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.55rem 0.9rem', 
-            background:'#0284c7', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', 
+            background:'var(--spc-view-action)', color:'white', border:'none', borderRadius:'8px', cursor:'pointer',
             fontWeight:600, fontSize:'0.82rem', boxShadow:'0 1px 2px rgba(0,0,0,0.05)'
           }}
           title={selectedCallsMap.size > 0 ? `Export ${selectedCallsMap.size} selected records to Excel` : "Export current records to Excel"}
@@ -1860,7 +1860,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
           onClick={() => fetchLogs(source, page, pageSize, datePreset, customStartDate, customEndDate, search)}
           style={{ 
             display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.55rem 0.9rem', 
-            background:'#3b82f6', color:'white', border:'none', borderRadius:'8px', cursor:'pointer', 
+            background:'var(--spc-view-action)', color:'white', border:'none', borderRadius:'8px', cursor:'pointer',
             fontWeight:600, fontSize:'0.82rem', boxShadow:'0 1px 2px rgba(0,0,0,0.05)'
           }}
         >
@@ -1868,12 +1868,12 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
         </button>
 
         {/* Total Records Badge */}
-        <span style={{ color:'#64748b', fontSize:'0.82rem', background:'#f1f5f9', padding:'0.4rem 0.75rem', borderRadius:'6px' }}>
-          Total: <strong style={{ color:'#0f172a' }}>{total}</strong>
+        <span style={{ color:'var(--spc-view-muted)', fontSize:'0.82rem', background:'var(--spc-view-raised)', padding:'0.4rem 0.75rem', borderRadius:'6px' }}>
+          Total: <strong style={{ color:'var(--spc-view-text)' }}>{total}</strong>
         </span>
       </div>
 
-      {logsError && <div role="alert" style={{ padding: 12, color: "#b91c1c" }}>{logsError}</div>}
+      {logsError && <div role="alert" style={{ padding: 12, color: "var(--spc-view-danger)" }}>{logsError}</div>}
       {/* Multi-Page Persistent Selection Banner */}
       {source === 'db' && selectedCallsMap.size > 0 && (
         <div style={{
@@ -1881,15 +1881,15 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '0.65rem 1.25rem',
-          background: '#ecfdf5',
-          border: '1px solid #a7f3d0',
+          background: 'var(--spc-view-success-bg)',
+          border: '1px solid var(--spc-view-success-border)',
           borderRadius: '10px',
           marginBottom: '1.25rem',
           flexWrap: 'wrap',
           gap: '0.75rem',
           boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#065f46', fontWeight: 700 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--spc-view-success)', fontWeight: 700 }}>
             <CheckCircle size={17} color="#059669" />
             <span>{selectedCallsMap.size} call record{selectedCallsMap.size > 1 ? 's' : ''} selected across pages</span>
           </div>
@@ -1902,7 +1902,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
                 alignItems: 'center',
                 gap: '0.4rem',
                 padding: '0.4rem 0.85rem',
-                background: isZipping ? '#64748b' : '#059669',
+                background: isZipping ? '#64748b' : 'var(--spc-view-success-fill)',
                 color: 'white',
                 border: 'none',
                 borderRadius: '6px',
@@ -1938,9 +1938,9 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
               onClick={() => setSelectedCallsMap(new Map())}
               style={{
                 padding: '0.4rem 0.75rem',
-                background: 'white',
-                color: '#ef4444',
-                border: '1px solid #fca5a5',
+                background: 'var(--spc-view-surface)',
+                color: 'var(--spc-view-danger)',
+                border: '1px solid var(--spc-view-danger-border)',
                 borderRadius: '6px',
                 cursor: 'pointer',
                 fontWeight: 600,
@@ -1954,11 +1954,11 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
       )}
 
         {/* Main Table */}
-        <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
+        <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', overflow:'hidden' }}>
           <div style={tableScroll}>
             <MobileTableView id="CallCenter/CallAdminModule-3" view={logsView} hideToggle={true}><table style={{ width: '100%', minWidth: source === 'db' ? `${Math.max(1400, dbColResize.getTotalTableWidth() + 40)}px` : `${Math.max(900, plivoColResize.getTotalTableWidth())}px`, tableLayout: 'fixed', borderCollapse:'collapse' }}>
               <thead style={stickyHeader}>
-                <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary, #64748b)', borderBottom:'1px solid #e2e8f0' }}>
+                <tr style={{ fontSize:'0.78rem', textTransform:'uppercase', color:'var(--text-secondary, #64748b)', borderBottom:'1px solid var(--spc-view-border)' }}>
                   {source === 'db' && (
                     <th style={{ ...stickyHeader, padding:'0.75rem 1rem', width:'40px', textAlign:'center', boxSizing:'border-box' }}>
                       <input 
@@ -2013,12 +2013,12 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
                 {loading && !calls.length ? (
                   <tr><td colSpan={source === 'db' ? 14 : 7} style={{ padding:'3rem', textAlign:'center' }}><Loader2 className="spin" size={24} color="#3b82f6" /></td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={source === 'db' ? 14 : 7} style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>No call records found.</td></tr>
+                  <tr><td colSpan={source === 'db' ? 14 : 7} style={{ padding:'3rem', textAlign:'center', color:'var(--spc-view-muted)' }}>No call records found.</td></tr>
                 ) : source === 'db' ? filtered.map((c, i) => {
                   const rowSelectId = c.id || c.call_uuid || `row-${i}`;
                   const rowKey = `db-${c.id || c.agent_call_uuid || c.customer_call_uuid || i}`;
                   return (
-                    <tr key={rowKey} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
+                    <tr key={rowKey} style={{ borderBottom:'1px solid var(--spc-view-border)', background: i%2===0?'var(--spc-view-surface)':'var(--spc-view-canvas)' }}>
                       <td style={{ padding:'0.85rem 1rem', textAlign:'center', width:'40px', boxSizing:'border-box' }}>
                         <input 
                           type="checkbox" 
@@ -2027,17 +2027,17 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
                           style={{ cursor:'pointer' }}
                         />
                       </td>
-                      <td style={{ width: `${dbColResize.colWidths.time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.created_at)}</td>
-                      <td style={{ width: `${dbColResize.colWidths.call_uuid}px`, padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', boxSizing:'border-box' }} title={c.agent_call_uuid}>{c.agent_call_uuid || '—'}</td>
+                      <td style={{ width: `${dbColResize.colWidths.time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'var(--spc-view-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.created_at)}</td>
+                      <td style={{ width: `${dbColResize.colWidths.call_uuid}px`, padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'var(--spc-view-muted)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', boxSizing:'border-box' }} title={c.agent_call_uuid}>{c.agent_call_uuid || '—'}</td>
                       <td style={{ width: `${dbColResize.colWidths.agent}px`, padding:'0.85rem 1rem', fontSize:'0.85rem', fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{c.call_agents?.display_name || '—'}</td>
                       <td style={{ width: `${dbColResize.colWidths.customer}px`, padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{c.customer_number || '—'}</td>
                       <td style={{ width: `${dbColResize.colWidths.direction}px`, padding:'0.85rem 1rem', whiteSpace:'nowrap', boxSizing:'border-box' }}>{directionBadge(c.direction || 'outbound')}</td>
                       <td style={{ width: `${dbColResize.colWidths.status}px`, padding:'0.85rem 1rem', whiteSpace:'nowrap', boxSizing:'border-box' }}>{callStatusBadge(c.status)}</td>
-                      <td style={{ width: `${dbColResize.colWidths.start_time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.start_time)}</td>
-                      <td style={{ width: `${dbColResize.colWidths.answer_time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.agent_answer_time || c.customer_answer_time)}</td>
-                      <td style={{ width: `${dbColResize.colWidths.end_time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.end_time)}</td>
-                      <td style={{ width: `${dbColResize.colWidths.ringing}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{c.ringing_duration_sec != null ? `${c.ringing_duration_sec}s` : '—'}</td>
-                      <td style={{ width: `${dbColResize.colWidths.talk}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{c.talk_duration_sec != null ? `${c.talk_duration_sec}s` : '—'}</td>
+                      <td style={{ width: `${dbColResize.colWidths.start_time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'var(--spc-view-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.start_time)}</td>
+                      <td style={{ width: `${dbColResize.colWidths.answer_time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'var(--spc-view-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.agent_answer_time || c.customer_answer_time)}</td>
+                      <td style={{ width: `${dbColResize.colWidths.end_time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'var(--spc-view-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.end_time)}</td>
+                      <td style={{ width: `${dbColResize.colWidths.ringing}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'var(--spc-view-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{c.ringing_duration_sec != null ? `${c.ringing_duration_sec}s` : '—'}</td>
+                      <td style={{ width: `${dbColResize.colWidths.talk}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'var(--spc-view-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{c.talk_duration_sec != null ? `${c.talk_duration_sec}s` : '—'}</td>
                       <td style={{ width: `${dbColResize.colWidths.recording}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', whiteSpace:'nowrap', boxSizing:'border-box' }}>
                         {c.recording_url ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -2051,7 +2051,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
                                 height: '28px',
                                 borderRadius: '50%',
                                 border: 'none',
-                                background: playingCallId === c.id ? '#ef4444' : 'var(--accent-color, #1e3a8a)',
+                                background: playingCallId === c.id ? 'var(--spc-view-danger-fill)' : 'var(--accent-color, #1e3a8a)',
                                 color: 'white',
                                 cursor: 'pointer',
                                 boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
@@ -2074,9 +2074,9 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
                                 width: '28px',
                                 height: '28px',
                                 borderRadius: '50%',
-                                border: '1px solid #cbd5e1',
-                                background: 'white',
-                                color: '#475569',
+                                border: '1px solid var(--spc-view-border)',
+                                background: 'var(--spc-view-surface)',
+                                color: 'var(--spc-view-muted)',
                                 cursor: 'pointer',
                                 boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
                                 transition: 'all 0.2s'
@@ -2088,20 +2088,20 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
                           </div>
                         ) : '—'}
                       </td>
-                      <td style={{ width: `${dbColResize.colWidths.room}px`, padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'#94a3b8', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', boxSizing:'border-box' }}>{c.room_name || '—'}</td>
+                      <td style={{ width: `${dbColResize.colWidths.room}px`, padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.72rem', color:'var(--spc-view-muted)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', boxSizing:'border-box' }}>{c.room_name || '—'}</td>
                     </tr>
                   );
                 }) : filtered.map((c, i) => {
                   const rowKey = `plivo-${c.call_uuid || c.id || i}`;
                   return (
-                    <tr key={rowKey} style={{ borderBottom:'1px solid #f1f5f9', background: i%2===0?'white':'#fafafa' }}>
-                      <td style={{ width: `${plivoColResize.colWidths.time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.initiation_time)}</td>
+                    <tr key={rowKey} style={{ borderBottom:'1px solid var(--spc-view-border)', background: i%2===0?'var(--spc-view-surface)':'var(--spc-view-canvas)' }}>
+                      <td style={{ width: `${plivoColResize.colWidths.time}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', color:'var(--spc-view-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', boxSizing:'border-box' }}>{fmtDate(c.initiation_time)}</td>
                       <td style={{ width: `${plivoColResize.colWidths.from}px`, padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', boxSizing:'border-box' }}>{c.from_number || '—'}</td>
                       <td style={{ width: `${plivoColResize.colWidths.to}px`, padding:'0.85rem 1rem', fontFamily:'monospace', fontSize:'0.82rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', boxSizing:'border-box' }}>{c.to_number || '—'}</td>
                       <td style={{ width: `${plivoColResize.colWidths.direction}px`, padding:'0.85rem 1rem', whiteSpace:'nowrap', boxSizing:'border-box' }}>{directionBadge(c.call_direction)}</td>
                       <td style={{ width: `${plivoColResize.colWidths.duration}px`, padding:'0.85rem 1rem', fontSize:'0.82rem', whiteSpace:'nowrap', boxSizing:'border-box' }}>{fmtDur(c.call_duration)}</td>
-                      <td style={{ width: `${plivoColResize.colWidths.hangup}px`, padding:'0.85rem 1rem', fontSize:'0.8rem', color:'#dc2626', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', boxSizing:'border-box' }}>{c.hangup_cause_name || '—'}</td>
-                      <td style={{ width: `${plivoColResize.colWidths.cost}px`, padding:'0.85rem 1rem', fontSize:'0.8rem', color:'#475569', whiteSpace:'nowrap', boxSizing:'border-box' }}>{c.total_amount ? `₹${c.total_amount}` : '₹0.00'}</td>
+                      <td style={{ width: `${plivoColResize.colWidths.hangup}px`, padding:'0.85rem 1rem', fontSize:'0.8rem', color:'var(--spc-view-danger)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', boxSizing:'border-box' }}>{c.hangup_cause_name || '—'}</td>
+                      <td style={{ width: `${plivoColResize.colWidths.cost}px`, padding:'0.85rem 1rem', fontSize:'0.8rem', color:'var(--spc-view-muted)', whiteSpace:'nowrap', boxSizing:'border-box' }}>{c.total_amount ? `₹${c.total_amount}` : '₹0.00'}</td>
                     </tr>
                   );
                 })}
@@ -2126,34 +2126,34 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
           padding: '1rem'
         }}>
           <div style={{
-            background: 'white',
+            background: 'var(--spc-view-surface)',
             borderRadius: '16px',
             width: '520px',
             maxWidth: '100%',
             boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
-            border: '1px solid #e2e8f0',
+            border: '1px solid var(--spc-view-border)',
             overflow: 'hidden'
           }}>
             {/* Header */}
             <div style={{
               padding: '1rem 1.25rem',
-              borderBottom: '1px solid #e2e8f0',
+              borderBottom: '1px solid var(--spc-view-border)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              background: '#f8fafc'
+              background: 'var(--spc-view-canvas)'
             }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#1e293b' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--spc-view-text)' }}>
                   Select Download Speed (Parallel Streams)
                 </h3>
-                <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: 'var(--spc-view-muted)' }}>
                   Selected: <strong>{Array.from(selectedCallsMap.values()).filter(c => c.recording_url).length} recordings</strong> with audio
                 </p>
               </div>
               <button
                 onClick={() => setShowSpeedModal(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '1.2rem', padding: '4px' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--spc-view-muted)', fontSize: '1.2rem', padding: '4px' }}
               >
                 ✕
               </button>
@@ -2176,8 +2176,8 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
                     gap: '0.75rem',
                     padding: '0.75rem 1rem',
                     borderRadius: '10px',
-                    border: `1.5px solid ${selectedSpeed === opt.id ? '#2563eb' : '#e2e8f0'}`,
-                    background: selectedSpeed === opt.id ? '#eff6ff' : '#ffffff',
+                    border: `1.5px solid ${selectedSpeed === opt.id ? 'var(--spc-view-info-border)' : 'var(--spc-view-border)'}`,
+                    background: selectedSpeed === opt.id ? 'var(--spc-view-info-bg)' : 'var(--spc-view-surface)',
                     cursor: 'pointer',
                     transition: 'all 0.15s ease'
                   }}
@@ -2190,7 +2190,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
                     onChange={() => setSelectedSpeed(opt.id)}
                     style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#2563eb' }}
                   />
-                  <span style={{ fontSize: '0.85rem', fontWeight: selectedSpeed === opt.id ? 700 : 500, color: selectedSpeed === opt.id ? '#1e3a8a' : '#334155' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: selectedSpeed === opt.id ? 700 : 500, color: selectedSpeed === opt.id ? 'var(--spc-view-info)' : 'var(--spc-view-text)' }}>
                     {opt.label}
                   </span>
                 </label>
@@ -2209,11 +2209,11 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
                       width: '180px',
                       padding: '0.45rem 0.75rem',
                       borderRadius: '6px',
-                      border: '1px solid #cbd5e1',
+                      border: '1px solid var(--spc-view-border)',
                       fontSize: '0.85rem'
                     }}
                   />
-                  <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '0.5rem' }}>Max 50 streams</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--spc-view-muted)', marginLeft: '0.5rem' }}>Max 50 streams</span>
                 </div>
               )}
             </div>
@@ -2221,20 +2221,20 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
             {/* Footer */}
             <div style={{
               padding: '0.85rem 1.25rem',
-              borderTop: '1px solid #e2e8f0',
+              borderTop: '1px solid var(--spc-view-border)',
               display: 'flex',
               justifyContent: 'flex-end',
               gap: '0.75rem',
-              background: '#f8fafc'
+              background: 'var(--spc-view-canvas)'
             }}>
               <button
                 onClick={() => setShowSpeedModal(false)}
                 style={{
                   padding: '0.5rem 1rem',
                   borderRadius: '6px',
-                  border: '1px solid #cbd5e1',
-                  background: 'white',
-                  color: '#475569',
+                  border: '1px solid var(--spc-view-border)',
+                  background: 'var(--spc-view-surface)',
+                  color: 'var(--spc-view-muted)',
                   cursor: 'pointer',
                   fontWeight: 600,
                   fontSize: '0.85rem'
@@ -2248,7 +2248,7 @@ function TabCallLogs({ scope = '', userCompany = '', tenantId = null, userId = '
                   padding: '0.5rem 1.25rem',
                   borderRadius: '6px',
                   border: 'none',
-                  background: '#059669',
+                  background: 'var(--spc-view-success-fill)',
                   color: 'white',
                   cursor: 'pointer',
                   fontWeight: 700,
@@ -2295,18 +2295,18 @@ function TabMonitor({ agents, onRefresh }) {
   return (
     <div>
       {/* Header controls */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1rem 1.5rem', marginBottom:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+      <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1rem 1.5rem', marginBottom:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
         <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
-          <div style={{ width:10, height:10, borderRadius:'50%', background:'#16a34a', boxShadow:'0 0 0 3px #bbf7d0', animation:'pulse 2s infinite' }} />
-          <span style={{ fontWeight:600, color:'#1e293b' }}>Live Agent Monitor</span>
-          <span style={{ fontSize:'0.8rem', color:'#64748b' }}>Auto-refresh every 10s</span>
+          <div style={{ width:10, height:10, borderRadius:'50%', background:'var(--spc-view-success-fill)', boxShadow:'0 0 0 3px #bbf7d0', animation:'pulse 2s infinite' }} />
+          <span style={{ fontWeight:600, color:'var(--spc-view-text)' }}>Live Agent Monitor</span>
+          <span style={{ fontSize:'0.8rem', color:'var(--spc-view-muted)' }}>Auto-refresh every 10s</span>
         </div>
         <div style={{ display:'flex', gap:'0.75rem', alignItems:'center' }}>
-          <label style={{ display:'flex', alignItems:'center', gap:'0.5rem', cursor:'pointer', fontSize:'0.85rem', color:'#475569' }}>
+          <label style={{ display:'flex', alignItems:'center', gap:'0.5rem', cursor:'pointer', fontSize:'0.85rem', color:'var(--spc-view-muted)' }}>
             <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
             Auto Refresh
           </label>
-          <button onClick={handleRefresh} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1rem', background:'#f1f5f9', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:500, fontSize:'0.85rem' }}>
+          <button onClick={handleRefresh} style={{ display:'flex', alignItems:'center', gap:'0.4rem', padding:'0.5rem 1rem', background:'var(--spc-view-raised)', border:'none', borderRadius:'8px', cursor:'pointer', fontWeight:500, fontSize:'0.85rem' }}>
             <RefreshCw size={14} className={refreshing?'spin':''} /> Refresh
           </button>
         </div>
@@ -2320,9 +2320,9 @@ function TabMonitor({ agents, onRefresh }) {
           { label:'On Call',      value: groups.on_call.length,   color:'#7c3aed', bg:'#f5f3ff' },
           { label:'Offline',      value: groups.offline.length,   color:'#64748b', bg:'#f8fafc' },
         ].map(stat => (
-          <div key={stat.label} style={{ background:'white', borderRadius:'12px', padding:'1.25rem', border:`2px solid ${stat.color}20`, textAlign:'center', boxShadow:'0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div key={stat.label} style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.25rem', border:`2px solid ${stat.color}20`, textAlign:'center', boxShadow:'0 1px 3px rgba(0,0,0,0.05)' }}>
             <div style={{ fontSize:'2rem', fontWeight:800, color: stat.color }}>{stat.value}</div>
-            <div style={{ fontSize:'0.78rem', color:'#64748b', fontWeight:500, marginTop:'0.25rem' }}>{stat.label}</div>
+            <div style={{ fontSize:'0.78rem', color:'var(--spc-view-muted)', fontWeight:500, marginTop:'0.25rem' }}>{stat.label}</div>
           </div>
         ))}
       </div>
@@ -2332,25 +2332,25 @@ function TabMonitor({ agents, onRefresh }) {
         {agents.map((agent, aIdx) => {
           const statusColor = agent.status === 'available' ? '#16a34a' : agent.status === 'on_call' || agent.status === 'busy' ? '#7c3aed' : '#94a3b8';
           return (
-            <div key={agent.id || `agent-card-${aIdx}`} style={{ background:'white', borderRadius:'12px', padding:'1.25rem', border:`1px solid ${statusColor}30`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)', borderLeft:`4px solid ${statusColor}` }}>
+            <div key={agent.id || `agent-card-${aIdx}`} style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.25rem', border:`1px solid ${statusColor}30`, boxShadow:'0 1px 3px rgba(0,0,0,0.06)', borderLeft:`4px solid ${statusColor}` }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'0.75rem' }}>
                 <div>
-                  <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.95rem' }}>{agent.display_name}</div>
-                  <div style={{ fontSize:'0.75rem', color:'#94a3b8', marginTop:'0.15rem' }}>{agent.default_calling_mode === 'browser_webrtc' ? '🖥️ Browser' : agent.default_calling_mode === 'mobile' ? '📱 Mobile' : '☎️ External'}</div>
+                  <div style={{ fontWeight:700, color:'var(--spc-view-text)', fontSize:'0.95rem' }}>{agent.display_name}</div>
+                  <div style={{ fontSize:'0.75rem', color:'var(--spc-view-muted)', marginTop:'0.15rem' }}>{agent.default_calling_mode === 'browser_webrtc' ? '🖥️ Browser' : agent.default_calling_mode === 'mobile' ? '📱 Mobile' : '☎️ External'}</div>
                 </div>
                 {statusBadge(agent.status)}
               </div>
-              <div style={{ fontSize:'0.78rem', color:'#64748b', fontFamily:'monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+              <div style={{ fontSize:'0.78rem', color:'var(--spc-view-muted)', fontFamily:'monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                 {agent.plivo_sip_uri || 'No SIP endpoint assigned'}
               </div>
               {agent.mobile_number && (
-                <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem' }}>📱 {agent.mobile_number}</div>
+                <div style={{ fontSize:'0.78rem', color:'var(--spc-view-muted)', marginTop:'0.25rem' }}>📱 {agent.mobile_number}</div>
               )}
             </div>
           );
         })}
         {agents.length === 0 && (
-          <div style={{ gridColumn:'1/-1', textAlign:'center', color:'#94a3b8', padding:'3rem' }}>No agents to monitor.</div>
+          <div style={{ gridColumn:'1/-1', textAlign:'center', color:'var(--spc-view-muted)', padding:'3rem' }}>No agents to monitor.</div>
         )}
       </div>
     </div>
@@ -2455,18 +2455,18 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
     <div style={{ display:'flex', flexDirection:'column', gap:'1.5rem', maxWidth:'1280px', margin:'0 auto' }}>
       
       {/* Top Banner & Save Action */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1.25rem 1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'1rem' }}>
+      <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.25rem 1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'1rem' }}>
         <div>
-          <h2 style={{ fontSize:'1.2rem', fontWeight:800, color:'#1e293b', margin:0, display:'flex', alignItems:'center', gap:'0.6rem' }}>
+          <h2 style={{ fontSize:'1.2rem', fontWeight:800, color:'var(--spc-view-text)', margin:0, display:'flex', alignItems:'center', gap:'0.6rem' }}>
             <KeyRound size={22} color="#2563eb" /> Telephony Gateway &amp; Workspace Authorization
           </h2>
-          <p style={{ color:'#64748b', fontSize:'0.85rem', margin:'0.25rem 0 0 0' }}>
+          <p style={{ color:'var(--spc-view-muted)', fontSize:'0.85rem', margin:'0.25rem 0 0 0' }}>
             Authorize Plivo credentials (BYOC vs Managed), set Caller ID, and manage active concurrent calling seats.
           </p>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
           {saveSuccess && (
-            <span style={{ display:'flex', alignItems:'center', gap:'0.35rem', color:'#16a34a', fontSize:'0.85rem', fontWeight:600, background:'#dcfce7', padding:'0.4rem 0.85rem', borderRadius:'6px' }}>
+            <span style={{ display:'flex', alignItems:'center', gap:'0.35rem', color:'var(--spc-view-success)', fontSize:'0.85rem', fontWeight:600, background:'var(--spc-view-success-bg)', padding:'0.4rem 0.85rem', borderRadius:'6px' }}>
               <CheckCircle size={16} /> Telephony Settings Saved!
             </span>
           )}
@@ -2476,7 +2476,7 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
             style={{
               display:'flex', alignItems:'center', gap:'0.5rem',
               padding:'0.6rem 1.4rem', borderRadius:'8px', border:'none',
-              background:'#2563eb', color:'white', fontWeight:700, fontSize:'0.88rem',
+              background:'var(--spc-view-action)', color:'white', fontWeight:700, fontSize:'0.88rem',
               cursor:'pointer', opacity: saving ? 0.7 : 1,
               boxShadow:'0 2px 4px rgba(37,99,235,0.2)'
             }}
@@ -2488,20 +2488,20 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
       </div>
 
       {/* Telephony Gateway & BYOC Configuration Card */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+      <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:'0.75rem' }}>
           <div>
-            <h3 style={{ fontSize:'1.05rem', fontWeight:700, margin:0, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+            <h3 style={{ fontSize:'1.05rem', fontWeight:700, margin:0, color:'var(--spc-view-text)', display:'flex', alignItems:'center', gap:'0.5rem' }}>
               <ShieldCheck size={18} color="#2563eb" /> Telephony Connection Mode
             </h3>
-            <p style={{ color:'#64748b', fontSize:'0.82rem', marginTop:'0.25rem' }}>
+            <p style={{ color:'var(--spc-view-muted)', fontSize:'0.82rem', marginTop:'0.25rem' }}>
               Configure how this client workspace connects to Plivo (Shared Platform Gateway vs Client BYOC).
             </p>
           </div>
           {seatQuota && (
-            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'#eff6ff', border:'1px solid #bfdbfe', padding:'0.4rem 0.85rem', borderRadius:'8px', fontSize:'0.82rem' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'var(--spc-view-info-bg)', border:'1px solid var(--spc-view-info-border)', padding:'0.4rem 0.85rem', borderRadius:'8px', fontSize:'0.82rem' }}>
               <Users size={16} color="#2563eb" />
-              <span style={{ fontWeight:700, color:'#1e40af' }}>
+              <span style={{ fontWeight:700, color:'var(--spc-view-info)' }}>
                 Calling Seats: {seatQuota.used} / {seatQuota.total} Used (Across Headquarter &amp; Branches)
               </span>
             </div>
@@ -2515,8 +2515,8 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
             style={{
               display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'1rem',
               borderRadius:'10px',
-              border: telephonyMode === 'managed' ? '2px solid #2563eb' : '1px solid #e2e8f0',
-              background: telephonyMode === 'managed' ? '#eff6ff' : '#f8fafc',
+              border: telephonyMode === 'managed' ? '2px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
+              background: telephonyMode === 'managed' ? 'var(--spc-view-info-bg)' : 'var(--spc-view-canvas)',
               cursor:'pointer', transition:'all 0.15s'
             }}
           >
@@ -2529,10 +2529,10 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
               style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
             />
             <div>
-              <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+              <div style={{ fontWeight:700, color:'var(--spc-view-text)', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
                 <Cpu size={16} color="#2563eb" /> Managed Telephony (Platform)
               </div>
-              <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
+              <div style={{ fontSize:'0.78rem', color:'var(--spc-view-muted)', marginTop:'0.25rem', lineHeight:1.4 }}>
                 Uses platform&apos;s managed Plivo gateway and pre-allotted SIP endpoints. Ideal for turnkey calling without customer-provided Plivo keys.
               </div>
             </div>
@@ -2543,8 +2543,8 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
             style={{
               display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'1rem',
               borderRadius:'10px',
-              border: telephonyMode === 'byoc' ? '2px solid #2563eb' : '1px solid #e2e8f0',
-              background: telephonyMode === 'byoc' ? '#eff6ff' : '#f8fafc',
+              border: telephonyMode === 'byoc' ? '2px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
+              background: telephonyMode === 'byoc' ? 'var(--spc-view-info-bg)' : 'var(--spc-view-canvas)',
               cursor:'pointer', transition:'all 0.15s'
             }}
           >
@@ -2557,10 +2557,10 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
               style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
             />
             <div>
-              <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+              <div style={{ fontWeight:700, color:'var(--spc-view-text)', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
                 <ShieldCheck size={16} color="#16a34a" /> BYOC (Bring Your Own Plivo)
               </div>
-              <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
+              <div style={{ fontSize:'0.78rem', color:'var(--spc-view-muted)', marginTop:'0.25rem', lineHeight:1.4 }}>
                 Client workspace uses their own Plivo Auth ID, Auth Token, and rented caller numbers. Full billing isolation and independent endpoints.
               </div>
             </div>
@@ -2569,19 +2569,19 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
 
         {/* BYOC Credentials Form (shown when BYOC is active) */}
         {telephonyMode === 'byoc' && (
-          <div style={{ padding:'1.25rem', background:'#f8fafc', borderRadius:'10px', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1rem' }}>
+          <div style={{ padding:'1.25rem', background:'var(--spc-view-canvas)', borderRadius:'10px', border:'1px solid var(--spc-view-border)', display:'flex', flexDirection:'column', gap:'1rem' }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <div style={{ fontSize:'0.88rem', fontWeight:700, color:'#1e293b' }}>
+              <div style={{ fontSize:'0.88rem', fontWeight:700, color:'var(--spc-view-text)' }}>
                 Plivo API Credentials &amp; Caller ID
               </div>
-              <span style={{ fontSize:'0.75rem', color:'#64748b' }}>
+              <span style={{ fontSize:'0.75rem', color:'var(--spc-view-muted)' }}>
                 Enter credentials from your Plivo Dashboard (Account &gt; Overview)
               </span>
             </div>
 
             <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:'1rem' }}>
               <div>
-                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, color:'#475569', marginBottom:'0.3rem' }}>
+                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, color:'var(--spc-view-muted)', marginBottom:'0.3rem' }}>
                   Plivo Auth ID *
                 </label>
                 <input
@@ -2589,22 +2589,22 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
                   placeholder="e.g. MAMJFHXXXXXXXXXXXXXXXX (Alphanumeric Auth ID, not email)"
                   value={plivoAuthId}
                   onChange={e => setPlivoAuthId(e.target.value.trim())}
-                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', fontFamily:'monospace', background:'white' }}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid var(--spc-view-border)', fontSize:'0.85rem', fontFamily:'monospace', background:'var(--spc-view-surface)' }}
                 />
-                <span style={{ fontSize:'0.72rem', color:'#94a3b8', marginTop:'0.2rem', display:'block' }}>
+                <span style={{ fontSize:'0.72rem', color:'var(--spc-view-muted)', marginTop:'0.2rem', display:'block' }}>
                   Copy your Auth ID from Plivo Console (do not enter your email address).
                 </span>
               </div>
 
               <div>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.3rem' }}>
-                  <label style={{ fontSize:'0.8rem', fontWeight:600, color:'#475569' }}>
+                  <label style={{ fontSize:'0.8rem', fontWeight:600, color:'var(--spc-view-muted)' }}>
                     Plivo Auth Token *
                   </label>
                   <button
                     type="button"
                     onClick={() => setShowAuthToken(!showAuthToken)}
-                    style={{ background:'none', border:'none', color:'#2563eb', fontSize:'0.72rem', cursor:'pointer' }}
+                    style={{ background:'none', border:'none', color:'var(--spc-view-info)', fontSize:'0.72rem', cursor:'pointer' }}
                   >
                     {showAuthToken ? 'Hide' : 'Show'}
                   </button>
@@ -2614,12 +2614,12 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
                   placeholder="e.g. NTdiOWXXXXXXXXXXXXXXXXXXXXXXXXXX"
                   value={plivoAuthToken}
                   onChange={e => setPlivoAuthToken(e.target.value.trim())}
-                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', fontFamily:'monospace', background:'white' }}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid var(--spc-view-border)', fontSize:'0.85rem', fontFamily:'monospace', background:'var(--spc-view-surface)' }}
                 />
               </div>
 
               <div>
-                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, color:'#475569', marginBottom:'0.3rem' }}>
+                <label style={{ display:'block', fontSize:'0.8rem', fontWeight:600, color:'var(--spc-view-muted)', marginBottom:'0.3rem' }}>
                   Caller ID (From Phone Number) *
                 </label>
                 <input
@@ -2627,9 +2627,9 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
                   placeholder="e.g. +918035340622"
                   value={callerId}
                   onChange={e => setCallerId(e.target.value.trim())}
-                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid #cbd5e1', fontSize:'0.85rem', fontFamily:'monospace', background:'white' }}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'0.55rem 0.8rem', borderRadius:'6px', border:'1px solid var(--spc-view-border)', fontSize:'0.85rem', fontFamily:'monospace', background:'var(--spc-view-surface)' }}
                 />
-                <span style={{ fontSize:'0.72rem', color:'#94a3b8', marginTop:'0.2rem', display:'block' }}>
+                <span style={{ fontSize:'0.72rem', color:'var(--spc-view-muted)', marginTop:'0.2rem', display:'block' }}>
                   Purchased Plivo number with country code (used as outgoing Caller ID).
                 </span>
               </div>
@@ -2642,8 +2642,8 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
                 disabled={testingConnection || !plivoAuthId || !plivoAuthToken}
                 style={{
                   display:'flex', alignItems:'center', gap:'0.4rem',
-                  padding:'0.5rem 1rem', borderRadius:'6px', border:'1px solid #cbd5e1',
-                  background:'white', color:'#1e293b', fontWeight:600, fontSize:'0.82rem',
+                  padding:'0.5rem 1rem', borderRadius:'6px', border:'1px solid var(--spc-view-border)',
+                  background:'var(--spc-view-surface)', color:'var(--spc-view-text)', fontWeight:600, fontSize:'0.82rem',
                   cursor:'pointer', opacity: (testingConnection || !plivoAuthId || !plivoAuthToken) ? 0.6 : 1
                 }}
               >
@@ -2655,8 +2655,8 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
                 <div style={{
                   display:'flex', alignItems:'center', gap:'0.4rem',
                   padding:'0.4rem 0.75rem', borderRadius:'6px', fontSize:'0.8rem', fontWeight:600,
-                  background: testResult.success ? '#dcfce7' : '#fee2e2',
-                  color: testResult.success ? '#15803d' : '#b91c1c'
+                  background: testResult.success ? 'var(--spc-view-success-bg)' : 'var(--spc-view-danger-bg)',
+                  color: testResult.success ? 'var(--spc-view-success)' : 'var(--spc-view-danger)'
                 }}>
                   {testResult.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
                   <span>{testResult.success ? `Connected! Account: ${testResult.accountName || 'Active'}` : `Failed: ${testResult.error}`}</span>
@@ -2667,17 +2667,17 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
         )}
 
         {/* Calling Seat Quota Setting */}
-        <div style={{ padding:'1rem 1.25rem', background:'#f8fafc', borderRadius:'10px', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
+        <div style={{ padding:'1rem 1.25rem', background:'var(--spc-view-canvas)', borderRadius:'10px', border:'1px solid var(--spc-view-border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'1rem' }}>
           <div>
-            <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+            <div style={{ fontWeight:700, color:'var(--spc-view-text)', fontSize:'0.9rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
               <Users size={16} color="#7c3aed" /> Workspace Calling Seat Allocation
             </div>
-            <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.2rem', lineHeight:1.4 }}>
+            <div style={{ fontSize:'0.78rem', color:'var(--spc-view-muted)', marginTop:'0.2rem', lineHeight:1.4 }}>
               Set maximum number of telecallers allowed to use the Softphone concurrently across Headquarter and all Branches.
             </div>
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
-            <span style={{ fontSize:'0.82rem', color:'#475569', fontWeight:600 }}>Seat Limit:</span>
+            <span style={{ fontSize:'0.82rem', color:'var(--spc-view-muted)', fontWeight:600 }}>Seat Limit:</span>
             <input
               type="number"
               min="1"
@@ -2686,8 +2686,8 @@ function TabTelephonyGatewaySingle({ userCompany = '', tenantId = null, onRefres
               onChange={e => setCallingSeatLimit(Math.max(1, parseInt(e.target.value, 10) || 1))}
               style={{
                 width:'90px', padding:'0.45rem 0.65rem', borderRadius:'6px',
-                border:'1px solid #cbd5e1', fontSize:'0.9rem', fontWeight:700,
-                textAlign:'center', background:'white'
+                border:'1px solid var(--spc-view-border)', fontSize:'0.9rem', fontWeight:700,
+                textAlign:'center', background:'var(--spc-view-surface)'
               }}
             />
           </div>
@@ -2886,20 +2886,20 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
     <div style={{ display:'flex', flexDirection:'column', gap:'1.5rem', width:'100%' }}>
       {/* Header Banner */}
       <div style={{
-        background:'white', borderRadius:'12px', padding:'1.25rem 1.5rem',
-        boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0',
+        background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.25rem 1.5rem',
+        boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)',
         display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'1rem'
       }}>
         <div>
           <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
-            <span style={{ background:'#eff6ff', color:'#2563eb', padding:'0.2rem 0.55rem', borderRadius:'6px', fontSize:'0.75rem', fontWeight:800, textTransform:'uppercase' }}>
+            <span style={{ background:'var(--spc-view-info-bg)', color:'var(--spc-view-info)', padding:'0.2rem 0.55rem', borderRadius:'6px', fontSize:'0.75rem', fontWeight:800, textTransform:'uppercase' }}>
               Master Admin Control
             </span>
-            <h2 style={{ fontSize:'1.2rem', fontWeight:800, color:'#1e293b', margin:0, display:'flex', alignItems:'center', gap:'0.5rem' }}>
+            <h2 style={{ fontSize:'1.2rem', fontWeight:800, color:'var(--spc-view-text)', margin:0, display:'flex', alignItems:'center', gap:'0.5rem' }}>
               <Globe size={22} color="#2563eb" /> Multi-Tenant Telephony &amp; Cloud Calling Seats
             </h2>
           </div>
-          <p style={{ color:'#64748b', fontSize:'0.85rem', margin:'0.35rem 0 0 0' }}>
+          <p style={{ color:'var(--spc-view-muted)', fontSize:'0.85rem', margin:'0.35rem 0 0 0' }}>
             Configure and assign Plivo credentials, caller IDs, fallback forwarding numbers, and calling seat limits across all client workspaces.
           </p>
         </div>
@@ -2908,8 +2908,8 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
             onClick={fetchAllTenantsTelephony}
             style={{
               display:'flex', alignItems:'center', gap:'0.4rem',
-              padding:'0.55rem 1rem', background:'#f8fafc', border:'1px solid #cbd5e1',
-              borderRadius:'8px', fontSize:'0.85rem', fontWeight:600, color:'#334155', cursor:'pointer'
+              padding:'0.55rem 1rem', background:'var(--spc-view-canvas)', border:'1px solid var(--spc-view-border)',
+              borderRadius:'8px', fontSize:'0.85rem', fontWeight:600, color:'var(--spc-view-text)', cursor:'pointer'
             }}
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh List
@@ -2921,9 +2921,9 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
       {testNotice && (
         <div style={{
           padding:'0.85rem 1.25rem', borderRadius:'10px',
-          background: testNotice.success ? '#ecfdf5' : '#fef2f2',
-          border: testNotice.success ? '1px solid #a7f3d0' : '1px solid #fecaca',
-          color: testNotice.success ? '#065f46' : '#991b1b',
+          background: testNotice.success ? 'var(--spc-view-success-bg)' : 'var(--spc-view-danger-bg)',
+          border: testNotice.success ? '1px solid var(--spc-view-success-border)' : '1px solid var(--spc-view-danger-border)',
+          color: testNotice.success ? 'var(--spc-view-success)' : 'var(--spc-view-danger)',
           fontSize:'0.88rem', fontWeight:600, display:'flex', alignItems:'center', gap:'0.5rem',
           boxShadow:'0 2px 4px rgba(0,0,0,0.05)'
         }}>
@@ -2940,20 +2940,20 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
           { label: 'Managed Gateway', value: managedCount, color: '#06b6d4', icon: Cpu },
           { label: 'Total Calling Seats', value: totalSeats, color: '#10b981', icon: Users },
         ].map(stat => (
-          <div key={stat.label} style={{ background:'white', borderRadius:'12px', padding:'1.1rem 1.35rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', gap:'1rem' }}>
+          <div key={stat.label} style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.1rem 1.35rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', display:'flex', alignItems:'center', gap:'1rem' }}>
             <div style={{ width:42, height:42, borderRadius:'10px', background: stat.color+'15', display:'flex', alignItems:'center', justifyContent:'center' }}>
               <stat.icon size={20} color={stat.color} />
             </div>
             <div>
-              <div style={{ fontSize:'1.45rem', fontWeight:800, color:'#1e293b' }}>{stat.value}</div>
-              <div style={{ fontSize:'0.76rem', color:'#64748b', fontWeight:500 }}>{stat.label}</div>
+              <div style={{ fontSize:'1.45rem', fontWeight:800, color:'var(--spc-view-text)' }}>{stat.value}</div>
+              <div style={{ fontSize:'0.76rem', color:'var(--spc-view-muted)', fontWeight:500 }}>{stat.label}</div>
             </div>
           </div>
         ))}
       </div>
 
       {/* Filter & Search Bar */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1rem 1.25rem', border:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'0.85rem' }}>
+      <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1rem 1.25rem', border:'1px solid var(--spc-view-border)', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'0.85rem' }}>
         <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', flex:1, minWidth:'260px' }}>
           <div style={{ position:'relative', width:'100%', maxWidth:'360px' }}>
             <Search size={16} color="#94a3b8" style={{ position:'absolute', left:'10px', top:'50%', transform:'translateY(-50%)' }} />
@@ -2964,7 +2964,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
               onChange={e => setSearchQuery(e.target.value)}
               style={{
                 width:'100%', padding:'0.5rem 0.75rem 0.5rem 2.2rem', borderRadius:'8px',
-                border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'#f8fafc'
+                border:'1px solid var(--spc-view-border)', fontSize:'0.85rem', background:'var(--spc-view-canvas)'
               }}
             />
           </div>
@@ -2973,7 +2973,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
           <select
             value={filterMode}
             onChange={e => setFilterMode(e.target.value)}
-            style={{ padding:'0.5rem 0.75rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white' }}
+            style={{ padding:'0.5rem 0.75rem', borderRadius:'8px', border:'1px solid var(--spc-view-border)', fontSize:'0.85rem', background:'var(--spc-view-surface)' }}
           >
             <option value="all">All Telephony Modes</option>
             <option value="managed">Managed Platform</option>
@@ -2982,24 +2982,24 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
           <select
             value={filterStatus}
             onChange={e => setFilterStatus(e.target.value)}
-            style={{ padding:'0.5rem 0.75rem', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.85rem', background:'white' }}
+            style={{ padding:'0.5rem 0.75rem', borderRadius:'8px', border:'1px solid var(--spc-view-border)', fontSize:'0.85rem', background:'var(--spc-view-surface)' }}
           >
             <option value="all">All Statuses</option>
             <option value="ACTIVE">Active</option>
             <option value="TRIAL">Trial</option>
           </select>
-          <span style={{ fontSize:'0.8rem', color:'#64748b', fontWeight:500 }}>
+          <span style={{ fontSize:'0.8rem', color:'var(--spc-view-muted)', fontWeight:500 }}>
             Showing {filteredTenants.length} of {totalTenants}
           </span>
         </div>
       </div>
 
       {/* Main Table with Interactive Column Resizing (Lead Data Pattern) */}
-      <div style={{ background:'white', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', overflow:'hidden' }}>
+      <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', overflow:'hidden' }}>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width: '100%', minWidth: `${getTotalTableWidth()}px`, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            <thead style={{ backgroundColor: '#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
-              <tr style={{ fontSize:'0.76rem', textTransform:'uppercase', color:'#64748b', letterSpacing:'0.05em' }}>
+            <thead style={{ backgroundColor: 'var(--spc-view-canvas)', borderBottom:'1px solid var(--spc-view-border)' }}>
+              <tr style={{ fontSize:'0.76rem', textTransform:'uppercase', color:'var(--spc-view-muted)', letterSpacing:'0.05em' }}>
                 {[
                   { key: 'tenant', label: 'Tenant / Workspace', width: colWidths.tenant || 200 },
                   { key: 'status', label: 'Status', width: colWidths.status || 100 },
@@ -3039,7 +3039,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
             <tbody>
               {filteredTenants.length === 0 ? (
                 <tr>
-                  <td colSpan={10} style={{ padding:'3rem', textAlign:'center', color:'#94a3b8' }}>
+                  <td colSpan={10} style={{ padding:'3rem', textAlign:'center', color:'var(--spc-view-muted)' }}>
                     No tenants found matching criteria.
                   </td>
                 </tr>
@@ -3054,21 +3054,21 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                     <tr
                       key={t.id || idx}
                       style={{
-                        borderBottom:'1px solid #f1f5f9',
-                        background: idx % 2 === 0 ? 'white' : '#fafafa',
+                        borderBottom:'1px solid var(--spc-view-border)',
+                        background: idx % 2 === 0 ? 'var(--spc-view-surface)' : 'var(--spc-view-canvas)',
                         transition:'background 0.15s'
                       }}
                     >
                       {/* Tenant Name & Code */}
                       <td style={{ width: `${colWidths.tenant || 200}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
-                        <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem', wordBreak:'break-word' }}>
+                        <div style={{ fontWeight:700, color:'var(--spc-view-text)', fontSize:'0.9rem', wordBreak:'break-word' }}>
                           {t.name}
                         </div>
-                        <div style={{ fontSize:'0.72rem', color:'#64748b', fontFamily:'monospace', marginTop:'0.2rem' }}>
+                        <div style={{ fontSize:'0.72rem', color:'var(--spc-view-muted)', fontFamily:'monospace', marginTop:'0.2rem' }}>
                           {t.tenant_code}
                         </div>
                         {t.primary_contact_email && (
-                          <div style={{ fontSize:'0.74rem', color:'#94a3b8', marginTop:'0.2rem' }}>
+                          <div style={{ fontSize:'0.74rem', color:'var(--spc-view-muted)', marginTop:'0.2rem' }}>
                             {t.primary_contact_email}
                           </div>
                         )}
@@ -3079,8 +3079,8 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                         <span style={{
                           display:'inline-block', padding:'0.2rem 0.55rem', borderRadius:'6px',
                           fontSize:'0.72rem', fontWeight:700,
-                          background: t.status === 'ACTIVE' ? '#dcfce7' : '#fef3c7',
-                          color: t.status === 'ACTIVE' ? '#15803d' : '#b45309'
+                          background: t.status === 'ACTIVE' ? 'var(--spc-view-success-bg)' : 'var(--spc-view-warning-bg)',
+                          color: t.status === 'ACTIVE' ? 'var(--spc-view-success)' : 'var(--spc-view-warning)'
                         }}>
                           {t.status || 'ACTIVE'}
                         </span>
@@ -3092,9 +3092,9 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                           display:'inline-flex', alignItems:'center', gap:'0.3rem',
                           padding:'0.25rem 0.6rem', borderRadius:'6px',
                           fontSize:'0.74rem', fontWeight:700,
-                          background: isByoc ? '#f3e8ff' : '#eff6ff',
-                          color: isByoc ? '#7e22ce' : '#1d4ed8',
-                          border: isByoc ? '1px solid #d8b4fe' : '1px solid #bfdbfe'
+                          background: isByoc ? 'var(--spc-view-violet-bg)' : 'var(--spc-view-info-bg)',
+                          color: isByoc ? 'var(--spc-view-violet)' : 'var(--spc-view-info)',
+                          border: isByoc ? '1px solid #d8b4fe' : '1px solid var(--spc-view-info-border)'
                         }}>
                           {isByoc ? <KeyRound size={12} /> : <Cpu size={12} />}
                           {isByoc ? 'Client BYOC' : 'Managed'}
@@ -3109,20 +3109,20 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                               display:'inline-flex', alignItems:'center', gap:'0.35rem',
                               padding:'0.25rem 0.6rem', borderRadius:'6px',
                               fontSize:'0.76rem', fontWeight:800, whiteSpace:'nowrap',
-                              background: t.wallet.cash_credits > 10 ? '#ecfdf5' : (t.wallet.cash_credits > 2 ? '#fffbeb' : '#fef2f2'),
-                              color: t.wallet.cash_credits > 10 ? '#047857' : (t.wallet.cash_credits > 2 ? '#b45309' : '#dc2626'),
-                              border: t.wallet.cash_credits > 10 ? '1px solid #a7f3d0' : (t.wallet.cash_credits > 2 ? '1px solid #fde68a' : '1px solid #fecaca')
+                              background: t.wallet.cash_credits > 10 ? 'var(--spc-view-success-bg)' : (t.wallet.cash_credits > 2 ? 'var(--spc-view-warning-bg)' : 'var(--spc-view-danger-bg)'),
+                              color: t.wallet.cash_credits > 10 ? 'var(--spc-view-success)' : (t.wallet.cash_credits > 2 ? 'var(--spc-view-warning)' : 'var(--spc-view-danger)'),
+                              border: t.wallet.cash_credits > 10 ? '1px solid var(--spc-view-success-border)' : (t.wallet.cash_credits > 2 ? '1px solid var(--spc-view-warning-border)' : '1px solid var(--spc-view-danger-border)')
                             }}>
                               💰 {t.wallet.formatted_credits || `₹${(t.wallet.cash_credits * 80).toFixed(2)} ($${t.wallet.cash_credits.toFixed(2)})`}
                             </span>
                             {t.wallet.cash_credits <= 2 && (
-                              <span style={{ fontSize:'0.68rem', color:'#dc2626', fontWeight:600 }}>
+                              <span style={{ fontSize:'0.68rem', color:'var(--spc-view-danger)', fontWeight:600 }}>
                                 ⚠️ Low Balance
                               </span>
                             )}
                           </div>
                         ) : (
-                          <span style={{ fontSize:'0.75rem', color:'#94a3b8', fontStyle:'italic' }}>
+                          <span style={{ fontSize:'0.75rem', color:'var(--spc-view-muted)', fontStyle:'italic' }}>
                             {isByoc ? 'Check credentials' : 'Platform Wallet'}
                           </span>
                         )}
@@ -3131,11 +3131,11 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       {/* Plivo Auth ID */}
                       <td style={{ width: `${colWidths.auth_id || 170}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
                         {t.plivoAuthId ? (
-                          <div style={{ fontFamily:'monospace', fontSize:'0.78rem', color:'#334155', wordBreak:'break-all', background:'#f1f5f9', padding:'0.2rem 0.45rem', borderRadius:'4px' }}>
+                          <div style={{ fontFamily:'monospace', fontSize:'0.78rem', color:'var(--spc-view-text)', wordBreak:'break-all', background:'var(--spc-view-raised)', padding:'0.2rem 0.45rem', borderRadius:'4px' }}>
                             {t.plivoAuthId}
                           </div>
                         ) : (
-                          <span style={{ fontSize:'0.75rem', color:'#94a3b8', fontStyle:'italic' }}>
+                          <span style={{ fontSize:'0.75rem', color:'var(--spc-view-muted)', fontStyle:'italic' }}>
                             {isByoc ? 'Not configured' : 'Default Platform Gateway'}
                           </span>
                         )}
@@ -3144,11 +3144,11 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       {/* Auth Token (Masked) */}
                       <td style={{ width: `${colWidths.auth_token || 130}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
                         {t.hasCustomToken || t.plivoAuthToken ? (
-                          <span style={{ fontFamily:'monospace', fontSize:'0.8rem', color:'#16a34a', fontWeight:700 }}>
+                          <span style={{ fontFamily:'monospace', fontSize:'0.8rem', color:'var(--spc-view-success)', fontWeight:700 }}>
                             ••••••••••••
                           </span>
                         ) : (
-                          <span style={{ fontSize:'0.75rem', color:'#94a3b8' }}>
+                          <span style={{ fontSize:'0.75rem', color:'var(--spc-view-muted)' }}>
                             {isByoc ? 'None' : 'Managed'}
                           </span>
                         )}
@@ -3156,7 +3156,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
 
                       {/* Caller ID */}
                       <td style={{ width: `${colWidths.caller_id || 150}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
-                        <div style={{ fontSize:'0.82rem', fontWeight:600, color:'#1e293b' }}>
+                        <div style={{ fontSize:'0.82rem', fontWeight:600, color:'var(--spc-view-text)' }}>
                           {t.callerId || process.env.PLIVO_FROM_NUMBER || '+918035340622'}
                         </div>
                       </td>
@@ -3164,11 +3164,11 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       {/* Default Forward */}
                       <td style={{ width: `${colWidths.default_forward || 150}px`, padding:'0.9rem 1rem', boxSizing:'border-box', verticalAlign:'top' }}>
                         {t.defaultForward ? (
-                          <div style={{ fontSize:'0.82rem', fontWeight:600, color:'#0284c7' }}>
+                          <div style={{ fontSize:'0.82rem', fontWeight:600, color:'var(--spc-view-info)' }}>
                             {t.defaultForward}
                           </div>
                         ) : (
-                          <span style={{ fontSize:'0.75rem', color:'#94a3b8', fontStyle:'italic' }}>
+                          <span style={{ fontSize:'0.75rem', color:'var(--spc-view-muted)', fontStyle:'italic' }}>
                             Not configured
                           </span>
                         )}
@@ -3181,17 +3181,17 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                             display:'inline-flex', alignItems:'center', gap:'0.35rem',
                             padding:'0.2rem 0.55rem', borderRadius:'6px',
                             fontSize:'0.75rem', fontWeight:700,
-                            background: isQuotaFull ? '#fef2f2' : '#eff6ff',
-                            color: isQuotaFull ? '#dc2626' : '#1d4ed8'
+                            background: isQuotaFull ? 'var(--spc-view-danger-bg)' : 'var(--spc-view-info-bg)',
+                            color: isQuotaFull ? 'var(--spc-view-danger)' : 'var(--spc-view-info)'
                           }}>
                             <Users size={12} />
                             {seatsUsed} / {seatsTotal} Seats
                           </span>
-                          <div style={{ width:'100%', height:'4px', background:'#e2e8f0', borderRadius:'2px', overflow:'hidden' }}>
+                          <div style={{ width:'100%', height:'4px', background:'var(--spc-view-raised)', borderRadius:'2px', overflow:'hidden' }}>
                             <div style={{
                               width: `${Math.min(100, Math.round((seatsUsed / seatsTotal) * 100))}%`,
                               height:'100%',
-                              background: isQuotaFull ? '#dc2626' : '#2563eb'
+                              background: isQuotaFull ? 'var(--spc-view-danger-fill)' : 'var(--spc-view-action)'
                             }} />
                           </div>
                         </div>
@@ -3205,7 +3205,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                             style={{
                               display:'inline-flex', alignItems:'center', gap:'0.25rem',
                               padding:'0.35rem 0.65rem', borderRadius:'6px',
-                              background:'#2563eb', color:'white', border:'none',
+                              background:'var(--spc-view-action)', color:'white', border:'none',
                               fontSize:'0.75rem', fontWeight:700, cursor:'pointer'
                             }}
                             title="Edit Telephony Settings & Seat Limits"
@@ -3218,7 +3218,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                             style={{
                               display:'inline-flex', alignItems:'center', gap:'0.25rem',
                               padding:'0.35rem 0.65rem', borderRadius:'6px',
-                              background:'#f1f5f9', color:'#334155', border:'1px solid #cbd5e1',
+                              background:'var(--spc-view-raised)', color:'var(--spc-view-text)', border:'1px solid var(--spc-view-border)',
                               fontSize:'0.75rem', fontWeight:600, cursor:'pointer'
                             }}
                             title="Test Plivo Connection Live"
@@ -3250,23 +3250,23 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
           zIndex:9999, padding:'1rem'
         }}>
           <div style={{
-            background:'white', borderRadius:'14px', maxWidth:'620px', width:'100%',
+            background:'var(--spc-view-surface)', borderRadius:'14px', maxWidth:'620px', width:'100%',
             maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.2)',
-            border:'1px solid #e2e8f0', display:'flex', flexDirection:'column'
+            border:'1px solid var(--spc-view-border)', display:'flex', flexDirection:'column'
           }}>
             {/* Modal Header */}
-            <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <div style={{ padding:'1.25rem 1.5rem', borderBottom:'1px solid var(--spc-view-border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
               <div>
-                <h3 style={{ margin:0, fontSize:'1.1rem', fontWeight:800, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+                <h3 style={{ margin:0, fontSize:'1.1rem', fontWeight:800, color:'var(--spc-view-text)', display:'flex', alignItems:'center', gap:'0.5rem' }}>
                   <Globe size={18} color="#2563eb" /> Edit Telephony &amp; Seats
                 </h3>
-                <p style={{ margin:'0.25rem 0 0 0', fontSize:'0.82rem', color:'#64748b' }}>
+                <p style={{ margin:'0.25rem 0 0 0', fontSize:'0.82rem', color:'var(--spc-view-muted)' }}>
                   {editingTenant.name} ({editingTenant.tenant_code})
                 </p>
               </div>
               <button
                 onClick={() => setEditingTenant(null)}
-                style={{ background:'transparent', border:'none', cursor:'pointer', color:'#94a3b8', padding:'0.25rem' }}
+                style={{ background:'transparent', border:'none', cursor:'pointer', color:'var(--spc-view-muted)', padding:'0.25rem' }}
               >
                 <X size={20} />
               </button>
@@ -3276,36 +3276,36 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
             <form onSubmit={handleSaveEdit} style={{ padding:'1.5rem', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
               {/* Plivo Live Wallet Credits Banner */}
               <div style={{
-                padding:'0.85rem 1rem', background:'#f0fdf4', borderRadius:'8px', border:'1px solid #bbf7d0',
+                padding:'0.85rem 1rem', background:'var(--spc-view-success-bg)', borderRadius:'8px', border:'1px solid var(--spc-view-success-border)',
                 display:'flex', justifyContent:'space-between', alignItems:'center'
               }}>
                 <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
                   <span style={{ fontSize:'1.3rem' }}>💰</span>
                   <div>
-                    <div style={{ fontSize:'0.72rem', color:'#166534', fontWeight:700, textTransform:'uppercase' }}>Live Plivo Wallet Balance</div>
-                    <div style={{ fontSize:'1.15rem', fontWeight:800, color:'#14532d' }}>
+                    <div style={{ fontSize:'0.72rem', color:'var(--spc-view-success)', fontWeight:700, textTransform:'uppercase' }}>Live Plivo Wallet Balance</div>
+                    <div style={{ fontSize:'1.15rem', fontWeight:800, color:'var(--spc-view-success)' }}>
                       {editingTenant.wallet?.formatted_credits || (editingTenant.wallet?.cash_credits !== undefined ? `₹${(editingTenant.wallet.cash_credits * 80).toFixed(2)} ($${editingTenant.wallet.cash_credits.toFixed(2)})` : '$0.00')}
                     </div>
                   </div>
                 </div>
-                <div style={{ fontSize:'0.75rem', color:'#15803d', textAlign:'right' }}>
+                <div style={{ fontSize:'0.75rem', color:'var(--spc-view-success)', textAlign:'right' }}>
                   Account: <strong>{editingTenant.wallet?.account_name || editingTenant.name}</strong>
                 </div>
               </div>
               {editSuccessMsg && (
-                <div style={{ padding:'0.75rem 1rem', background:'#dcfce7', border:'1px solid #bbf7d0', borderRadius:'8px', color:'#166534', fontSize:'0.85rem', fontWeight:600, display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                <div style={{ padding:'0.75rem 1rem', background:'var(--spc-view-success-bg)', border:'1px solid var(--spc-view-success-border)', borderRadius:'8px', color:'var(--spc-view-success)', fontSize:'0.85rem', fontWeight:600, display:'flex', alignItems:'center', gap:'0.4rem' }}>
                   <CheckCircle size={16} /> {editSuccessMsg}
                 </div>
               )}
               {editErrorMsg && (
-                <div style={{ padding:'0.75rem 1rem', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:'8px', color:'#991b1b', fontSize:'0.85rem', fontWeight:600, display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                <div style={{ padding:'0.75rem 1rem', background:'var(--spc-view-danger-bg)', border:'1px solid var(--spc-view-danger-border)', borderRadius:'8px', color:'var(--spc-view-danger)', fontSize:'0.85rem', fontWeight:600, display:'flex', alignItems:'center', gap:'0.4rem' }}>
                   <AlertCircle size={16} /> {editErrorMsg}
                 </div>
               )}
 
               {/* Mode Selection */}
               <div>
-                <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'#334155', marginBottom:'0.5rem' }}>
+                <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'var(--spc-view-text)', marginBottom:'0.5rem' }}>
                   Telephony Connection Mode
                 </label>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
@@ -3313,8 +3313,8 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                     onClick={() => setEditForm(p => ({ ...p, telephonyMode: 'managed' }))}
                     style={{
                       padding:'0.85rem', borderRadius:'8px', cursor:'pointer',
-                      border: editForm.telephonyMode === 'managed' ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                      background: editForm.telephonyMode === 'managed' ? '#eff6ff' : '#f8fafc',
+                      border: editForm.telephonyMode === 'managed' ? '2px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
+                      background: editForm.telephonyMode === 'managed' ? 'var(--spc-view-info-bg)' : 'var(--spc-view-canvas)',
                       display:'flex', alignItems:'flex-start', gap:'0.5rem'
                     }}
                   >
@@ -3327,8 +3327,8 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
                     />
                     <div>
-                      <div style={{ fontWeight:700, fontSize:'0.85rem', color:'#1e293b' }}>Managed Platform</div>
-                      <div style={{ fontSize:'0.74rem', color:'#64748b', marginTop:'0.15rem' }}>Shared CRM Plivo Gateway</div>
+                      <div style={{ fontWeight:700, fontSize:'0.85rem', color:'var(--spc-view-text)' }}>Managed Platform</div>
+                      <div style={{ fontSize:'0.74rem', color:'var(--spc-view-muted)', marginTop:'0.15rem' }}>Shared CRM Plivo Gateway</div>
                     </div>
                   </label>
 
@@ -3336,8 +3336,8 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                     onClick={() => setEditForm(p => ({ ...p, telephonyMode: 'byoc' }))}
                     style={{
                       padding:'0.85rem', borderRadius:'8px', cursor:'pointer',
-                      border: editForm.telephonyMode === 'byoc' ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                      background: editForm.telephonyMode === 'byoc' ? '#eff6ff' : '#f8fafc',
+                      border: editForm.telephonyMode === 'byoc' ? '2px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
+                      background: editForm.telephonyMode === 'byoc' ? 'var(--spc-view-info-bg)' : 'var(--spc-view-canvas)',
                       display:'flex', alignItems:'flex-start', gap:'0.5rem'
                     }}
                   >
@@ -3350,8 +3350,8 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                       style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
                     />
                     <div>
-                      <div style={{ fontWeight:700, fontSize:'0.85rem', color:'#1e293b' }}>Client BYOC</div>
-                      <div style={{ fontSize:'0.74rem', color:'#64748b', marginTop:'0.15rem' }}>Direct Tenant Plivo Account</div>
+                      <div style={{ fontWeight:700, fontSize:'0.85rem', color:'var(--spc-view-text)' }}>Client BYOC</div>
+                      <div style={{ fontSize:'0.74rem', color:'var(--spc-view-muted)', marginTop:'0.15rem' }}>Direct Tenant Plivo Account</div>
                     </div>
                   </label>
                 </div>
@@ -3359,7 +3359,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
 
               {/* Plivo Auth ID */}
               <div>
-                <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'#334155', marginBottom:'0.35rem' }}>
+                <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'var(--spc-view-text)', marginBottom:'0.35rem' }}>
                   Plivo Authentication ID (Auth ID)
                 </label>
                 <input
@@ -3369,7 +3369,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                   onChange={e => setEditForm(p => ({ ...p, plivoAuthId: e.target.value }))}
                   style={{
                     width:'100%', padding:'0.6rem 0.85rem', borderRadius:'8px',
-                    border:'1px solid #cbd5e1', fontSize:'0.88rem', fontFamily:'monospace', background:'#f8fafc'
+                    border:'1px solid var(--spc-view-border)', fontSize:'0.88rem', fontFamily:'monospace', background:'var(--spc-view-canvas)'
                   }}
                 />
               </div>
@@ -3377,13 +3377,13 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
               {/* Plivo Auth Token */}
               <div>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.35rem' }}>
-                  <label style={{ fontSize:'0.82rem', fontWeight:700, color:'#334155' }}>
+                  <label style={{ fontSize:'0.82rem', fontWeight:700, color:'var(--spc-view-text)' }}>
                     Plivo Authentication Token
                   </label>
                   <button
                     type="button"
                     onClick={() => setShowEditToken(p => !p)}
-                    style={{ background:'transparent', border:'none', color:'#2563eb', fontSize:'0.75rem', fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:'0.25rem' }}
+                    style={{ background:'transparent', border:'none', color:'var(--spc-view-info)', fontSize:'0.75rem', fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:'0.25rem' }}
                   >
                     {showEditToken ? <EyeOff size={14} /> : <Eye size={14} />}
                     {showEditToken ? 'Hide Token' : 'Show Token'}
@@ -3396,7 +3396,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                   onChange={e => setEditForm(p => ({ ...p, plivoAuthToken: e.target.value }))}
                   style={{
                     width:'100%', padding:'0.6rem 0.85rem', borderRadius:'8px',
-                    border:'1px solid #cbd5e1', fontSize:'0.88rem', fontFamily:'monospace', background:'#f8fafc'
+                    border:'1px solid var(--spc-view-border)', fontSize:'0.88rem', fontFamily:'monospace', background:'var(--spc-view-canvas)'
                   }}
                 />
               </div>
@@ -3404,7 +3404,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
               {/* Caller ID & Default Forward */}
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem' }}>
                 <div>
-                  <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'#334155', marginBottom:'0.35rem' }}>
+                  <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'var(--spc-view-text)', marginBottom:'0.35rem' }}>
                     Outgoing Caller ID (From)
                   </label>
                   <input
@@ -3414,12 +3414,12 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                     onChange={e => setEditForm(p => ({ ...p, callerId: e.target.value }))}
                     style={{
                       width:'100%', padding:'0.6rem 0.85rem', borderRadius:'8px',
-                      border:'1px solid #cbd5e1', fontSize:'0.88rem', background:'#f8fafc'
+                      border:'1px solid var(--spc-view-border)', fontSize:'0.88rem', background:'var(--spc-view-canvas)'
                     }}
                   />
                 </div>
                 <div>
-                  <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'#334155', marginBottom:'0.35rem' }}>
+                  <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'var(--spc-view-text)', marginBottom:'0.35rem' }}>
                     Default Forward Number
                   </label>
                   <input
@@ -3429,7 +3429,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                     onChange={e => setEditForm(p => ({ ...p, defaultForward: e.target.value }))}
                     style={{
                       width:'100%', padding:'0.6rem 0.85rem', borderRadius:'8px',
-                      border:'1px solid #cbd5e1', fontSize:'0.88rem', background:'#f8fafc'
+                      border:'1px solid var(--spc-view-border)', fontSize:'0.88rem', background:'var(--spc-view-canvas)'
                     }}
                   />
                 </div>
@@ -3437,7 +3437,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
 
               {/* Calling Seats Limit */}
               <div>
-                <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'#334155', marginBottom:'0.35rem' }}>
+                <label style={{ display:'block', fontSize:'0.82rem', fontWeight:700, color:'var(--spc-view-text)', marginBottom:'0.35rem' }}>
                   Assigned Calling Seats Limit (Max Cloud Endpoints)
                 </label>
                 <div style={{ display:'flex', alignItems:'center', gap:'1rem' }}>
@@ -3449,17 +3449,17 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                     onChange={e => setEditForm(p => ({ ...p, callingSeatLimit: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
                     style={{
                       width:'120px', padding:'0.6rem 0.85rem', borderRadius:'8px',
-                      border:'1px solid #cbd5e1', fontSize:'1rem', fontWeight:700, textAlign:'center', background:'#f8fafc'
+                      border:'1px solid var(--spc-view-border)', fontSize:'1rem', fontWeight:700, textAlign:'center', background:'var(--spc-view-canvas)'
                     }}
                   />
-                  <span style={{ fontSize:'0.8rem', color:'#64748b' }}>
+                  <span style={{ fontSize:'0.8rem', color:'var(--spc-view-muted)' }}>
                     This controls the maximum SIP endpoints the tenant can create and concurrent callers allowed.
                   </span>
                 </div>
               </div>
 
               {/* Modal Action Buttons */}
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingTop:'1rem', borderTop:'1px solid #f1f5f9', marginTop:'0.5rem' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', paddingTop:'1rem', borderTop:'1px solid var(--spc-view-border)', marginTop:'0.5rem' }}>
                 <button
                   type="button"
                   onClick={() => handleTestConnection(editForm.plivoAuthId, editForm.plivoAuthToken, editingTenant)}
@@ -3467,8 +3467,8 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                   style={{
                     display:'inline-flex', alignItems:'center', gap:'0.4rem',
                     padding:'0.6rem 1rem', borderRadius:'8px',
-                    border:'1px solid #cbd5e1', background:'#f8fafc',
-                    color:'#334155', fontWeight:600, fontSize:'0.85rem', cursor:'pointer'
+                    border:'1px solid var(--spc-view-border)', background:'var(--spc-view-canvas)',
+                    color:'var(--spc-view-text)', fontWeight:600, fontSize:'0.85rem', cursor:'pointer'
                   }}
                 >
                   {testingTenantId === 'modal' ? <Loader2 size={15} className="animate-spin" /> : <Key size={15} />}
@@ -3481,8 +3481,8 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                     onClick={() => setEditingTenant(null)}
                     style={{
                       padding:'0.6rem 1.25rem', borderRadius:'8px',
-                      border:'1px solid #cbd5e1', background:'white',
-                      color:'#64748b', fontWeight:600, fontSize:'0.85rem', cursor:'pointer'
+                      border:'1px solid var(--spc-view-border)', background:'var(--spc-view-surface)',
+                      color:'var(--spc-view-muted)', fontWeight:600, fontSize:'0.85rem', cursor:'pointer'
                     }}
                   >
                     Cancel
@@ -3493,7 +3493,7 @@ function TabTelephonyGatewaySaaS({ userCompany = '', tenantId = null, onRefresh 
                     style={{
                       display:'inline-flex', alignItems:'center', gap:'0.4rem',
                       padding:'0.6rem 1.4rem', borderRadius:'8px', border:'none',
-                      background:'#2563eb', color:'white', fontWeight:700, fontSize:'0.85rem',
+                      background:'var(--spc-view-action)', color:'white', fontWeight:700, fontSize:'0.85rem',
                       cursor:'pointer', opacity: editSaving ? 0.7 : 1,
                       boxShadow:'0 2px 4px rgba(37,99,235,0.2)'
                     }}
@@ -3518,12 +3518,12 @@ function TabTelephonyGateway({ userCompany = '', tenantId = null, onRefresh = nu
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:'1.5rem', maxWidth:'1440px', margin:'0 auto', width:'100%' }}>
       {isMasterAdmin && (
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', background:'white', padding:'0.75rem 1.25rem', borderRadius:'10px', border:'1px solid #e2e8f0', flexWrap:'wrap', gap:'0.75rem' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--spc-view-surface)', padding:'0.75rem 1.25rem', borderRadius:'10px', border:'1px solid var(--spc-view-border)', flexWrap:'wrap', gap:'0.75rem' }}>
           <div style={{ display:'flex', alignItems:'center', gap:'0.6rem' }}>
-            <span style={{ fontSize:'0.75rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.05em', color:'#1e40af', background:'#eff6ff', border:'1px solid #bfdbfe', padding:'0.25rem 0.55rem', borderRadius:'6px' }}>
+            <span style={{ fontSize:'0.75rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.05em', color:'var(--spc-view-info)', background:'var(--spc-view-info-bg)', border:'1px solid var(--spc-view-info-border)', padding:'0.25rem 0.55rem', borderRadius:'6px' }}>
               🛡️ Master Admin View
             </span>
-            <span style={{ fontSize:'0.82rem', color:'#64748b' }}>
+            <span style={{ fontSize:'0.82rem', color:'var(--spc-view-muted)' }}>
               Manage multi-tenant telephony credentials or switch to active workspace view
             </span>
           </div>
@@ -3534,9 +3534,9 @@ function TabTelephonyGateway({ userCompany = '', tenantId = null, onRefresh = nu
               style={{
                 display:'flex', alignItems:'center', gap:'0.4rem',
                 padding:'0.45rem 0.95rem', borderRadius:'7px',
-                border: viewMode === 'all_tenants' ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                background: viewMode === 'all_tenants' ? '#eff6ff' : 'white',
-                color: viewMode === 'all_tenants' ? '#1d4ed8' : '#475569',
+                border: viewMode === 'all_tenants' ? '2px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
+                background: viewMode === 'all_tenants' ? 'var(--spc-view-info-bg)' : 'var(--spc-view-surface)',
+                color: viewMode === 'all_tenants' ? 'var(--spc-view-info)' : 'var(--spc-view-muted)',
                 fontWeight: viewMode === 'all_tenants' ? 700 : 500, fontSize:'0.82rem', cursor:'pointer'
               }}
             >
@@ -3548,9 +3548,9 @@ function TabTelephonyGateway({ userCompany = '', tenantId = null, onRefresh = nu
               style={{
                 display:'flex', alignItems:'center', gap:'0.4rem',
                 padding:'0.45rem 0.95rem', borderRadius:'7px',
-                border: viewMode === 'single_workspace' ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                background: viewMode === 'single_workspace' ? '#eff6ff' : 'white',
-                color: viewMode === 'single_workspace' ? '#1d4ed8' : '#475569',
+                border: viewMode === 'single_workspace' ? '2px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
+                background: viewMode === 'single_workspace' ? 'var(--spc-view-info-bg)' : 'var(--spc-view-surface)',
+                color: viewMode === 'single_workspace' ? 'var(--spc-view-info)' : 'var(--spc-view-muted)',
                 fontWeight: viewMode === 'single_workspace' ? 700 : 500, fontSize:'0.82rem', cursor:'pointer'
               }}
             >
@@ -3710,18 +3710,18 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
     <div style={{ display:'flex', flexDirection:'column', gap:'1.5rem', maxWidth:'1280px', margin:'0 auto' }}>
       
       {/* Top Banner & Save Action */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1.25rem 1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'1rem' }}>
+      <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.25rem 1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'1rem' }}>
         <div>
-          <h2 style={{ fontSize:'1.2rem', fontWeight:800, color:'#1e293b', margin:0, display:'flex', alignItems:'center', gap:'0.6rem' }}>
+          <h2 style={{ fontSize:'1.2rem', fontWeight:800, color:'var(--spc-view-text)', margin:0, display:'flex', alignItems:'center', gap:'0.6rem' }}>
             <PhoneIncoming size={22} color="#3b82f6" /> Inbound Call Routing & Softphone Distribution
           </h2>
-          <p style={{ color:'#64748b', fontSize:'0.85rem', margin:'0.25rem 0 0 0' }}>
+          <p style={{ color:'var(--spc-view-muted)', fontSize:'0.85rem', margin:'0.25rem 0 0 0' }}>
             Control how incoming customer calls to <strong>{settings?.fromNumber || '+918035340622'}</strong> ring on agents&apos; CRM Softphone screens.
           </p>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
           {saveSuccess && (
-            <span style={{ display:'flex', alignItems:'center', gap:'0.35rem', color:'#16a34a', fontSize:'0.85rem', fontWeight:600, background:'#dcfce7', padding:'0.4rem 0.85rem', borderRadius:'6px' }}>
+            <span style={{ display:'flex', alignItems:'center', gap:'0.35rem', color:'var(--spc-view-success)', fontSize:'0.85rem', fontWeight:600, background:'var(--spc-view-success-bg)', padding:'0.4rem 0.85rem', borderRadius:'6px' }}>
               <CheckCircle size={16} /> Settings Saved!
             </span>
           )}
@@ -3731,7 +3731,7 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
             style={{
               display:'flex', alignItems:'center', gap:'0.5rem',
               padding:'0.6rem 1.4rem', borderRadius:'8px', border:'none',
-              background:'#2563eb', color:'white', fontWeight:700, fontSize:'0.88rem',
+              background:'var(--spc-view-action)', color:'white', fontWeight:700, fontSize:'0.88rem',
               cursor:'pointer', opacity: saving ? 0.7 : 1,
               boxShadow:'0 2px 4px rgba(37,99,235,0.2)'
             }}
@@ -3745,12 +3745,12 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(520px, 1fr))', gap:'1.5rem' }}>
         
         {/* Card 1: Routing Mode / Strategy */}
-        <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+        <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
           <div>
-            <h3 style={{ fontSize:'1rem', fontWeight:700, margin:0, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+            <h3 style={{ fontSize:'1rem', fontWeight:700, margin:0, color:'var(--spc-view-text)', display:'flex', alignItems:'center', gap:'0.5rem' }}>
               <Radio size={18} color="#3b82f6" /> 1. Inbound Ringing Strategy
             </h3>
-            <p style={{ color:'#64748b', fontSize:'0.8rem', marginTop:'0.25rem' }}>
+            <p style={{ color:'var(--spc-view-muted)', fontSize:'0.8rem', marginTop:'0.25rem' }}>
               Select how incoming calls should be dispatched among online softphones.
             </p>
           </div>
@@ -3761,8 +3761,8 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
               onClick={() => setRoutingMode('simultaneous')}
               style={{
                 display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'0.9rem 1rem',
-                borderRadius:'10px', border: routingMode === 'simultaneous' ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                background: routingMode === 'simultaneous' ? '#eff6ff' : '#f8fafc',
+                borderRadius:'10px', border: routingMode === 'simultaneous' ? '2px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
+                background: routingMode === 'simultaneous' ? 'var(--spc-view-info-bg)' : 'var(--spc-view-canvas)',
                 cursor:'pointer', transition:'all 0.15s'
               }}
             >
@@ -3776,10 +3776,10 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
               />
               <div style={{ flex:1 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
-                  <span style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem' }}>Simultaneous Ring (Blast All)</span>
-                  <span style={{ fontSize:'0.7rem', fontWeight:700, padding:'0.15rem 0.5rem', background:'#dcfce7', color:'#15803d', borderRadius:'999px' }}>Recommended</span>
+                  <span style={{ fontWeight:700, color:'var(--spc-view-text)', fontSize:'0.9rem' }}>Simultaneous Ring (Blast All)</span>
+                  <span style={{ fontSize:'0.7rem', fontWeight:700, padding:'0.15rem 0.5rem', background:'var(--spc-view-success-bg)', color:'var(--spc-view-success)', borderRadius:'999px' }}>Recommended</span>
                 </div>
-                <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
+                <div style={{ fontSize:'0.78rem', color:'var(--spc-view-muted)', marginTop:'0.25rem', lineHeight:1.4 }}>
                   All online softphones ring simultaneously on their screens. The first telecaller to click <strong>Answer</strong> connects immediately; Plivo cancels ringing on everyone else. <em>Best to prevent missed customer calls.</em>
                 </div>
               </div>
@@ -3790,8 +3790,8 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
               onClick={() => setRoutingMode('round_robin')}
               style={{
                 display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'0.9rem 1rem',
-                borderRadius:'10px', border: routingMode === 'round_robin' ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                background: routingMode === 'round_robin' ? '#eff6ff' : '#f8fafc',
+                borderRadius:'10px', border: routingMode === 'round_robin' ? '2px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
+                background: routingMode === 'round_robin' ? 'var(--spc-view-info-bg)' : 'var(--spc-view-canvas)',
                 cursor:'pointer', transition:'all 0.15s'
               }}
             >
@@ -3804,8 +3804,8 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
                 style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
               />
               <div style={{ flex:1 }}>
-                <span style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem' }}>Round Robin (Equal Distribution)</span>
-                <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
+                <span style={{ fontWeight:700, color:'var(--spc-view-text)', fontSize:'0.9rem' }}>Round Robin (Equal Distribution)</span>
+                <div style={{ fontSize:'0.78rem', color:'var(--spc-view-muted)', marginTop:'0.25rem', lineHeight:1.4 }}>
                   Distributes incoming customer calls evenly one-by-one in circular rotation across eligible online agents.
                 </div>
               </div>
@@ -3816,8 +3816,8 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
               onClick={() => setRoutingMode('first_available')}
               style={{
                 display:'flex', alignItems:'flex-start', gap:'0.85rem', padding:'0.9rem 1rem',
-                borderRadius:'10px', border: routingMode === 'first_available' ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                background: routingMode === 'first_available' ? '#eff6ff' : '#f8fafc',
+                borderRadius:'10px', border: routingMode === 'first_available' ? '2px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
+                background: routingMode === 'first_available' ? 'var(--spc-view-info-bg)' : 'var(--spc-view-canvas)',
                 cursor:'pointer', transition:'all 0.15s'
               }}
             >
@@ -3830,8 +3830,8 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
                 style={{ marginTop:'0.2rem', accentColor:'#2563eb' }}
               />
               <div style={{ flex:1 }}>
-                <span style={{ fontWeight:700, color:'#1e293b', fontSize:'0.9rem' }}>First Available Agent</span>
-                <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.25rem', lineHeight:1.4 }}>
+                <span style={{ fontWeight:700, color:'var(--spc-view-text)', fontSize:'0.9rem' }}>First Available Agent</span>
+                <div style={{ fontSize:'0.78rem', color:'var(--spc-view-muted)', marginTop:'0.25rem', lineHeight:1.4 }}>
                   Routes the call straight to the first available telecaller currently in ready status.
                 </div>
               </div>
@@ -3839,12 +3839,12 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
           </div>
 
           {/* Sticky Agent Toggle */}
-          <div style={{ marginTop:'0.5rem', padding:'1rem', background:'#f8fafc', borderRadius:'10px', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between', gap:'1rem' }}>
+          <div style={{ marginTop:'0.5rem', padding:'1rem', background:'var(--spc-view-canvas)', borderRadius:'10px', border:'1px solid var(--spc-view-border)', display:'flex', alignItems:'center', justifyContent:'space-between', gap:'1rem' }}>
             <div>
-              <div style={{ fontWeight:700, color:'#1e293b', fontSize:'0.88rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+              <div style={{ fontWeight:700, color:'var(--spc-view-text)', fontSize:'0.88rem', display:'flex', alignItems:'center', gap:'0.4rem' }}>
                 <PhoneCall size={16} color="#7c3aed" /> Sticky Agent Routing (Returning Leads)
               </div>
-              <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:'0.2rem', lineHeight:1.4 }}>
+              <div style={{ fontSize:'0.78rem', color:'var(--spc-view-muted)', marginTop:'0.2rem', lineHeight:1.4 }}>
                 If an existing CRM lead calls back, prioritize ringing the specific telecaller assigned to that lead or who last spoke with them. If offline, auto-falls back to the inbound group.
               </div>
             </div>
@@ -3859,13 +3859,13 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
         </div>
 
         {/* Card 2: Option 4 - Dedicated Inbound Telecallers Selection */}
-        <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1rem' }}>
+        <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', display:'flex', flexDirection:'column', gap:'1rem' }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:'0.5rem' }}>
             <div>
-              <h3 style={{ fontSize:'1rem', fontWeight:700, margin:0, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+              <h3 style={{ fontSize:'1rem', fontWeight:700, margin:0, color:'var(--spc-view-text)', display:'flex', alignItems:'center', gap:'0.5rem' }}>
                 <Users size={18} color="#3b82f6" /> 2. Inbound Agent Selection List
               </h3>
-              <p style={{ color:'#64748b', fontSize:'0.8rem', marginTop:'0.25rem' }}>
+              <p style={{ color:'var(--spc-view-muted)', fontSize:'0.8rem', marginTop:'0.25rem' }}>
                 Choose specific telecallers (e.g. 1, 2, or 3) to receive new inbound calls so other team members are not disturbed.
               </p>
             </div>
@@ -3873,14 +3873,14 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
               <button
                 type="button"
                 onClick={selectAllFiltered}
-                style={{ fontSize:'0.75rem', fontWeight:600, color:'#2563eb', background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:'6px', padding:'0.25rem 0.6rem', cursor:'pointer' }}
+                style={{ fontSize:'0.75rem', fontWeight:600, color:'var(--spc-view-info)', background:'var(--spc-view-info-bg)', border:'1px solid var(--spc-view-info-border)', borderRadius:'6px', padding:'0.25rem 0.6rem', cursor:'pointer' }}
               >
                 Select All
               </button>
               <button
                 type="button"
                 onClick={clearSelection}
-                style={{ fontSize:'0.75rem', fontWeight:600, color:'#64748b', background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:'6px', padding:'0.25rem 0.6rem', cursor:'pointer' }}
+                style={{ fontSize:'0.75rem', fontWeight:600, color:'var(--spc-view-muted)', background:'var(--spc-view-raised)', border:'1px solid var(--spc-view-border)', borderRadius:'6px', padding:'0.25rem 0.6rem', cursor:'pointer' }}
               >
                 Clear All
               </button>
@@ -3888,13 +3888,13 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
           </div>
 
           {/* Selection summary badge */}
-          <div style={{ padding:'0.6rem 0.85rem', borderRadius:'8px', background: inboundAgentIds.length === 0 ? '#f0fdf4' : '#eff6ff', border: inboundAgentIds.length === 0 ? '1px solid #bbf7d0' : '1px solid #bfdbfe', fontSize:'0.8rem', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <span style={{ color: inboundAgentIds.length === 0 ? '#166534' : '#1e40af', fontWeight:600 }}>
+          <div style={{ padding:'0.6rem 0.85rem', borderRadius:'8px', background: inboundAgentIds.length === 0 ? 'var(--spc-view-success-bg)' : 'var(--spc-view-info-bg)', border: inboundAgentIds.length === 0 ? '1px solid var(--spc-view-success-border)' : '1px solid var(--spc-view-info-border)', fontSize:'0.8rem', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ color: inboundAgentIds.length === 0 ? 'var(--spc-view-success)' : 'var(--spc-view-info)', fontWeight:600 }}>
               {inboundAgentIds.length === 0
                 ? '🌐 All Online Agents Eligible (No filter applied)'
                 : `🎯 ${inboundAgentIds.length} Dedicated Agent(s) Selected for Inbound Calls`}
             </span>
-            <span style={{ fontSize:'0.72rem', color:'#64748b' }}>
+            <span style={{ fontSize:'0.72rem', color:'var(--spc-view-muted)' }}>
               Total: {humanAgents.length} Agents
             </span>
           </div>
@@ -3909,13 +3909,13 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
               onChange={e => setAgentSearch(e.target.value)}
               style={{
                 width:'100%', boxSizing:'border-box', padding:'0.45rem 0.75rem 0.45rem 2rem',
-                borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'0.82rem', background:'#f8fafc'
+                borderRadius:'8px', border:'1px solid var(--spc-view-border)', fontSize:'0.82rem', background:'var(--spc-view-canvas)'
               }}
             />
           </div>
 
           {/* Agent Checkbox List */}
-          <div style={{ maxHeight:'280px', overflowY:'auto', border:'1px solid #e2e8f0', borderRadius:'8px', padding:'0.5rem', display:'flex', flexDirection:'column', gap:'0.4rem', background:'#fafafa' }}>
+          <div style={{ maxHeight:'280px', overflowY:'auto', border:'1px solid var(--spc-view-border)', borderRadius:'8px', padding:'0.5rem', display:'flex', flexDirection:'column', gap:'0.4rem', background:'var(--spc-view-canvas)' }}>
             {filteredAgents.map((agent, aIdx) => {
               const isChecked = inboundAgentIds.includes(agent.id);
               const isOnline = agent.status === 'available' || agent.status === 'on_call';
@@ -3925,8 +3925,8 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
                   style={{
                     display:'flex', alignItems:'center', justifyContent:'space-between',
                     padding:'0.5rem 0.75rem', borderRadius:'6px',
-                    background: isChecked ? '#eff6ff' : 'white',
-                    border: isChecked ? '1px solid #93c5fd' : '1px solid #f1f5f9',
+                    background: isChecked ? 'var(--spc-view-info-bg)' : 'var(--spc-view-surface)',
+                    border: isChecked ? '1px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
                     cursor:'pointer', transition:'background 0.15s'
                   }}
                 >
@@ -3938,15 +3938,15 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
                       style={{ width:'16px', height:'16px', accentColor:'#2563eb', cursor:'pointer' }}
                     />
                     <div>
-                      <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.4rem' }}>
+                      <div style={{ fontSize:'0.85rem', fontWeight:600, color:'var(--spc-view-text)', display:'flex', alignItems:'center', gap:'0.4rem' }}>
                         {agent.display_name}
                         {agent.agent_code && (
-                          <span style={{ fontSize:'0.7rem', color:'#64748b', background:'#e2e8f0', padding:'0.1rem 0.4rem', borderRadius:'4px' }}>
+                          <span style={{ fontSize:'0.7rem', color:'var(--spc-view-muted)', background:'var(--spc-view-raised)', padding:'0.1rem 0.4rem', borderRadius:'4px' }}>
                             {agent.agent_code}
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize:'0.72rem', color:'#94a3b8', fontFamily:'monospace' }}>
+                      <div style={{ fontSize:'0.72rem', color:'var(--spc-view-muted)', fontFamily:'monospace' }}>
                         {agent.plivo_sip_uri || agent.plivo_username}
                       </div>
                     </div>
@@ -3954,12 +3954,12 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
 
                   <div style={{ display:'flex', alignItems:'center', gap:'0.4rem' }}>
                     {isOnline ? (
-                      <span style={{ display:'flex', alignItems:'center', gap:'0.25rem', fontSize:'0.72rem', fontWeight:600, color:'#16a34a', background:'#dcfce7', padding:'0.15rem 0.5rem', borderRadius:'999px' }}>
-                        <span style={{ width:'6px', height:'6px', borderRadius:'50%', background:'#16a34a' }}></span>
+                      <span style={{ display:'flex', alignItems:'center', gap:'0.25rem', fontSize:'0.72rem', fontWeight:600, color:'var(--spc-view-success)', background:'var(--spc-view-success-bg)', padding:'0.15rem 0.5rem', borderRadius:'999px' }}>
+                        <span style={{ width:'6px', height:'6px', borderRadius:'50%', background:'var(--spc-view-success-fill)' }}></span>
                         {agent.status}
                       </span>
                     ) : (
-                      <span style={{ display:'flex', alignItems:'center', gap:'0.25rem', fontSize:'0.72rem', fontWeight:500, color:'#94a3b8', background:'#f1f5f9', padding:'0.15rem 0.5rem', borderRadius:'999px' }}>
+                      <span style={{ display:'flex', alignItems:'center', gap:'0.25rem', fontSize:'0.72rem', fontWeight:500, color:'var(--spc-view-muted)', background:'var(--spc-view-raised)', padding:'0.15rem 0.5rem', borderRadius:'999px' }}>
                         <span style={{ width:'6px', height:'6px', borderRadius:'50%', background:'#94a3b8' }}></span>
                         offline
                       </span>
@@ -3969,7 +3969,7 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
               );
             })}
             {filteredAgents.length === 0 && (
-              <div style={{ textAlign:'center', color:'#94a3b8', fontSize:'0.82rem', padding:'1.5rem' }}>
+              <div style={{ textAlign:'center', color:'var(--spc-view-muted)', fontSize:'0.82rem', padding:'1.5rem' }}>
                 No agents match &quot;{agentSearch}&quot;
               </div>
             )}
@@ -3978,17 +3978,17 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
       </div>
 
       {/* Central Telephony Link Notice & Plivo Webhooks */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'0.75rem', paddingBottom:'1rem', borderBottom:'1px solid #f1f5f9' }}>
+      <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)', display:'flex', flexDirection:'column', gap:'1.25rem' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'0.75rem', paddingBottom:'1rem', borderBottom:'1px solid var(--spc-view-border)' }}>
           <div>
-            <h3 style={{ fontSize:'1rem', fontWeight:700, margin:0, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+            <h3 style={{ fontSize:'1rem', fontWeight:700, margin:0, color:'var(--spc-view-text)', display:'flex', alignItems:'center', gap:'0.5rem' }}>
               <Radio size={18} color="#3b82f6" /> Plivo Webhook Applications
             </h3>
-            <p style={{ color:'#64748b', fontSize:'0.8rem', margin:'0.25rem 0 0 0' }}>
+            <p style={{ color:'var(--spc-view-muted)', fontSize:'0.8rem', margin:'0.25rem 0 0 0' }}>
               Registered Plivo XML webhook endpoints handling inbound call routing and real-time audio bridging.
             </p>
           </div>
-          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'#eff6ff', border:'1px solid #bfdbfe', padding:'0.45rem 0.85rem', borderRadius:'8px', fontSize:'0.78rem', color:'#1d4ed8', fontWeight:600 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', background:'var(--spc-view-info-bg)', border:'1px solid var(--spc-view-info-border)', padding:'0.45rem 0.85rem', borderRadius:'8px', fontSize:'0.78rem', color:'var(--spc-view-info)', fontWeight:600 }}>
             <KeyRound size={14} /> Telephony Gateway, Caller ID &amp; Fallback Mobile are managed under <strong>Telephony &amp; Seats</strong>
           </div>
         </div>
@@ -3996,21 +3996,21 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
         {settings?.apps?.length > 0 ? (
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(320px, 1fr))', gap:'0.75rem' }}>
             {settings.apps.map(app => (
-              <div key={app.app_id} style={{ padding:'0.75rem 1rem', background:'#f8fafc', borderRadius:'8px', borderLeft:'3px solid #3b82f6' }}>
-                <div style={{ fontWeight:600, color:'#1e293b', fontSize:'0.9rem' }}>{app.app_name}</div>
-                <div style={{ fontSize:'0.75rem', color:'#64748b', marginTop:'0.25rem', fontFamily:'monospace' }}>ID: {app.app_id}</div>
-                <div style={{ fontSize:'0.72rem', color:'#94a3b8', marginTop:'0.2rem', wordBreak:'break-all' }}>Answer URL: {app.answer_url}</div>
+              <div key={app.app_id} style={{ padding:'0.75rem 1rem', background:'var(--spc-view-canvas)', borderRadius:'8px', borderLeft:'3px solid var(--spc-view-info-border)' }}>
+                <div style={{ fontWeight:600, color:'var(--spc-view-text)', fontSize:'0.9rem' }}>{app.app_name}</div>
+                <div style={{ fontSize:'0.75rem', color:'var(--spc-view-muted)', marginTop:'0.25rem', fontFamily:'monospace' }}>ID: {app.app_id}</div>
+                <div style={{ fontSize:'0.72rem', color:'var(--spc-view-muted)', marginTop:'0.2rem', wordBreak:'break-all' }}>Answer URL: {app.answer_url}</div>
               </div>
             ))}
           </div>
         ) : (
-          <p style={{ color:'#94a3b8', fontSize:'0.85rem', margin:0 }}>No applications found.</p>
+          <p style={{ color:'var(--spc-view-muted)', fontSize:'0.85rem', margin:0 }}>No applications found.</p>
         )}
       </div>
 
       {/* Routing Rules Diagram */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0' }}>
-        <h3 style={{ fontSize:'1rem', fontWeight:700, marginBottom:'1.25rem', color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+      <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)' }}>
+        <h3 style={{ fontSize:'1rem', fontWeight:700, marginBottom:'1.25rem', color:'var(--spc-view-text)', display:'flex', alignItems:'center', gap:'0.5rem' }}>
           <ArrowRight size={18} color="#3b82f6" /> Live Inbound Call Routing Flow
         </h3>
         <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexWrap:'wrap' }}>
@@ -4029,20 +4029,20 @@ function TabSettings({ agents = [], userCompany = '', tenantId = null }) {
             </React.Fragment>
           ))}
         </div>
-        <div style={{ marginTop:'1rem', padding:'0.75rem 1rem', background:'#f0f9ff', borderRadius:'8px', border:'1px solid #bae6fd', fontSize:'0.82rem', color:'#0369a1' }}>
+        <div style={{ marginTop:'1rem', padding:'0.75rem 1rem', background:'var(--spc-view-info-bg)', borderRadius:'8px', border:'1px solid var(--spc-view-info-border)', fontSize:'0.82rem', color:'var(--spc-view-info)' }}>
           <strong>Real-Time SIP Verification:</strong> Before dispatching XML, Plivo verifies softphone registration via live endpoint status. If softphones are connected in the browser, customer calls ring directly on screen with <strong>Caller Name, Company, and Lead Status badge</strong>!
         </div>
       </div>
 
       {/* Widget Preferences */}
-      <div style={{ background:'white', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid #e2e8f0' }}>
-        <h3 style={{ fontSize:'1rem', fontWeight:700, marginBottom:'1.25rem', color:'#1e293b', display:'flex', alignItems:'center', gap:'0.5rem' }}>
+      <div style={{ background:'var(--spc-view-surface)', borderRadius:'12px', padding:'1.5rem', boxShadow:'0 1px 3px rgba(0,0,0,0.07)', border:'1px solid var(--spc-view-border)' }}>
+        <h3 style={{ fontSize:'1rem', fontWeight:700, marginBottom:'1.25rem', color:'var(--spc-view-text)', display:'flex', alignItems:'center', gap:'0.5rem' }}>
           <Settings size={18} color="#3b82f6" /> Softphone Preferences (Browser Local)
         </h3>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'1rem', background:'#f8fafc', borderRadius:'8px', border:'1px solid #e2e8f0' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'1rem', background:'var(--spc-view-canvas)', borderRadius:'8px', border:'1px solid var(--spc-view-border)' }}>
           <div>
-            <div style={{ fontWeight:600, color:'#1e293b', fontSize:'0.95rem' }}>Auto-Answer Outbound Calls</div>
-            <div style={{ fontSize:'0.8rem', color:'#64748b', marginTop:'0.25rem' }}>When dialing a number, connect immediately without requiring the agent to click &quot;Accept&quot;.</div>
+            <div style={{ fontWeight:600, color:'var(--spc-view-text)', fontSize:'0.95rem' }}>Auto-Answer Outbound Calls</div>
+            <div style={{ fontSize:'0.8rem', color:'var(--spc-view-muted)', marginTop:'0.25rem' }}>When dialing a number, connect immediately without requiring the agent to click &quot;Accept&quot;.</div>
           </div>
           <button 
             onClick={() => {
@@ -4193,26 +4193,26 @@ function CallAdminPage({
 
   if (visibleTabs.length === 0) {
     return (
-      <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-        <h3 style={{ color: '#ef4444', marginBottom: '0.5rem' }}>Access Denied</h3>
+      <div data-spc-module-theme className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+        <h3 style={{ color: 'var(--spc-view-danger)', marginBottom: '0.5rem' }}>Access Denied</h3>
         <p>You do not have permission to view any sub-pages in Call Admin.</p>
       </div>
     );
   }
 
   return (
-    <div style={{ height:'100%', display:'flex', flexDirection:'column', background:'#f8fafc' }}>
+    <div data-spc-module-theme style={{ height:'100%', display:'flex', flexDirection:'column', background:'var(--spc-view-canvas)' }}>
       {/* Header */}
-      <div style={{ padding:'1.5rem 2rem 0', background:'white', borderBottom:'1px solid #e2e8f0', flexShrink:0 }}>
+      <div style={{ padding:'1.5rem 2rem 0', background:'var(--spc-view-surface)', borderBottom:'1px solid var(--spc-view-border)', flexShrink:0 }}>
         <div style={{ marginBottom:'1.25rem' }}>
-          <h1 style={{ fontSize:'1.6rem', fontWeight:800, color:'#1e293b', display:'flex', alignItems:'center', gap:'0.6rem', margin:0 }}>
+          <h1 style={{ fontSize:'1.6rem', fontWeight:800, color:'var(--spc-view-text)', display:'flex', alignItems:'center', gap:'0.6rem', margin:0 }}>
             <Settings size={26} color="#3b82f6" /> Call Center Administration
           </h1>
-          <p style={{ color:'#64748b', fontSize:'0.88rem', marginTop:'0.25rem' }}>Manage agents, endpoints, call logs, and routing settings</p>
+          <p style={{ color:'var(--spc-view-muted)', fontSize:'0.88rem', marginTop:'0.25rem' }}>Manage agents, endpoints, call logs, and routing settings</p>
         </div>
 
         {/* Tabs */}
-        <div style={{ display:'flex', gap:'0', borderBottom:'2px solid #f1f5f9', overflowX: 'auto' }}>
+        <div style={{ display:'flex', gap:'0', borderBottom:'2px solid var(--spc-view-border)', overflowX: 'auto' }}>
           {visibleTabs.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -4225,8 +4225,8 @@ function CallAdminPage({
                   padding:'0.75rem 1.25rem',
                   border:'none', background:'transparent', cursor:'pointer',
                   fontSize:'0.88rem', fontWeight: isActive ? 700 : 500,
-                  color: isActive ? '#3b82f6' : '#64748b',
-                  borderBottom: isActive ? '2px solid #3b82f6' : '2px solid transparent',
+                  color: isActive ? 'var(--spc-view-info)' : 'var(--spc-view-muted)',
+                  borderBottom: isActive ? '2px solid var(--spc-view-info-border)' : '2px solid transparent',
                   marginBottom:'-2px',
                   transition:'all 0.15s', whiteSpace:'nowrap'
                 }}
@@ -4239,9 +4239,9 @@ function CallAdminPage({
         </div>
       </div>
 
-      {loadError && <div role="alert" style={{ padding: '0.75rem 2rem', color: '#b91c1c' }}>{loadError} <button type="button" onClick={fetchData}>Retry</button></div>}
-      {needsData && loading && <div role="status" style={{ padding: '0.35rem 2rem', color: '#64748b', fontSize: '0.8rem' }}>Refreshing call administration…</div>}
-      {activeTab === 'agents' && !endpointsReady && <div role={endpointListError ? 'alert' : 'status'} style={{ padding: '0.35rem 2rem', color: '#64748b', fontSize: '0.8rem' }}>
+      {loadError && <div role="alert" style={{ padding: '0.75rem 2rem', color: 'var(--spc-view-danger)' }}>{loadError} <button type="button" onClick={fetchData}>Retry</button></div>}
+      {needsData && loading && <div role="status" style={{ padding: '0.35rem 2rem', color: 'var(--spc-view-muted)', fontSize: '0.8rem' }}>Refreshing call administration…</div>}
+      {activeTab === 'agents' && !endpointsReady && <div role={endpointListError ? 'alert' : 'status'} style={{ padding: '0.35rem 2rem', color: 'var(--spc-view-muted)', fontSize: '0.8rem' }}>
         {endpointListError || 'Loading complete SIP endpoint list…'} {endpointListError && <button type="button" onClick={fetchAgentEndpoints}>Retry SIP list</button>}
       </div>}
       {/* Tab Content */}

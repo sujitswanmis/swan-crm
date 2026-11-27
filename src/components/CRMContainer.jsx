@@ -89,6 +89,7 @@ const LiveFieldTrackingMap = dynamic(() => import('./Attendance/LiveFieldTrackin
 const FieldDeviceHealthAudit = dynamic(() => import('./FieldForce/FieldDeviceHealthAudit'), { loading: () => <WorkspaceSkeleton variant="table" /> });
 const BroadcastNotificationReceiver = dynamic(() => import('./common/BroadcastNotificationReceiver'), { ssr: false });
 const GlobalMobileTelemetryTracker = dynamic(() => import('./FieldForce/GlobalMobileTelemetryTracker'), { ssr: false });
+const ModulePermissionPromptModal = dynamic(() => import('./common/ModulePermissionPromptModal'), { ssr: false });
 
 markLeadStartupTiming('crm-module-ready');
 
@@ -1002,6 +1003,11 @@ export default function CRMContainer({
   const [orderPipelineMenuExpanded, setOrderPipelineMenuExpanded] = useState(false);
   const [orderPipelineStage, setOrderPipelineStage] = useState('ALL');
   const [complaintStageFilter, setComplaintStageFilter] = useState('ALL');
+  const [saasMenuExpanded, setSaasMenuExpanded] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    return cleanPath.startsWith('saas-master') || cleanPath.startsWith('saas_master') || cleanPath.startsWith('saas-studio') || cleanPath.startsWith('saas_studio');
+  });
   const [saasSubTab, setSaasSubTab] = useState(() => {
     const raw = (initialRoute || pathname || '');
     let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
@@ -1024,6 +1030,11 @@ export default function CRMContainer({
       return queryTab;
     }
     return 'pricing';
+  });
+  const [configMasterMenuExpanded, setConfigMasterMenuExpanded] = useState(() => {
+    const raw = (initialRoute || pathname || '');
+    let cleanPath = (typeof raw === 'string' ? raw : '').replace(/^\/+|\/+$/g, '').toLowerCase();
+    return cleanPath.startsWith('config-master') || cleanPath.startsWith('config_master') || cleanPath.startsWith('system-health') || cleanPath.startsWith('system_health') || cleanPath === 'admin_message_config' || cleanPath === 'admin-message-config' || (isMasterAdmin && (cleanPath === 'offline_rule' || cleanPath === 'offline-rule' || cleanPath === 'public_users' || cleanPath === 'public-users'));
   });
   const [configMasterSubTab, setConfigMasterSubTab] = useState(() => {
     const raw = (initialRoute || pathname || '');
@@ -1767,6 +1778,8 @@ export default function CRMContainer({
     if (['callcenter', 'calladmin', 'aicallcenter'].includes(cleanTab) || cleanTab.startsWith('calladmin/')) setCallCenterMenuExpanded(true);
     if (cleanTab === 'workplace' || cleanTab === 'workflow' || cleanTab.startsWith('workflow/')) setWorkflowMenuExpanded(true);
     if (cleanTab === 'settings' || cleanTab.startsWith('settings/') || cleanTab === 'sessions') setSettingsMenuExpanded(true);
+    if (['saas_master', 'saas_studio'].includes(cleanTab) || cleanTab.startsWith('saas-master/')) setSaasMenuExpanded(true);
+    if (cleanTab === 'config_master' || cleanTab.startsWith('config-master/')) setConfigMasterMenuExpanded(true);
     if (cleanTab === 'user_management_new' || cleanTab.startsWith('user_management_new/')) {
       if (['user_manage', 'roles', 'hierarchy'].includes(userManagementSubTab)) {
         setUserManageMenuExpanded(true);
@@ -1783,10 +1796,16 @@ export default function CRMContainer({
       }
     };
     const handleOpenBilling = () => {
+      try {
+        sessionStorage.setItem('open_saas_renewal_modal', '1');
+      } catch (_e) {}
+      setCurrentSettingSubTab('subscription_billing');
       setActiveTab('settings');
+      window.history.pushState(null, '', '/settings/subscription_billing');
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('setting_subtab_change', { detail: 'subscription_billing' }));
-      }, 50);
+        window.dispatchEvent(new CustomEvent('open-renewal-proforma-modal'));
+      }, 60);
     };
     window.addEventListener('setting_subtab_change', handleSubTabChange);
     window.addEventListener('open-saas-billing', handleOpenBilling);
@@ -2058,8 +2077,11 @@ export default function CRMContainer({
       }
 
       try {
-        const { logUserSession, checkSessionValidity } = await import('@/app/actions/audit');
-        const device = typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown Device';
+        const [{ logUserSession, checkSessionValidity }, { getClientDeviceSignature }] = await Promise.all([
+          import('@/app/actions/audit'),
+          import('@/utils/deviceSessionId')
+        ]);
+        const device = getClientDeviceSignature();
         
         // 1. Check if admin terminated this session FIRST
         // When in impersonation mode, the admin is actively viewing the employee view
@@ -3417,6 +3439,7 @@ export default function CRMContainer({
       }
       if (sub) setSaasSubTab(sub.toLowerCase());
       tab = isMasterAdmin ? 'saas_master' : 'dashboard';
+      if (isMasterAdmin) setSaasMenuExpanded(true);
     } else if (tab === 'config-master' || tab === 'config_master' || tab === 'configmaster' || tab === 'admin_message_config' || tab === 'admin-message-config' || tab === 'system-health' || tab === 'system_health' || (tab && (tab.startsWith('config-master/') || tab.startsWith('config_master/') || tab.startsWith('system-health/') || tab.startsWith('system_health/')))) {
       let sub = '';
       let healthSub = '';
@@ -3435,6 +3458,7 @@ export default function CRMContainer({
       if (sub) setConfigMasterSubTab(sub.toLowerCase());
       if (healthSub) setConfigMasterHealthSubTab(healthSub.toLowerCase());
       tab = isMasterAdmin ? 'config_master' : 'dashboard';
+      if (isMasterAdmin) setConfigMasterMenuExpanded(true);
     }
     if (tab) {
       setActiveTab(tab);
@@ -3615,6 +3639,7 @@ export default function CRMContainer({
         }
         if (sub) setSaasSubTab(sub.toLowerCase());
         tab = isMasterAdmin ? 'saas_master' : 'dashboard';
+        if (isMasterAdmin) setSaasMenuExpanded(true);
       } else if (tab === 'config-master' || tab === 'config_master' || tab === 'configmaster' || tab === 'admin_message_config' || tab === 'admin-message-config' || tab === 'system-health' || tab === 'system_health' || (tab && (tab.startsWith('config-master/') || tab.startsWith('config_master/') || tab.startsWith('system-health/') || tab.startsWith('system_health/')))) {
         let sub = '';
         let healthSub = '';
@@ -3633,6 +3658,7 @@ export default function CRMContainer({
         if (sub) setConfigMasterSubTab(sub.toLowerCase());
         if (healthSub) setConfigMasterHealthSubTab(healthSub.toLowerCase());
         tab = isMasterAdmin ? 'config_master' : 'dashboard';
+        if (isMasterAdmin) setConfigMasterMenuExpanded(true);
       }
       
       if (!tab || tab === 'home') {
@@ -5097,9 +5123,9 @@ export default function CRMContainer({
       <ResponsiveTableResizer />
       <SubscriptionExpiredModal subscription={tenantSubscription} isMasterAdmin={isMasterAdmin} />
       <AddonPurchaseModal
-        tenantId={tenantId}
+        tenantId={effectiveTenantId}
         subscription={tenantSubscription}
-        entitlements={tenantEntitlements}
+        entitlements={effectiveTenantEntitlements}
       />
       {/* Mobile Overlay */}
       <div className={`sidebar-overlay ${isSidebarOpen ? 'open' : ''}`} onClick={() => setIsSidebarOpen(false)}></div>
@@ -5355,6 +5381,7 @@ export default function CRMContainer({
               <button
                 onClick={() => toggleCategory('Master System')}
                 className="category-header"
+                data-active={activeTab === 'saas_master' || activeTab === 'saas_studio' || activeTab === 'config_master'}
                 suppressHydrationWarning
               >
                 {expandedCategories['Master System'] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -5366,81 +5393,215 @@ export default function CRMContainer({
                 suppressHydrationWarning
               >
                 <div className="category-modules-inner">
-                  {/* 1. SaaS Master (Standalone Page) */}
-                  <button
-                    onClick={() => handleTabChange('saas_master')}
-                    className="nav-item"
-                    data-active={activeTab === 'saas_master' || activeTab === 'saas_studio'}
-                    title={isSidebarCollapsed ? "SaaS Master" : undefined}
-                    style={{
-                      background: (activeTab === 'saas_master' || activeTab === 'saas_studio')
-                        ? 'linear-gradient(135deg, rgba(79, 70, 229, 0.16) 0%, rgba(124, 58, 237, 0.16) 100%)'
-                        : 'none',
-                      borderLeft: (activeTab === 'saas_master' || activeTab === 'saas_studio') ? '3px solid #7c3aed' : 'none',
-                      width: '100%',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.75rem'
-                    }}
-                  >
-                    {renderNavIconBadge(<Crown />, '#f59e0b')}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                      <span style={{ fontWeight: (activeTab === 'saas_master' || activeTab === 'saas_studio') ? 600 : 500 }}>SaaS Master</span>
-                      <span style={{
-                        fontSize: '0.62rem',
-                        background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
-                        color: '#92400e',
-                        padding: '1px 6px',
-                        borderRadius: '999px',
-                        fontWeight: 800,
-                        letterSpacing: '0.04em',
-                        border: '1px solid #fcd34d'
-                      }}>
-                        SAAS
+                  {/* 1. SaaS Master */}
+                  <SidebarSubmenu collapsed={isSidebarCollapsed}>
+                    <button
+                      onClick={() => {
+                        if (isSidebarCollapsed) {
+                          setIsSidebarCollapsed(false);
+                          setSaasMenuExpanded(true);
+                        } else {
+                          setSaasMenuExpanded(!saasMenuExpanded);
+                        }
+                        handleTabChange('saas_master');
+                      }}
+                      className="nav-item"
+                      data-active={activeTab === 'saas_master' || activeTab === 'saas_studio'}
+                      title={isSidebarCollapsed ? "SaaS Master" : undefined}
+                      style={{
+                        background: (activeTab === 'saas_master' || activeTab === 'saas_studio')
+                          ? 'linear-gradient(135deg, rgba(79, 70, 229, 0.16) 0%, rgba(124, 58, 237, 0.16) 100%)'
+                          : 'none',
+                        borderLeft: (activeTab === 'saas_master' || activeTab === 'saas_studio') ? '3px solid #7c3aed' : 'none',
+                        width: '100%',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem'
+                      }}
+                    >
+                      <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                        {saasMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                       </span>
-                    </div>
-                  </button>
+                      {renderNavIconBadge(<Crown />, '#f59e0b')}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                        <span style={{ fontWeight: (activeTab === 'saas_master' || activeTab === 'saas_studio') ? 600 : 500 }}>SaaS Master</span>
+                        <span style={{
+                          fontSize: '0.62rem',
+                          background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+                          color: '#92400e',
+                          padding: '1px 6px',
+                          borderRadius: '999px',
+                          fontWeight: 800,
+                          letterSpacing: '0.04em',
+                          border: '1px solid #fcd34d'
+                        }}>
+                          SAAS
+                        </span>
+                      </div>
+                    </button>
 
-                  {/* 2. Config Master (Standalone Page) */}
-                  <button
-                    onClick={() => handleTabChange('config_master')}
-                    className="nav-item"
-                    data-active={activeTab === 'config_master'}
-                    title={isSidebarCollapsed ? "Config Master" : undefined}
-                    style={{
-                      background: activeTab === 'config_master'
-                        ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.16) 0%, rgba(99, 102, 241, 0.16) 100%)'
-                        : 'none',
-                      borderLeft: activeTab === 'config_master' ? '3px solid #3b82f6' : 'none',
-                      width: '100%',
-                      textAlign: 'left',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.75rem'
-                    }}
-                  >
-                    {renderNavIconBadge(<Sliders />, '#6366f1')}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                      <span style={{ fontWeight: activeTab === 'config_master' ? 600 : 500 }}>Config Master</span>
-                      <span style={{
-                        fontSize: '0.62rem',
-                        background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)',
-                        color: '#3730a3',
-                        padding: '1px 6px',
-                        borderRadius: '999px',
-                        fontWeight: 800,
-                        letterSpacing: '0.04em',
-                        border: '1px solid #a5b4fc'
-                      }}>
-                        CONFIG
-                      </span>
+                    <div className={`submenu-list ${saasMenuExpanded ? 'expanded' : ''}`}>
+                      <div className="submenu-inner">
+                        <button
+                          onClick={() => handleSaasSubTabChange('pricing')}
+                          className="submenu-item"
+                          data-active={(activeTab === 'saas_master' || activeTab === 'saas_studio') && (saasSubTab === 'pricing' || !saasSubTab)}
+                        >
+                          💵 Pricing Catalog
+                        </button>
+                        <button
+                          onClick={() => handleSaasSubTabChange('tenants')}
+                          className="submenu-item"
+                          data-active={(activeTab === 'saas_master' || activeTab === 'saas_studio') && (saasSubTab === 'tenants' || saasSubTab === 'workspaces')}
+                        >
+                          🏢 Client Workspaces
+                        </button>
+                        <button
+                          onClick={() => handleSaasSubTabChange('billing')}
+                          className="submenu-item"
+                          data-active={(activeTab === 'saas_master' || activeTab === 'saas_studio') && (saasSubTab === 'billing' || saasSubTab === 'invoices')}
+                        >
+                          🧾 Master Invoices
+                        </button>
+                        <button
+                          onClick={() => handleSaasSubTabChange('requests')}
+                          className="submenu-item"
+                          data-active={(activeTab === 'saas_master' || activeTab === 'saas_studio') && saasSubTab === 'requests'}
+                        >
+                          ⏳ Pending Requests
+                        </button>
+                        <button
+                          onClick={() => handleSaasSubTabChange('trials')}
+                          className="submenu-item"
+                          data-active={(activeTab === 'saas_master' || activeTab === 'saas_studio') && saasSubTab === 'trials'}
+                        >
+                          🎁 Trials & Expiry
+                        </button>
+                        <button
+                          onClick={() => handleSaasSubTabChange('analytics')}
+                          className="submenu-item"
+                          data-active={(activeTab === 'saas_master' || activeTab === 'saas_studio') && saasSubTab === 'analytics'}
+                        >
+                          📊 Usage & Matrix
+                        </button>
+                      </div>
                     </div>
-                  </button>
+                  </SidebarSubmenu>
+
+                  {/* 2. Config Master */}
+                  <SidebarSubmenu collapsed={isSidebarCollapsed}>
+                    <button
+                      onClick={() => {
+                        if (isSidebarCollapsed) {
+                          setIsSidebarCollapsed(false);
+                          setConfigMasterMenuExpanded(true);
+                        } else {
+                          setConfigMasterMenuExpanded(!configMasterMenuExpanded);
+                        }
+                        handleTabChange('config_master');
+                      }}
+                      className="nav-item"
+                      data-active={activeTab === 'config_master'}
+                      title={isSidebarCollapsed ? "Config Master" : undefined}
+                      style={{
+                        background: activeTab === 'config_master'
+                          ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.16) 0%, rgba(99, 102, 241, 0.16) 100%)'
+                          : 'none',
+                        borderLeft: activeTab === 'config_master' ? '3px solid #3b82f6' : 'none',
+                        width: '100%',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem'
+                      }}
+                    >
+                      <span className="nav-chevron" style={{ marginRight: '-0.25rem' }}>
+                        {configMasterMenuExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                      </span>
+                      {renderNavIconBadge(<Sliders />, '#6366f1')}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                        <span style={{ fontWeight: activeTab === 'config_master' ? 600 : 500 }}>Config Master</span>
+                        <span style={{
+                          fontSize: '0.62rem',
+                          background: 'linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%)',
+                          color: '#3730a3',
+                          padding: '1px 6px',
+                          borderRadius: '999px',
+                          fontWeight: 800,
+                          letterSpacing: '0.04em',
+                          border: '1px solid #a5b4fc'
+                        }}>
+                          CONFIG
+                        </span>
+                      </div>
+                    </button>
+
+                    <div className={`submenu-list ${configMasterMenuExpanded ? 'expanded' : ''}`}>
+                      <div className="submenu-inner">
+                        <button
+                          onClick={() => handleConfigMasterSubTabChange('notifications')}
+                          className="submenu-item"
+                          data-active={activeTab === 'config_master' && configMasterSubTab === 'notifications'}
+                        >
+                          🔔 User Notifications
+                        </button>
+                        <button
+                          onClick={() => handleConfigMasterSubTabChange('messages')}
+                          className="submenu-item"
+                          data-active={activeTab === 'config_master' && (configMasterSubTab === 'messages' || !configMasterSubTab)}
+                        >
+                          🛡️ Platform Messaging & OTPs
+                        </button>
+                        <button
+                          onClick={() => handleConfigMasterSubTabChange('status')}
+                          className="submenu-item"
+                          data-active={activeTab === 'config_master' && configMasterSubTab === 'status'}
+                        >
+                          🩺 System Health & Logs
+                        </button>
+                        <button
+                          onClick={() => handleConfigMasterSubTabChange('automation')}
+                          className="submenu-item"
+                          data-active={activeTab === 'config_master' && configMasterSubTab === 'automation'}
+                        >
+                          ⚡ Automation & Webhook API
+                        </button>
+                        <button
+                          onClick={() => handleConfigMasterSubTabChange('tenant_integrations')}
+                          className="submenu-item"
+                          data-active={activeTab === 'config_master' && configMasterSubTab === 'tenant_integrations'}
+                        >
+                          🔌 Tenant API & Integrations
+                        </button>
+                        <button
+                          onClick={() => handleConfigMasterSubTabChange('navigation')}
+                          className="submenu-item"
+                          data-active={activeTab === 'config_master' && configMasterSubTab === 'navigation'}
+                        >
+                          🧭 Page Navigation Rules
+                        </button>
+                        <button
+                          onClick={() => handleConfigMasterSubTabChange('offline_rule')}
+                          className="submenu-item"
+                          data-active={activeTab === 'config_master' && configMasterSubTab === 'offline_rule'}
+                        >
+                          📴 Offline Rules & Sync Policy
+                        </button>
+                        <button
+                          onClick={() => handleConfigMasterSubTabChange('public_users')}
+                          className="submenu-item"
+                          data-active={activeTab === 'config_master' && configMasterSubTab === 'public_users'}
+                        >
+                          👥 Public User Management
+                        </button>
+                      </div>
+                    </div>
+                  </SidebarSubmenu>
                 </div>
               </div>
             </div>
@@ -10699,6 +10860,14 @@ export default function CRMContainer({
         <GlobalMobileTelemetryTracker
           userId={userId}
           company={userCompany || 'TNT00001'}
+          trackingPolicy={moduleAccess?.tracking_policy || 'PUNCH_ONLY'}
+        />
+      )}
+
+      {/* Universal On-Demand Device Permission Prompt Modal (Future Modules Need Zero APK Upgrade) */}
+      {isMounted && userId && (
+        <ModulePermissionPromptModal
+          activeModule={activeTab}
           trackingPolicy={moduleAccess?.tracking_policy || 'PUNCH_ONLY'}
         />
       )}

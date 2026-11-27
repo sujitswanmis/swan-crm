@@ -947,9 +947,15 @@ for (const preset of ROLE_PRESETS) {
     ...(settings || { view: false, add: false, edit: false, delete: false }),
     sub_items: {
       ...(settings?.sub_items || Object.fromEntries([
-        'business', 'products', 'order_pipeline', 'complaints_config', 'crm', 'recruiter_config',
+        'business', 'products', 'party_config', 'order_pipeline', 'complaints_config', 'crm', 'recruiter_config',
         'notifications', 'departments', 'targets', 'sessions', 'holidays', 'data', 'media',
       ].map(id => [id, { view: settings?.view === true, add: manages, edit: manages, delete: false }]))),
+      subscription_billing: {
+        view: settings?.sub_items?.subscription_billing?.view ?? manages,
+        add: false,
+        edit: false,
+        delete: false
+      },
       ...Object.fromEntries(INTEGRATION_TABS.map(tab => [tab.id, {
         view: settings?.view === true, add: manages, edit: manages, delete: false,
       }])),

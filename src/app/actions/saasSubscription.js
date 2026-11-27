@@ -3,10 +3,10 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import fs from 'fs/promises';
 import path from 'path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { formatBranchStandard } from '@/utils/branchAccess';
 import { requireSaasMaster, requireSaasTenant, userBelongsToSaasTenant, isSaasUserActive, SAAS_UUID } from '@/lib/saasAccess';
-import { saasNumber, saasEndOfDay, saasAddMonths, calculateSaasPrice, SAAS_CYCLE_MONTHS, SAAS_INTERNAL_KEYS } from '@/lib/saasBilling';
+import { saasNumber, saasDateKey, saasEndOfDay, saasAddMonths, saasInvoiceAmounts, calculateSaasPrice, SAAS_CYCLE_MONTHS, SAAS_INTERNAL_KEYS } from '@/lib/saasBilling';
 import {
   DEFAULT_TENANT_ID,
   DEFAULT_PROCESS_CATALOG,
@@ -35,6 +35,29 @@ async function writeLocalSmtpLimits(limits) {
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const MASTER_HQ_IDS = new Set([
+  '0a37b8e8-1c28-4e19-8891-951fc3f8f8af',
+  'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4'
+]);
+
+/** Return true when a tenant row or identifier represents the permanent Master HQ workspace. */
+function isMasterHqTenant(t) {
+  if (!t) return false;
+  if (typeof t === 'string') {
+    const v = t.trim().toLowerCase();
+    return MASTER_HQ_IDS.has(v) || v === 'tnt00001' || v === 'supuja_creations' || v === 'supuja creations';
+  }
+  const idLower = String(t.id || '').trim().toLowerCase();
+  const codeLower = String(t.tenant_code || '').trim().toLowerCase();
+  const nameLower = String(t.name || '').trim().toLowerCase();
+  return (
+    MASTER_HQ_IDS.has(idLower) ||
+    codeLower === 'tnt00001' ||
+    codeLower === 'supuja_creations' ||
+    nameLower === 'supuja creations'
+  );
+}
 
 function isValidUuid(val) {
   return Boolean(val && UUID_REGEX.test(String(val).trim()));
@@ -300,28 +323,45 @@ export async function getTenantSubscription(tenantId = DEFAULT_TENANT_ID) {
     const admin = getAdminClient();
     const target = await resolveSaasTenantUuid(admin, tenantId);
     await requireSaasTenant(admin, target);
-    const {
-      data: sub,
-      error
-    } = await admin.from('tenant_subscriptions').select('*').eq('tenant_id', target).order('created_at', {
-      ascending: false
-    }).limit(1).maybeSingle();
+    const [{ data: tenantRow }, { data: sub, error }] = await Promise.all([
+      admin.from('tenants').select('id,name,tenant_code').eq('id', target).maybeSingle(),
+      admin.from('tenant_subscriptions').select('*').eq('tenant_id', target).order('created_at', {
+        ascending: false
+      }).limit(1).maybeSingle()
+    ]);
     if (error) throw error;
+    const isMasterHq = isMasterHqTenant(tenantRow) || isMasterHqTenant(target) || isMasterHqTenant(tenantId);
+    if (isMasterHq) {
+      return {
+        success: true,
+        subscription: {
+          ...(sub || { tenant_id: target, plan_name: 'MASTER_HQ_LIFETIME', user_seat_limit: 999 }),
+          days_remaining: null,
+          is_expired: false,
+          is_expiring_soon: false,
+          is_master_hq: true,
+          never_expires: true,
+          status: 'ACTIVE'
+        }
+      };
+    }
     if (!sub) return {
       success: false,
       error: 'Subscription not found',
       subscription: null
     };
-    const ms = new Date(sub.valid_until).getTime() - Date.now();
-    const days = Math.ceil(ms / 86400000);
+    const { daysRemaining, isExpired, isExpiringSoon } = getIstDaysSummary(sub.valid_until);
+    const days = daysRemaining ?? 0;
     return {
       success: true,
       subscription: {
         ...sub,
         days_remaining: days,
-        is_expired: ms <= 0,
-        is_expiring_soon: ms > 0 && days <= 7,
-        status: ms <= 0 ? 'EXPIRED' : days <= 7 && sub.status === 'ACTIVE' ? 'EXPIRING_SOON' : sub.status
+        is_expired: isExpired,
+        is_expiring_soon: isExpiringSoon,
+        is_master_hq: false,
+        never_expires: false,
+        status: isExpired ? 'EXPIRED' : isExpiringSoon && sub.status === 'ACTIVE' ? 'EXPIRING_SOON' : sub.status
       }
     };
   } catch (err) {
@@ -341,15 +381,17 @@ export async function getTenantEntitlements(tenantId = DEFAULT_TENANT_ID) {
     const admin = getAdminClient();
     const target = await resolveSaasTenantUuid(admin, tenantId);
     await requireSaasTenant(admin, target);
-    const {
-      data: rows,
-      error
-    } = await admin.from('tenant_entitlements').select('module_key,is_enabled').eq('tenant_id', target);
+    const [{ data: tenantRow }, { data: rows, error }] = await Promise.all([
+      admin.from('tenants').select('id,name,tenant_code').eq('id', target).maybeSingle(),
+      admin.from('tenant_entitlements').select('module_key,is_enabled').eq('tenant_id', target)
+    ]);
     if (error) throw error;
     const entitlements = Object.fromEntries((rows || []).map(r => [r.module_key, r.is_enabled === true]));
-    if (!rows?.length && target === DEFAULT_TENANT_ID) DEFAULT_PROCESS_CATALOG.forEach(p => {
-      entitlements[p.process_code] = true;
-    });
+    if (isMasterHqTenant(tenantRow) || isMasterHqTenant(target) || (!rows?.length && target === DEFAULT_TENANT_ID)) {
+      DEFAULT_PROCESS_CATALOG.forEach(p => {
+        entitlements[p.process_code] = true;
+      });
+    }
     return {
       success: true,
       entitlements
@@ -457,6 +499,11 @@ export async function getAllTenantsWithSubscriptions() {
       .from('user_roles')
       .select('tenant_id, company, user_id, role, emp_official_mail_id, is_approved, emp_status');
 
+    const { data: pendingEvents } = await admin
+      .from('saas_billing_events')
+      .select('tenant_id, operation, invoice_number, invoice')
+      .in('operation', ['MODULE_PROFORMA', 'ADDON_PROFORMA', 'RENEWAL_PROFORMA']);
+
     // Load telephony & forward settings from call_agents for enrichment
     const { data: systemAgents } = await admin
       .from('call_agents')
@@ -500,6 +547,7 @@ export async function getAllTenantsWithSubscriptions() {
     if (subsError || entitlementsError || userCountError) throw subsError || entitlementsError || userCountError;
     const now = new Date();
 
+    const expiringForAutoPi = [];
     const enriched = (tenantsList || []).map(t => {
       const sub = (subsList || []).find(s => s.tenant_id === t.id);
       const tEntitlements = (entitlementsList || [])
@@ -508,20 +556,22 @@ export async function getAllTenantsWithSubscriptions() {
 
       const activeUserCount = (userCounts || []).filter(u => userBelongsToSaasTenant(u,t,tenantsList) && isSaasUserActive(u)).length;
 
+      const isMasterHq = isMasterHqTenant(t);
       let daysRemaining = null;
       let isExpired = false;
       let isExpiringSoon = false;
 
-      if (sub?.valid_until) {
-        const expiry = new Date(sub.valid_until);
-        const msDiff = expiry.getTime() - now.getTime();
-        daysRemaining = Math.ceil(msDiff / (1000 * 60 * 60 * 24));
-        isExpired = daysRemaining <= 0;
-        isExpiringSoon = daysRemaining > 0 && daysRemaining <= 7;
+      if (!isMasterHq && sub?.valid_until) {
+        ({ daysRemaining, isExpired, isExpiringSoon } = getIstDaysSummary(sub.valid_until));
+        if ((isExpired || isExpiringSoon) && !['ARCHIVED', 'DELETED', 'DRAFT', 'SUSPENDED'].includes(t.status) && !['SUSPENDED', 'READ_ONLY', 'ARCHIVED'].includes(sub?.status)) {
+          expiringForAutoPi.push({ tenant: t, sub });
+        }
       }
 
       let resolvedStatus = 'ACTIVE';
-      if (t.status === 'ARCHIVED' || t.status === 'DELETED') {
+      if (isMasterHq) {
+        resolvedStatus = 'ACTIVE';
+      } else if (t.status === 'ARCHIVED' || t.status === 'DELETED') {
         resolvedStatus = 'DELETED';
       } else if (t.status === 'DRAFT') {
         resolvedStatus = 'DRAFT';
@@ -550,7 +600,6 @@ export async function getAllTenantsWithSubscriptions() {
         branches = (t.branches || []).map(formatBranchStandard);
       }
 
-      const isMasterHq = t.name === 'SuPuja Creations' || t.tenant_code === 'SUPUJA_CREATIONS' || t.tenant_code === 'TNT00001' || t.id === '0a37b8e8-1c28-4e19-8891-951fc3f8f8af' || t.id === 'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4';
       const smtpLimit = isMasterHq 
         ? 999 
         : (Number(smtpLimitsMap[t.id]) || Number(smtpLimitsMap[t.tenant_code]) || Number(smtpLimitsMap[t.name]) || 1);
@@ -568,6 +617,40 @@ export async function getAllTenantsWithSubscriptions() {
       const authToken = telConfig.auth_token || fallbackTel.auth_token || (isMasterHq ? (process.env.PLIVO_AUTH_TOKEN || '') : '');
       const fromNumber = telConfig.from_number || fallbackTel.from_number || process.env.PLIVO_FROM_NUMBER || '+918035340622';
 
+      const seatLimitValue = sub?.user_seat_limit || (t.id === DEFAULT_TENANT_ID ? 200 : 5);
+      const hasComboLeadCalling = tEntitlements.includes('LEADS_WITH_CALLING');
+      const entDetails = (billableCatalog || [])
+        .filter(p => tEntitlements.includes(p.process_code))
+        .map(p => {
+          const entRow = (entitlementsList || []).find(e => e.tenant_id === t.id && e.module_key === p.process_code);
+          const customLicensed = Number(entRow?.config_json?.licensed_seats);
+          const licensedSeats = customLicensed > 0 ? customLicensed : seatLimitValue;
+          const isRedundantCombo = hasComboLeadCalling && (p.process_code === 'LEADS_ONLY' || p.process_code === 'CALLING_STANDALONE');
+          const effectiveRate = pricingConfig?.tenant_rates?.[t.id]?.[p.process_code] ?? p.monthly_rate_per_user;
+          return {
+            module_key: p.process_code,
+            display_name: p.display_name,
+            monthly_rate_per_user: effectiveRate,
+            licensed_seats: licensedSeats,
+            has_custom_seats: Boolean(customLicensed > 0),
+            included_in_combo: isRedundantCombo
+          };
+        });
+      const pendingRequests = (pendingEvents || [])
+        .filter(ev => ev.tenant_id === t.id && String(ev.invoice?.status || '').toUpperCase() === 'PENDING')
+        .map(ev => ({
+          invoice_number: ev.invoice_number,
+          operation: ev.operation,
+          category: ev.invoice?.category || ev.operation,
+          description: ev.invoice?.description || '',
+          module_key: ev.invoice?.module_key || null,
+          module_name: ev.invoice?.module_name || null,
+          requested_users: ev.invoice?.requested_users ? Number(ev.invoice.requested_users) : null,
+          additional_seats: Number(ev.invoice?.additional_seats || 0),
+          amount: Number(ev.invoice?.amount || 0),
+          total_payable: Number(ev.invoice?.total_payable || ev.invoice?.amount || 0)
+        }));
+
       return {
         id: t.id,
         tenant_code: t.tenant_code,
@@ -577,18 +660,33 @@ export async function getAllTenantsWithSubscriptions() {
         branches,
         status: resolvedStatus,
         raw_status: t.status,
+        is_master_hq: isMasterHq,
         created_at: t.created_at,
         subscription: sub ? {
           ...sub,
           days_remaining: daysRemaining,
           is_expired: isExpired,
           is_expiring_soon: isExpiringSoon,
+          is_master_hq: isMasterHq,
+          never_expires: isMasterHq,
           status: resolvedStatus
-        } : null,
+        } : (isMasterHq ? {
+          tenant_id: t.id,
+          plan_name: 'MASTER_HQ_LIFETIME',
+          user_seat_limit: 999,
+          days_remaining: null,
+          is_expired: false,
+          is_expiring_soon: false,
+          is_master_hq: true,
+          never_expires: true,
+          status: 'ACTIVE'
+        } : null),
         entitlements: tEntitlements,
+        entitlement_details: entDetails,
+        pending_requests: pendingRequests,
         active_users_count: activeUserCount,
         module_rates: Object.fromEntries((billableCatalog || []).map(p => [p.process_code, pricingConfig?.tenant_rates?.[t.id]?.[p.process_code] ?? p.monthly_rate_per_user])),
-        user_seat_limit: sub?.user_seat_limit || (t.id === DEFAULT_TENANT_ID ? 200 : 5),
+        user_seat_limit: seatLimitValue,
         smtp_accounts_limit: smtpLimit,
         calling_seats_limit: callingSeatLimit,
         calling_mode: callingMode,
@@ -603,6 +701,10 @@ export async function getAllTenantsWithSubscriptions() {
         }
       };
     });
+
+    if (expiringForAutoPi.length > 0) {
+      await Promise.all(expiringForAutoPi.map(({ tenant: t, sub }) => ensureAutoRenewalProformaForTenant(admin, t, sub, t.id)));
+    }
 
     return { success: true, tenants: enriched };
   } catch (err) {
@@ -659,6 +761,28 @@ export async function extendTenantSubscription(tenantId, monthsToAdd = 1) {
           billing_cycle: months === 12 ? 'YEARLY' : (months === 6 ? 'HALF_YEARLY' : (months === 3 ? 'QUARTERLY' : 'MONTHLY'))
         }]);
       if (error) throw error;
+    }
+
+    // Also log audit event without blocking validity extension
+    try {
+      const actor = await requireSaasMaster(admin);
+      const { data: tenantInfo } = await admin.from('tenants').select('tenant_code').eq('id', tenantId).maybeSingle();
+      await recordNonPaidSaasEvent(admin, actor.user.id, {
+        tenantId,
+        tenantCode: tenantInfo?.tenant_code || 'WS',
+        operation: 'MANUAL_EXTENSION',
+        invoiceType: 'log',
+        category: 'MANUAL_EXTENSION',
+        description: `Manual validity extension (+${months} month${months > 1 ? 's' : ''}) — non-payment adjustment`,
+        totalSeats: existing?.user_seat_limit || 10,
+        monthsAdded: months,
+        validFrom: existing?.valid_until || new Date().toISOString(),
+        validUntil: newExpiry.toISOString(),
+        status: 'LOGGED',
+        requestPayload: { months, previous_valid_until: existing?.valid_until || null }
+      });
+    } catch (logErr) {
+      console.warn('extendTenantSubscription audit log skipped:', logErr.message);
     }
 
     return {
@@ -945,16 +1069,11 @@ export async function createTenantWorkspace({
 /**
  * Tenant Self-Serve / Add-on: Purchase additional user seats
  */
-export async function purchaseAddonSeats(tenantId, additionalSeats, requestId = null) {
+export async function purchaseAddonSeats(tenantId, additionalSeats, requestId = null, moduleKey = null, moduleAdditions = null) {
   try {
     const admin = getAdminClient();
     const actor = await requireSaasTenant(admin, tenantId, {
       manage: true
-    });
-    const add = saasNumber(additionalSeats, 'Additional seats', {
-      min: 1,
-      max: 100000,
-      integer: true
     });
     const {
       data: sub,
@@ -967,25 +1086,207 @@ export async function purchaseAddonSeats(tenantId, additionalSeats, requestId = 
     const {
       data: ent,
       error: entError
-    } = await admin.from('tenant_entitlements').select('module_key,is_enabled').eq('tenant_id', tenantId);
+    } = await admin.from('tenant_entitlements').select('module_key,is_enabled,config_json').eq('tenant_id', tenantId);
     if (entError) throw entError;
     const pricing = await getProcessCatalog(tenantId);
     if (!pricing.success) throw new Error(pricing.error);
-    const rate = pricing.catalog.filter(p => p.is_active !== false && (ent || []).some(e => e.module_key === p.process_code && e.is_enabled)).reduce((sum, p) => sum + Number(p.monthly_rate_per_user), 0);
-    const days = Math.max(0, Math.ceil((new Date(sub.valid_until) - Date.now()) / 86400000));
-    if (!days) throw new Error('Renew before requesting additional seats.');
+    const entMap = new Map((ent || []).map(e => [e.module_key, e]));
+    const enabledSet = new Set((ent || []).filter(e => e.is_enabled).map(e => e.module_key));
+    const hasComboLeadCalling = enabledSet.has('LEADS_WITH_CALLING');
+
+    const { daysRemaining, isExpired } = getIstDaysSummary(sub.valid_until);
+    if (isExpired || daysRemaining === null) throw new Error('Renew before requesting additional seats.');
+    const days = Math.max(1, daysRemaining);
+    const workspaceLimit = Math.max(1, Number(sub.user_seat_limit) || 5);
+
+    // Normalize batch module additions (multi-module table) or single moduleKey fallback
+    let normalizedAdditions = [];
+    if (Array.isArray(moduleAdditions) && moduleAdditions.length > 0) {
+      const seenKeys = new Set();
+      for (const entry of moduleAdditions) {
+        const key = String(entry?.module_key || '').trim();
+        if (!key || seenKeys.has(key) || SAAS_INTERNAL_KEYS.has(key) || !enabledSet.has(key)) continue;
+        const catItem = pricing.catalog.find(p => p.process_code === key && p.is_active !== false);
+        if (!catItem) continue;
+        const n = saasNumber(entry?.additional_seats, `${catItem.display_name} additional seats`, {
+          min: 1,
+          max: 100000,
+          integer: true
+        });
+        seenKeys.add(key);
+        normalizedAdditions.push({ catItem, add: n });
+      }
+      if (normalizedAdditions.length === 0) {
+        throw new Error('Select at least one active module and enter extra seats.');
+      }
+    } else if (moduleKey && moduleKey !== 'ALL_WORKSPACE') {
+      if (!enabledSet.has(moduleKey) || SAAS_INTERNAL_KEYS.has(moduleKey)) {
+        throw new Error('Selected module is not active or not found.');
+      }
+      const targetModuleItem = pricing.catalog.find(p => p.process_code === moduleKey && p.is_active !== false);
+      if (!targetModuleItem) throw new Error('Selected module is not active or not found.');
+      const n = saasNumber(additionalSeats, 'Additional seats', { min: 1, max: 100000, integer: true });
+      normalizedAdditions.push({ catItem: targetModuleItem, add: n });
+    }
+
+    // Multi-module or single-module per-module seat expansion via MODULE_PROFORMA
+    if (normalizedAdditions.length > 0) {
+      const seatLineItems = normalizedAdditions.map(({ catItem, add: modAdd }) => {
+        const entRow = entMap.get(catItem.process_code);
+        const customModSeats = Number(entRow?.config_json?.licensed_seats);
+        const currentModuleSeats = customModSeats > 0 ? customModSeats : workspaceLimit;
+        const newModuleSeats = currentModuleSeats + modAdd;
+        const rate = Number(catItem.monthly_rate_per_user || 0);
+        const netAmount = Math.round(modAdd * rate * days / 30 * 100) / 100;
+        return {
+          module_key: catItem.process_code,
+          display_name: catItem.display_name,
+          current_module_seats: currentModuleSeats,
+          new_module_seats: newModuleSeats,
+          seats: modAdd,
+          rate_per_user: rate,
+          days_remaining: days,
+          net_amount: netAmount
+        };
+      });
+
+      const isSingle = seatLineItems.length === 1;
+      const primaryItem = seatLineItems[0];
+      const totalProratedAmount = Math.round(seatLineItems.reduce((s, li) => s + li.net_amount, 0) * 100) / 100;
+      const totalSeatAdditions = seatLineItems.reduce((s, li) => s + li.seats, 0);
+      const maxNewSeats = Math.max(workspaceLimit, ...seatLineItems.map(li => li.new_module_seats));
+
+      const pricingBasis = isSingle
+        ? `+${primaryItem.seats} Seat${primaryItem.seats > 1 ? 's' : ''} for ${primaryItem.display_name} (${primaryItem.current_module_seats} → ${primaryItem.new_module_seats} Users) × ₹${primaryItem.rate_per_user}/user/mo × ${days}/30 days`
+        : `${seatLineItems.length} Modules Seat Expansion (+${totalSeatAdditions} seats across modules) × ${days}/30 days`;
+
+      const result = await applySaasBilling(admin, actor, tenantId, requestId, 'MODULE_PROFORMA', {
+        // Keep a real active module_key so RPC ON CONFLICT updates an existing row safely (never inserts dummy key)
+        module_key: primaryItem.module_key,
+        module_name: isSingle ? primaryItem.display_name : `${seatLineItems.length} Modules Seat Expansion`,
+        seat_expansion: true,
+        module_additions: seatLineItems.map(li => ({
+          module_key: li.module_key,
+          module_name: li.display_name,
+          additional_seats: li.seats,
+          current_module_seats: li.current_module_seats,
+          requested_users: li.new_module_seats,
+          rate_per_user: li.rate_per_user
+        })),
+        additional_seats: totalSeatAdditions,
+        ...(isSingle ? {
+          current_module_seats: primaryItem.current_module_seats,
+          requested_users: primaryItem.new_module_seats
+        } : {}),
+        current_seats: workspaceLimit,
+        new_seats: maxNewSeats,
+        months: 0,
+        billing_mode: 'SAME_EXPIRY',
+        unit_rate: isSingle ? primaryItem.rate_per_user : null,
+        days_remaining: days,
+        amount: totalProratedAmount,
+        gst_type: 'IGST'
+      });
+
+      const multiDesc = seatLineItems.map(li => `${li.display_name} (+${li.seats})`).join(', ');
+      const enrichedSeatInv = {
+        ...result.invoice,
+        category: 'ADDON_SEATS',
+        seat_expansion: true,
+        module_key: isSingle ? primaryItem.module_key : null,
+        module_name: isSingle ? primaryItem.display_name : `${seatLineItems.length} Modules`,
+        additional_seats: totalSeatAdditions,
+        ...(isSingle ? {
+          current_module_seats: primaryItem.current_module_seats,
+          requested_users: primaryItem.new_module_seats
+        } : {}),
+        total_seats: isSingle ? primaryItem.new_module_seats : maxNewSeats,
+        unit_rate: isSingle ? primaryItem.rate_per_user : null,
+        days_remaining: days,
+        pricing_basis: pricingBasis,
+        line_items: seatLineItems,
+        description: isSingle
+          ? `Seat expansion (${primaryItem.display_name}): +${primaryItem.seats} user${primaryItem.seats > 1 ? 's' : ''} (${primaryItem.current_module_seats} → ${primaryItem.new_module_seats} Users) • ₹${primaryItem.rate_per_user}/u/mo × ${days}d`
+          : `Seat expansion (${seatLineItems.length} Modules): ${multiDesc} • ${days}d`
+      };
+      if (result.invoice?.invoice_number) {
+        await admin
+          .from('saas_billing_events')
+          .update({ invoice: enrichedSeatInv })
+          .eq('tenant_id', tenantId)
+          .eq('invoice_number', result.invoice.invoice_number);
+      }
+
+      return {
+        success: true,
+        ...result,
+        invoice: enrichedSeatInv,
+        newLimit: workspaceLimit,
+        message: isSingle
+          ? `${primaryItem.display_name} seat expansion (+${primaryItem.seats} user${primaryItem.seats > 1 ? 's' : ''}) proforma saved. Payment confirmation is required before seats activate.`
+          : `Seat expansion proforma for ${seatLineItems.length} modules saved. Payment confirmation is required before seats activate.`
+      };
+    }
+
+    const add = saasNumber(additionalSeats, 'Additional seats', {
+      min: 1,
+      max: 100000,
+      integer: true
+    });
+
+    const workspaceCoreModules = pricing.catalog.filter(p => {
+      if (p.is_active === false || SAAS_INTERNAL_KEYS.has(p.process_code) || !enabledSet.has(p.process_code)) return false;
+      if (hasComboLeadCalling && (p.process_code === 'LEADS_ONLY' || p.process_code === 'CALLING_STANDALONE')) return false;
+      const customSeats = Number(entMap.get(p.process_code)?.config_json?.licensed_seats);
+      if (customSeats > 0 && customSeats < workspaceLimit) return false;
+      return true;
+    });
+
+    const rate = workspaceCoreModules.reduce((sum, p) => sum + Number(p.monthly_rate_per_user), 0);
+    const seatProratedAmount = Math.round(add * rate * days / 30 * 100) / 100;
+    const seatLineItems = workspaceCoreModules.map(p => ({
+      module_key: p.process_code,
+      display_name: p.display_name,
+      seats: add,
+      rate_per_user: Number(p.monthly_rate_per_user),
+      days_remaining: days,
+      net_amount: Math.round(add * Number(p.monthly_rate_per_user) * days / 30 * 100) / 100
+    }));
+
+    const pricingBasis = `+${add} Extra Seat${add > 1 ? 's' : ''} × ₹${rate}/user/mo (${workspaceCoreModules.length} workspace modules) × ${days}/30 days`;
+
     const result = await applySaasBilling(admin, actor, tenantId, requestId, 'ADDON_PROFORMA', {
-      current_seats: sub.user_seat_limit,
-      new_seats: sub.user_seat_limit + add,
+      current_seats: workspaceLimit,
+      new_seats: workspaceLimit + add,
       months: 0,
       billing_mode: 'SAME_EXPIRY',
-      amount: Math.round(add * rate * days / 30 * 100) / 100,
+      unit_rate: rate,
+      days_remaining: days,
+      amount: seatProratedAmount,
       gst_type: 'IGST'
     });
+
+    const enrichedSeatInv = {
+      ...result.invoice,
+      unit_rate: rate,
+      days_remaining: days,
+      pricing_basis: pricingBasis,
+      line_items: seatLineItems,
+      description: `Seat expansion (All Workspace Modules): +${add} user${add > 1 ? 's' : ''} (Total ${workspaceLimit + add}) • ₹${rate}/u/mo × ${days}d`
+    };
+    if (result.invoice?.invoice_number) {
+      await admin
+        .from('saas_billing_events')
+        .update({ invoice: enrichedSeatInv })
+        .eq('tenant_id', tenantId)
+        .eq('invoice_number', result.invoice.invoice_number);
+    }
+
     return {
       success: true,
       ...result,
-      newLimit: sub.user_seat_limit,
+      invoice: enrichedSeatInv,
+      newLimit: workspaceLimit,
       message: 'Add-on request and proforma saved. Payment confirmation is required before seats change.'
     };
   } catch (err) {
@@ -999,7 +1300,7 @@ export async function purchaseAddonSeats(tenantId, additionalSeats, requestId = 
 /**
  * Tenant Self-Serve / Add-on: Unlock an additional business process module
  */
-export async function purchaseAddonModule(tenantId, processCode, requestId = null) {
+export async function purchaseAddonModule(tenantId, processCode, requestId = null, requestedUsers = null) {
   try {
     const admin = getAdminClient();
     const actor = await requireSaasTenant(admin, tenantId, {
@@ -1022,17 +1323,53 @@ export async function purchaseAddonModule(tenantId, processCode, requestId = nul
     } = await admin.from('tenant_entitlements').select('is_enabled').eq('tenant_id', tenantId).eq('module_key', processCode).maybeSingle();
     if (entError) throw entError;
     if (ent?.is_enabled) throw new Error('This module is already active.');
-    const days = Math.max(0, Math.ceil((new Date(sub.valid_until) - Date.now()) / 86400000));
-    if (!days) throw new Error('Renew before requesting modules.');
+    const { daysRemaining, isExpired } = getIstDaysSummary(sub.valid_until);
+    if (isExpired || daysRemaining === null) throw new Error('Renew before requesting modules.');
+    const days = Math.max(1, daysRemaining);
+    const maxSeats = Math.max(1, Number(sub.user_seat_limit) || 5);
+    const usersCount = requestedUsers === null || requestedUsers === undefined || requestedUsers === ''
+      ? maxSeats
+      : saasNumber(requestedUsers, 'Module users', { min: 1, max: maxSeats, integer: true });
+    const proratedAmount = Math.round(item.monthly_rate_per_user * usersCount * days / 30 * 100) / 100;
     const result = await applySaasBilling(admin, actor, tenantId, requestId, 'MODULE_PROFORMA', {
       module_key: processCode,
-      amount: Math.round(item.monthly_rate_per_user * sub.user_seat_limit * days / 30 * 100) / 100,
+      module_name: item.display_name,
+      requested_users: usersCount,
+      unit_rate: item.monthly_rate_per_user,
+      days_remaining: days,
+      amount: proratedAmount,
       gst_type: 'IGST'
     });
+    const enrichedInvoice = {
+      ...result.invoice,
+      module_key: processCode,
+      module_name: item.display_name,
+      requested_users: usersCount,
+      unit_rate: item.monthly_rate_per_user,
+      days_remaining: days,
+      pricing_basis: `${usersCount} User${usersCount > 1 ? 's' : ''} × ₹${item.monthly_rate_per_user}/user/mo × ${days}/30 days`,
+      line_items: [{
+        module_key: processCode,
+        display_name: item.display_name,
+        seats: usersCount,
+        rate_per_user: Number(item.monthly_rate_per_user),
+        days_remaining: days,
+        net_amount: proratedAmount
+      }],
+      description: `${item.display_name} (${usersCount} User${usersCount > 1 ? 's' : ''} × ₹${item.monthly_rate_per_user}/mo • ${days}d prorated)`
+    };
+    if (result.invoice?.invoice_number) {
+      await admin
+        .from('saas_billing_events')
+        .update({ invoice: enrichedInvoice })
+        .eq('tenant_id', tenantId)
+        .eq('invoice_number', result.invoice.invoice_number);
+    }
     return {
       success: true,
       ...result,
-      message: 'Module request and proforma saved. Master Admin must approve activation.'
+      invoice: enrichedInvoice,
+      message: `Module request for ${usersCount} user${usersCount > 1 ? 's' : ''} saved. Master Admin must approve activation.`
     };
   } catch (err) {
     return {
@@ -1045,7 +1382,7 @@ export async function purchaseAddonModule(tenantId, processCode, requestId = nul
 /**
  * Super Admin: Toggle / Manage enabled modules for a specific tenant
  */
-export async function updateTenantEntitlements(tenantId, enabledModuleKeys = []) {
+export async function updateTenantEntitlements(tenantId, enabledModuleKeys = [], moduleSeatOverrides = {}) {
   try {
     const admin = getAdminClient();
     await requireSaasMaster(admin);
@@ -1065,20 +1402,72 @@ export async function updateTenantEntitlements(tenantId, enabledModuleKeys = [])
       error: readError
     } = await admin.from('tenant_entitlements').select('module_key,config_json').eq('tenant_id', tenantId);
     if (readError) throw readError;
-    const updates = items.map(p => ({
-      tenant_id: tenantId,
-      module_key: p.process_code,
-      is_enabled: keys.has(p.process_code),
-      config_json: {
-        ...((existing || []).find(r => r.module_key === p.process_code)?.config_json || {}),
-        updated_at: new Date().toISOString(),
-        manual_override: true
+    const overrides = moduleSeatOverrides && typeof moduleSeatOverrides === 'object' ? moduleSeatOverrides : {};
+    const updates = items.map(p => {
+      const prevConfig = { ...((existing || []).find(r => r.module_key === p.process_code)?.config_json || {}) };
+      if (Object.prototype.hasOwnProperty.call(overrides, p.process_code)) {
+        const rawOverride = overrides[p.process_code];
+        if (rawOverride === '' || rawOverride === null || rawOverride === undefined) {
+          delete prevConfig.licensed_seats;
+        } else {
+          prevConfig.licensed_seats = saasNumber(rawOverride, `${p.display_name} licensed users`, { min: 1, max: 100000, integer: true });
+        }
       }
-    }));
+      return {
+        tenant_id: tenantId,
+        module_key: p.process_code,
+        is_enabled: keys.has(p.process_code),
+        config_json: {
+          ...prevConfig,
+          updated_at: new Date().toISOString(),
+          manual_override: true
+        }
+      };
+    });
     const result = await admin.from('tenant_entitlements').upsert(updates, {
       onConflict: 'tenant_id,module_key'
     });
     if (result.error) throw result.error;
+
+    // Auto-refresh any PENDING auto-renewal proforma so updated per-module seats & modules reflect immediately
+    try {
+      const { data: pendingRenewals } = await admin
+        .from('saas_billing_events')
+        .select('id,invoice,request_payload')
+        .eq('tenant_id', tenantId)
+        .eq('operation', 'RENEWAL_PROFORMA');
+      const autoPending = (pendingRenewals || []).find(
+        ev => String(ev.invoice?.status || '').toUpperCase() === 'PENDING' && ev.request_payload?.source === 'AUTO_7D_RENEWAL'
+      );
+      if (autoPending) {
+        const quote = await computeTenantRenewalQuote(admin, tenantId, autoPending.request_payload?.months || null);
+        if (quote.amount > 0) {
+          const gstType = autoPending.invoice?.gst_type || autoPending.request_payload?.gst_type || 'IGST';
+          const amounts = saasInvoiceAmounts(quote.amount, gstType);
+          const refreshedInv = {
+            ...autoPending.invoice,
+            amount: amounts.amount,
+            tax_amount: amounts.tax_amount,
+            total_payable: amounts.total_payable,
+            total_seats: quote.seatLimit,
+            months_added: quote.months,
+            line_items: quote.line_items || [],
+            pricing_basis: quote.pricing_basis || '',
+            discount_percent: quote.discountPercent || 0
+          };
+          await admin
+            .from('saas_billing_events')
+            .update({
+              invoice: refreshedInv,
+              request_payload: { ...autoPending.request_payload, amount: quote.amount, months: quote.months }
+            })
+            .eq('id', autoPending.id);
+        }
+      }
+    } catch (refreshErr) {
+      console.warn('Auto-renewal PI refresh skipped:', refreshErr.message);
+    }
+
     return {
       success: true,
       message: 'Workspace modules updated successfully.'
@@ -1443,6 +1832,28 @@ export async function extendTenantSubscriptionTrial(tenantId, trialDays = 7) {
     const {error:tenantError}=await admin.from('tenants').update({ status: 'TRIAL', updated_at: now.toISOString() }).eq('id', tenantId);
     if(tenantError)throw tenantError;
 
+    // Log Trial grant event into saas_billing_events so Master Admin has complete trial history
+    try {
+      const actor = await requireSaasMaster(admin);
+      const { data: tenantInfo } = await admin.from('tenants').select('tenant_code').eq('id', tenantId).maybeSingle();
+      await recordNonPaidSaasEvent(admin, actor.user.id, {
+        tenantId,
+        tenantCode: tenantInfo?.tenant_code || 'WS',
+        operation: 'TRIAL_GRANT',
+        invoiceType: 'log',
+        category: 'TRIAL_GRANT',
+        description: `Free Trial Granted (${days} Day${days > 1 ? 's' : ''})`,
+        totalSeats: existing?.user_seat_limit || 5,
+        daysAdded: days,
+        validFrom: now.toISOString(),
+        validUntil: newExpiry.toISOString(),
+        status: 'TRIAL_LOG',
+        requestPayload: { trial_days: days, previous_valid_until: existing?.valid_until || null }
+      });
+    } catch (logErr) {
+      console.warn('extendTenantSubscriptionTrial audit log skipped:', logErr.message);
+    }
+
     return {
       success: true,
       message: `${days} दिन का फ्री ट्रायल सक्रिय हो गया! (Expiry: ${newExpiry.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })})`
@@ -1495,6 +1906,27 @@ export async function updateTenantValidityAndStatus({
       updated_at: new Date().toISOString()
     }).eq('id', tenantId);
     if (tenantError) throw new Error('Subscription saved but workspace status could not sync. Please retry.');
+
+    try {
+      const actor = await requireSaasMaster(admin);
+      const { data: tenantInfo } = await admin.from('tenants').select('tenant_code').eq('id', tenantId).maybeSingle();
+      await recordNonPaidSaasEvent(admin, actor.user.id, {
+        tenantId,
+        tenantCode: tenantInfo?.tenant_code || 'WS',
+        operation: 'VALIDITY_ADJUSTMENT',
+        invoiceType: 'log',
+        category: 'VALIDITY_ADJUSTMENT',
+        description: `Manual Validity / Status Adjustment → ${normalized} (Till ${validUntil})`,
+        totalSeats: existing.user_seat_limit || 5,
+        validFrom: existing.valid_until || null,
+        validUntil: expiry,
+        status: 'LOGGED',
+        requestPayload: { status: normalized, valid_until: validUntil, previous_valid_until: existing.valid_until || null }
+      });
+    } catch (logErr) {
+      console.warn('updateTenantValidityAndStatus audit log skipped:', logErr.message);
+    }
+
     return {
       success: true,
       message: 'Expiry and status updated.'
@@ -1629,9 +2061,18 @@ export async function recordPaymentAndGenerateInvoice({
   try {
     const admin = getAdminClient(),
       actor = await requireSaasMaster(admin);
+    const cleanTxn = String(transactionId || '').trim();
+    if (!cleanTxn) {
+      throw new Error('Enter a valid UTR / Transaction ID before confirming payment and generating a Tax Invoice.');
+    }
+    const paidAmount = saasNumber(amount, 'Paid amount', {
+      min: 1,
+      max: 1e9
+    });
     let kind = 'RENEWAL';
+    let renewalSourceId = null;
     let payload = {
-      amount: saasNumber(amount, 'Amount'),
+      amount: paidAmount,
       months: saasNumber(months, 'Months', {
         min: 1,
         max: 120,
@@ -1639,30 +2080,243 @@ export async function recordPaymentAndGenerateInvoice({
       }),
       gst_type: gstType,
       payment_mode: paymentMode,
-      transaction_id: String(transactionId).trim()
+      transaction_id: cleanTxn
     };
+    let sourceInv = null;
     if (sourceInvoiceNumber) {
       const {
         data: source,
         error
-      } = await admin.from('saas_billing_events').select('tenant_id,operation,request_payload,invoice').eq('tenant_id', tenantId).eq('invoice_number', String(sourceInvoiceNumber)).maybeSingle();
+      } = await admin.from('saas_billing_events').select('id,tenant_id,operation,request_payload,invoice').eq('tenant_id', tenantId).eq('invoice_number', String(sourceInvoiceNumber)).maybeSingle();
       if (error) throw error;
-      if (!source || !['ADDON_PROFORMA', 'MODULE_PROFORMA'].includes(source.operation)) throw new Error('This invoice cannot be paid through the add-on confirmation flow.');
-      kind = source.operation === 'MODULE_PROFORMA' ? 'MODULE_PAYMENT' : 'ADDON_PAYMENT';
-      payload = {
-        ...source.request_payload,
-        payment_mode: paymentMode,
-        transaction_id: String(transactionId).trim(),
-        source_invoice_number: source.invoice.invoice_number
-      };
+      if (!source || !['ADDON_PROFORMA', 'MODULE_PROFORMA', 'RENEWAL_PROFORMA'].includes(source.operation)) {
+        throw new Error('This invoice cannot be paid through the proforma confirmation flow.');
+      }
+      if (source.invoice?.status !== 'PENDING') {
+        throw new Error('This proforma was already settled or voided.');
+      }
+      sourceInv = source.invoice || null;
+      if (source.operation === 'RENEWAL_PROFORMA') {
+        renewalSourceId = source.id;
+        payload = {
+          amount: source.request_payload?.amount ? saasNumber(source.request_payload.amount, 'Paid amount', { min: 1, max: 1e9 }) : paidAmount,
+          months: saasNumber(source.request_payload?.months ?? months, 'Months', { min: 1, max: 120, integer: true }),
+          gst_type: source.request_payload?.gst_type || gstType,
+          payment_mode: paymentMode,
+          transaction_id: cleanTxn
+        };
+      } else {
+        kind = source.operation === 'MODULE_PROFORMA' ? 'MODULE_PAYMENT' : 'ADDON_PAYMENT';
+        payload = {
+          ...source.request_payload,
+          payment_mode: paymentMode,
+          transaction_id: cleanTxn,
+          source_invoice_number: source.invoice.invoice_number
+        };
+      }
     }
     const result = await applySaasBilling(admin, actor, tenantId, requestId, kind, payload);
+    if (kind === 'MODULE_PAYMENT' && payload?.module_key) {
+      const reqUsers = Number(payload.requested_users) || null;
+      const modName = payload.module_name || payload.module_key;
+      const isSeatExpansion = Boolean(payload.seat_expansion);
+      const addSeats = Number(payload.additional_seats || 0);
+      const prevModSeats = Number(payload.current_module_seats || 0);
+      const modAdditions = Array.isArray(payload.module_additions) ? payload.module_additions : [];
+      const isMultiModuleExpansion = isSeatExpansion && modAdditions.length > 1;
+      if (result.invoice?.invoice_number) {
+        const enrichedTaxInv = {
+          ...result.invoice,
+          ...(isSeatExpansion ? { category: 'ADDON_SEATS', seat_expansion: true } : {}),
+          module_key: isMultiModuleExpansion ? null : payload.module_key,
+          module_name: modName,
+          ...(addSeats > 0 ? { additional_seats: addSeats } : {}),
+          ...(prevModSeats > 0 && !isMultiModuleExpansion ? { current_module_seats: prevModSeats } : {}),
+          ...(reqUsers && !isMultiModuleExpansion ? { requested_users: reqUsers, ...(isSeatExpansion ? { total_seats: reqUsers } : {}) } : {}),
+          ...(payload.unit_rate != null ? { unit_rate: payload.unit_rate } : {}),
+          ...(payload.days_remaining != null ? { days_remaining: payload.days_remaining } : {}),
+          ...(Array.isArray(sourceInv?.line_items) && sourceInv.line_items.length > 0 ? { line_items: sourceInv.line_items } : {}),
+          ...(sourceInv?.pricing_basis ? { pricing_basis: sourceInv.pricing_basis } : {}),
+          description: isMultiModuleExpansion
+            ? `Seat expansion (${modAdditions.length} Modules): ${modAdditions.map(m => `${m.module_name || m.module_key} (+${m.additional_seats})`).join(', ')}`
+            : isSeatExpansion && addSeats > 0
+              ? `Seat expansion (${modName}): +${addSeats} user${addSeats > 1 ? 's' : ''} (${prevModSeats} → ${reqUsers} Users)`
+              : reqUsers
+                ? `${modName} Activation (${reqUsers} User${reqUsers > 1 ? 's' : ''})`
+                : `Module activation: ${modName}`
+        };
+        result.invoice = enrichedTaxInv;
+        await admin
+          .from('saas_billing_events')
+          .update({ invoice: enrichedTaxInv })
+          .eq('tenant_id', tenantId)
+          .eq('invoice_number', enrichedTaxInv.invoice_number);
+      }
+      if (modAdditions.length > 0) {
+        try {
+          const targetKeys = modAdditions.map(m => m.module_key).filter(Boolean);
+          const { data: entRows } = await admin
+            .from('tenant_entitlements')
+            .select('module_key,config_json')
+            .eq('tenant_id', tenantId)
+            .in('module_key', targetKeys);
+          const existingByKey = new Map((entRows || []).map(r => [r.module_key, r.config_json || {}]));
+          for (const item of modAdditions) {
+            const targetUsers = Number(item.requested_users) || null;
+            if (!item.module_key || !targetUsers) continue;
+            await admin
+              .from('tenant_entitlements')
+              .update({ config_json: { ...(existingByKey.get(item.module_key) || {}), licensed_seats: targetUsers } })
+              .eq('tenant_id', tenantId)
+              .eq('module_key', item.module_key);
+          }
+        } catch (entSyncErr) {
+          console.warn('multi-module licensed_seats config sync skipped:', entSyncErr.message);
+        }
+      } else if (reqUsers) {
+        try {
+          const { data: entRow } = await admin
+            .from('tenant_entitlements')
+            .select('config_json')
+            .eq('tenant_id', tenantId)
+            .eq('module_key', payload.module_key)
+            .maybeSingle();
+          await admin
+            .from('tenant_entitlements')
+            .update({ config_json: { ...(entRow?.config_json || {}), licensed_seats: reqUsers } })
+            .eq('tenant_id', tenantId)
+            .eq('module_key', payload.module_key);
+        } catch (entSyncErr) {
+          console.warn('module licensed_seats config sync skipped:', entSyncErr.message);
+        }
+      }
+    }
+    if (renewalSourceId) {
+      const { data: srcRow } = await admin.from('saas_billing_events').select('invoice').eq('id', renewalSourceId).maybeSingle();
+      if (srcRow?.invoice) {
+        await admin.from('saas_billing_events').update({
+          invoice: {
+            ...srcRow.invoice,
+            status: 'PAID',
+            payment_mode: paymentMode,
+            transaction_id: cleanTxn,
+            converted_to_invoice: result.invoice.invoice_number,
+            paid_at: result.invoice.created_at
+          }
+        }).eq('id', renewalSourceId);
+      }
+    }
+    if (kind === 'RENEWAL' && result.invoice?.invoice_number) {
+      try {
+        const quote = await computeTenantRenewalQuote(admin, tenantId, payload.months);
+        const enrichedRenewalTax = {
+          ...result.invoice,
+          line_items: quote.line_items || [],
+          pricing_basis: quote.pricing_basis || '',
+          discount_percent: quote.discountPercent || 0
+        };
+        result.invoice = enrichedRenewalTax;
+        await admin
+          .from('saas_billing_events')
+          .update({ invoice: enrichedRenewalTax })
+          .eq('tenant_id', tenantId)
+          .eq('invoice_number', enrichedRenewalTax.invoice_number);
+      } catch (qErr) {
+        console.warn('renewal invoice line_items enrich skipped:', qErr.message);
+      }
+    }
+    if (kind === 'ADDON_PAYMENT' && sourceInvoiceNumber && result.invoice?.invoice_number) {
+      try {
+        const { data: srcAddon } = await admin.from('saas_billing_events').select('invoice').eq('tenant_id', tenantId).eq('invoice_number', String(sourceInvoiceNumber)).maybeSingle();
+        if (srcAddon?.invoice?.line_items || srcAddon?.invoice?.pricing_basis) {
+          const enrichedSeatTax = {
+            ...result.invoice,
+            line_items: srcAddon.invoice.line_items || [],
+            pricing_basis: srcAddon.invoice.pricing_basis || '',
+            unit_rate: srcAddon.invoice.unit_rate || null,
+            days_remaining: srcAddon.invoice.days_remaining || null
+          };
+          result.invoice = enrichedSeatTax;
+          await admin
+            .from('saas_billing_events')
+            .update({ invoice: enrichedSeatTax })
+            .eq('tenant_id', tenantId)
+            .eq('invoice_number', enrichedSeatTax.invoice_number);
+        }
+      } catch (aErr) {
+        console.warn('addon seat tax line_items enrich skipped:', aErr.message);
+      }
+    }
     return {
       success: true,
       ...result,
       invoiceNumber: result.invoice.invoice_number,
       paidAt: result.invoice.created_at,
       message: 'Payment recorded and invoice saved.'
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
+/**
+ * Super Admin: Explicitly issue and save a pending Renewal Proforma Invoice (PI) in database
+ */
+export async function createRenewalProformaInvoice({
+  tenantId,
+  months = 12,
+  amount = null,
+  gstType = 'IGST',
+  requestId = null
+}) {
+  try {
+    const admin = getAdminClient();
+    const actor = await requireSaasMaster(admin);
+    if (!SAAS_UUID.test(String(tenantId || ''))) throw new Error('A valid workspace is required.');
+    const cleanMonths = saasNumber(months, 'Months', { min: 1, max: 120, integer: true });
+    if (!['IGST', 'CGST_SGST', 'NON_GST'].includes(gstType)) throw new Error('Choose a valid GST mode.');
+    const quote = await computeTenantRenewalQuote(admin, tenantId, cleanMonths);
+    const resolvedAmount = amount === null || amount === undefined || amount === ''
+      ? quote.amount
+      : saasNumber(amount, 'Proforma amount', { min: 1, max: 1e9 });
+    if (!(resolvedAmount > 0)) {
+      throw new Error('Renewal Proforma amount must be greater than ₹0.');
+    }
+    const { data: tenantInfo } = await admin.from('tenants').select('tenant_code,name').eq('id', tenantId).maybeSingle();
+    const { data: subRow } = await admin.from('tenant_subscriptions').select('user_seat_limit,valid_until').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+    const recorded = await recordNonPaidSaasEvent(admin, actor.user.id, {
+      tenantId,
+      tenantCode: tenantInfo?.tenant_code || 'WS',
+      requestId: requestId || randomUUID(),
+      operation: 'RENEWAL_PROFORMA',
+      invoiceType: 'proforma',
+      category: 'RENEWAL_PROFORMA',
+      description: `Subscription Renewal Proforma (${cleanMonths} Month${cleanMonths > 1 ? 's' : ''})`,
+      totalSeats: subRow?.user_seat_limit || quote.seatLimit || 5,
+      monthsAdded: cleanMonths,
+      validUntil: subRow?.valid_until || null,
+      amount: resolvedAmount,
+      gstType,
+      status: 'PENDING',
+      lineItems: quote.line_items || [],
+      pricingBasis: quote.pricing_basis || '',
+      discountPercent: quote.discountPercent || 0,
+      requestPayload: {
+        amount: resolvedAmount,
+        months: cleanMonths,
+        gst_type: gstType,
+        cycle_expiry: subRow?.valid_until || null,
+        source: 'MANUAL_PI'
+      }
+    });
+    return {
+      success: true,
+      invoice: recorded.invoice,
+      invoiceNumber: recorded.invoice_number,
+      message: `Proforma Invoice ${recorded.invoice_number} issued and saved.`
     };
   } catch (err) {
     return {
@@ -1916,6 +2570,294 @@ async function applySaasBilling(admin, actor, tenantId, requestId, kind, payload
   });
 }
 
+function deterministicSaasUuid(seed) {
+  const bytes = createHash('sha256').update(String(seed)).digest();
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.subarray(0, 16).toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+function getIstYearMonth(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit'
+  }).format(date).replace('-', '');
+}
+
+function getIstDaysSummary(validUntil) {
+  if (!validUntil) return { daysRemaining: null, isExpired: false, isExpiringSoon: false };
+  const targetMs = new Date(validUntil).getTime();
+  if (Number.isNaN(targetMs)) return { daysRemaining: null, isExpired: false, isExpiringSoon: false };
+  const now = new Date();
+  if (targetMs <= now.getTime()) {
+    return { daysRemaining: 0, isExpired: true, isExpiringSoon: false };
+  }
+  const calDiff = Math.round(
+    (Date.parse(`${saasDateKey(validUntil)}T00:00:00Z`) - Date.parse(`${saasDateKey(now)}T00:00:00Z`)) / 86400000
+  );
+  const daysRemaining = Math.max(0, calDiff);
+  return {
+    daysRemaining,
+    isExpired: false,
+    isExpiringSoon: daysRemaining <= 7
+  };
+}
+
+async function recordNonPaidSaasEvent(admin, actorId, {
+  tenantId,
+  tenantCode = 'WS',
+  requestId = null,
+  operation,
+  invoiceType = 'log',
+  category,
+  description,
+  additionalSeats = 0,
+  totalSeats = 0,
+  billingMode = null,
+  monthsAdded = 0,
+  daysAdded = 0,
+  validFrom = null,
+  validUntil = null,
+  amount = 0,
+  gstType = 'NON_GST',
+  status = 'LOGGED',
+  lineItems = [],
+  pricingBasis = '',
+  discountPercent = 0,
+  requestPayload = {}
+}) {
+  const reqId = requestId && SAAS_UUID.test(String(requestId)) ? String(requestId) : randomUUID();
+  const { data: existingEvent } = await admin
+    .from('saas_billing_events')
+    .select('invoice_number,invoice')
+    .eq('tenant_id', tenantId)
+    .eq('request_id', reqId)
+    .maybeSingle();
+  if (existingEvent) {
+    return { invoice_number: existingEvent.invoice_number, invoice: existingEvent.invoice, reused: true };
+  }
+
+  const prefix = operation === 'RENEWAL_PROFORMA'
+    ? 'PI'
+    : operation === 'TRIAL_GRANT'
+      ? 'TRL'
+      : operation === 'MANUAL_EXTENSION'
+        ? 'EXT'
+        : 'ADJ';
+  const cleanCode = String(tenantCode || 'WS').replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'WS';
+  const ym = getIstYearMonth();
+  const amounts = saasInvoiceAmounts(amount, gstType);
+  const nowIso = new Date().toISOString();
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const suffix = `${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 90 + 10)}`;
+    const invoiceNumber = `${prefix}-${cleanCode}-${ym}-${suffix}`;
+    const invoice = {
+      id: randomUUID(),
+      invoice_number: invoiceNumber,
+      invoice_type: invoiceType,
+      category,
+      operation,
+      description,
+      additional_seats: additionalSeats,
+      total_seats: totalSeats,
+      billing_mode: billingMode || operation,
+      months_added: monthsAdded,
+      days_added: daysAdded,
+      valid_from: validFrom,
+      valid_until: validUntil,
+      amount: amounts.amount,
+      gst_type: amounts.gst_type,
+      gst_rate: amounts.gst_rate,
+      tax_amount: amounts.tax_amount,
+      total_payable: amounts.total_payable,
+      payment_mode: '',
+      transaction_id: '',
+      status,
+      ...(Array.isArray(lineItems) && lineItems.length > 0 ? { line_items: lineItems } : {}),
+      ...(pricingBasis ? { pricing_basis: pricingBasis } : {}),
+      ...(discountPercent ? { discount_percent: discountPercent } : {}),
+      created_at: nowIso
+    };
+    const response = {
+      invoice,
+      newExpiry: validUntil,
+      newSeatLimit: totalSeats
+    };
+    const { error } = await admin.from('saas_billing_events').insert({
+      tenant_id: tenantId,
+      actor_id: actorId && SAAS_UUID.test(String(actorId)) ? actorId : tenantId,
+      request_id: reqId,
+      operation,
+      request_payload: requestPayload,
+      invoice_number: invoiceNumber,
+      invoice,
+      result: response
+    });
+    if (!error) {
+      return { invoice_number: invoiceNumber, invoice };
+    }
+    if (error.code === '23505') {
+      const { data: raced } = await admin
+        .from('saas_billing_events')
+        .select('invoice_number,invoice')
+        .eq('tenant_id', tenantId)
+        .eq('request_id', reqId)
+        .maybeSingle();
+      if (raced) return { invoice_number: raced.invoice_number, invoice: raced.invoice, reused: true };
+      continue;
+    }
+    throw error;
+  }
+  throw new Error('Could not generate a unique SaaS reference number.');
+}
+
+async function computeTenantRenewalQuote(admin, tenantId, overrideMonths = null) {
+  const [
+    { data: subRow },
+    { data: entRows },
+    { catalog },
+    { cycles }
+  ] = await Promise.all([
+    admin.from('tenant_subscriptions').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    admin.from('tenant_entitlements').select('module_key,is_enabled,config_json').eq('tenant_id', tenantId),
+    getProcessCatalog(tenantId),
+    getCycleDiscounts()
+  ]);
+
+  const cycleCode = SAAS_CYCLE_MONTHS[subRow?.billing_cycle] ? subRow.billing_cycle : 'YEARLY';
+  const months = overrideMonths || SAAS_CYCLE_MONTHS[cycleCode] || 12;
+  const matchedCycle = (cycles || []).find(c => (c.months_count ?? c.months) === months) || (cycles || []).find(c => c.cycle_code === cycleCode);
+  const discountPercent = Number(matchedCycle?.discount_percent || 0);
+  const seatLimit = Math.max(1, Number(subRow?.user_seat_limit) || 5);
+  const entByKey = new Map((entRows || []).map(r => [r.module_key, r]));
+  const enabledKeys = new Set((entRows || []).filter(r => r.is_enabled === true).map(r => r.module_key));
+  const hasComboLeadCalling = enabledKeys.has('LEADS_WITH_CALLING');
+  const enabledItems = (catalog || []).filter(p =>
+    enabledKeys.has(p.process_code) &&
+    !SAAS_INTERNAL_KEYS.has(p.process_code) &&
+    p.is_active !== false &&
+    !(hasComboLeadCalling && (p.process_code === 'LEADS_ONLY' || p.process_code === 'CALLING_STANDALONE'))
+  );
+
+  const lineItems = enabledItems.map(p => {
+    const customSeats = Number(entByKey.get(p.process_code)?.config_json?.licensed_seats);
+    const modSeats = customSeats > 0 ? customSeats : seatLimit;
+    const rate = Number(p.monthly_rate_per_user || 0);
+    const gross = Math.round(rate * modSeats * months * 100) / 100;
+    const net = Math.round(gross * (1 - discountPercent / 100) * 100) / 100;
+    return {
+      module_key: p.process_code,
+      display_name: p.display_name,
+      seats: modSeats,
+      rate_per_user: rate,
+      months,
+      discount_percent: discountPercent,
+      gross_amount: gross,
+      net_amount: net
+    };
+  });
+
+  const computedTotal = Math.round(lineItems.reduce((sum, li) => sum + li.net_amount, 0) * 100) / 100;
+  const pricingBasis = lineItems.length > 0
+    ? `${lineItems.length} Active Modules • ${months} Month${months > 1 ? 's' : ''}${discountPercent > 0 ? ` • ${discountPercent}% Cycle Discount` : ''}`
+    : '';
+
+  if (!overrideMonths && Number(subRow?.amount) > 0) {
+    return {
+      amount: Number(subRow.amount),
+      months,
+      cycleCode,
+      seatLimit,
+      discountPercent,
+      moduleCount: enabledItems.length,
+      line_items: lineItems,
+      pricing_basis: `${pricingBasis}${pricingBasis ? ' • ' : ''}Agreed Contract Rate`
+    };
+  }
+
+  return {
+    amount: computedTotal,
+    months,
+    cycleCode,
+    seatLimit,
+    discountPercent,
+    moduleCount: enabledItems.length,
+    line_items: lineItems,
+    pricing_basis: pricingBasis
+  };
+}
+
+async function ensureAutoRenewalProformaForTenant(admin, tenantRow, subRow, actorId) {
+  try {
+    if (!tenantRow || !subRow?.valid_until || isMasterHqTenant(tenantRow)) return null;
+    const { daysRemaining, isExpired } = getIstDaysSummary(subRow.valid_until);
+    if (!isExpired && (daysRemaining === null || daysRemaining > 7)) return null;
+
+    const expiryKey = saasDateKey(subRow.valid_until);
+    const reqId = deterministicSaasUuid(`AUTO_RENEWAL_PI:${tenantRow.id}:${expiryKey}`);
+
+    // Skip if any PENDING or recently PAID renewal exists for this expiry window
+    const { data: existingEvents } = await admin
+      .from('saas_billing_events')
+      .select('operation,request_id,invoice,created_at')
+      .eq('tenant_id', tenantRow.id)
+      .in('operation', ['RENEWAL_PROFORMA', 'RENEWAL'])
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    const alreadyHandled = (existingEvents || []).some(ev => {
+      if (ev.request_id === reqId) return true;
+      const st = String(ev.invoice?.status || '').toUpperCase();
+      if (ev.operation === 'RENEWAL_PROFORMA' && st === 'PENDING') return true;
+      return false;
+    });
+    if (alreadyHandled) return null;
+
+    const quote = await computeTenantRenewalQuote(admin, tenantRow.id);
+    if (!(quote.amount > 0)) return null;
+
+    const expiryDisplay = new Date(subRow.valid_until).toLocaleDateString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+
+    return await recordNonPaidSaasEvent(admin, actorId || tenantRow.id, {
+      tenantId: tenantRow.id,
+      tenantCode: tenantRow.tenant_code || 'WS',
+      requestId: reqId,
+      operation: 'RENEWAL_PROFORMA',
+      invoiceType: 'proforma',
+      category: 'RENEWAL_PROFORMA',
+      description: `Auto Renewal Proforma (${quote.months} Months • Expiry ${expiryDisplay})`,
+      totalSeats: quote.seatLimit,
+      monthsAdded: quote.months,
+      validUntil: subRow.valid_until,
+      amount: quote.amount,
+      gstType: 'IGST',
+      status: 'PENDING',
+      lineItems: quote.line_items || [],
+      pricingBasis: quote.pricing_basis || '',
+      discountPercent: quote.discountPercent || 0,
+      requestPayload: {
+        amount: quote.amount,
+        months: quote.months,
+        gst_type: 'IGST',
+        cycle_expiry: subRow.valid_until,
+        expiry_key: expiryKey,
+        source: 'AUTO_7D_RENEWAL'
+      }
+    });
+  } catch (err) {
+    console.warn('ensureAutoRenewalProformaForTenant skipped:', err.message);
+    return null;
+  }
+}
+
 async function readSaasInvoices(admin, tenantId = null) {
   let legacyQuery = admin.from('tenant_entitlements').select('tenant_id, config_json').eq('module_key', 'TENANT_BILLING_HISTORY');
   let eventsQuery = admin.from('saas_billing_events').select('tenant_id, invoice, created_at').order('created_at', {
@@ -1956,6 +2898,224 @@ export async function getSaasMasterSnapshot() {
     return {
       success: false,
       error: err.message
+    };
+  }
+}
+
+/**
+ * Tenant Admin / Master Admin: Fetch strictly scoped Plan Period, Quotas & Billing History for their own workspace.
+ * Enforces tenant isolation + manage permission via requireSaasTenant(..., { manage: true }).
+ */
+export async function cancelPendingSaasProforma(tenantId = DEFAULT_TENANT_ID, invoiceNumber = '', reason = 'Cancelled / Withdrawn') {
+  try {
+    const admin = getAdminClient();
+    const target = await resolveSaasTenantUuid(admin, tenantId || DEFAULT_TENANT_ID);
+    await requireSaasTenant(admin, target, { manage: true });
+    const cleanInvNo = String(invoiceNumber || '').trim();
+    if (!cleanInvNo) throw new Error('Invoice number is required.');
+    const { data: row, error } = await admin
+      .from('saas_billing_events')
+      .select('id,invoice')
+      .eq('tenant_id', target)
+      .eq('invoice_number', cleanInvNo)
+      .maybeSingle();
+    if (error) throw error;
+    if (!row) throw new Error('Proforma invoice not found.');
+    if (String(row.invoice?.status || '').toUpperCase() !== 'PENDING') {
+      throw new Error('Only PENDING proforma invoices can be cancelled.');
+    }
+    const updatedInvoice = {
+      ...row.invoice,
+      status: 'CANCELLED',
+      void_reason: String(reason || 'Cancelled / Withdrawn').trim(),
+      cancelled_at: new Date().toISOString()
+    };
+    const { error: updErr } = await admin
+      .from('saas_billing_events')
+      .update({ invoice: updatedInvoice })
+      .eq('id', row.id);
+    if (updErr) throw updErr;
+    return {
+      success: true,
+      invoice: updatedInvoice,
+      message: `Proforma ${cleanInvNo} cancelled.`
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
+export async function getOwnTenantBillingSummary(tenantId = DEFAULT_TENANT_ID) {
+  try {
+    const admin = getAdminClient();
+    const target = await resolveSaasTenantUuid(admin, tenantId);
+    await requireSaasTenant(admin, target, { manage: true });
+
+    const [
+      { data: tenantRow, error: tErr },
+      { data: allTenants },
+      { data: subRow, error: sErr },
+      { data: entRows, error: eErr },
+      { data: usersList, error: uErr },
+      { catalog },
+      smtpLimitsMap
+    ] = await Promise.all([
+      admin.from('tenants').select('id,tenant_code,name,status,primary_contact_email,phone,address,gstin,created_at').eq('id', target).maybeSingle(),
+      admin.from('tenants').select('id,tenant_code,name'),
+      admin.from('tenant_subscriptions').select('*').eq('tenant_id', target).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      admin.from('tenant_entitlements').select('module_key,is_enabled,config_json').eq('tenant_id', target),
+      admin.from('user_roles').select('tenant_id,company,role,is_approved,emp_status'),
+      getProcessCatalog(target),
+      readLocalSmtpLimits()
+    ]);
+
+    if (tErr || sErr || eErr || uErr) throw tErr || sErr || eErr || uErr;
+    if (!tenantRow) throw new Error('Workspace not found.');
+
+    const isMasterHq = isMasterHqTenant(tenantRow) || isMasterHqTenant(target);
+    if (!isMasterHq && subRow?.valid_until && !['ARCHIVED', 'DELETED', 'DRAFT', 'SUSPENDED'].includes(tenantRow.status)) {
+      await ensureAutoRenewalProformaForTenant(admin, tenantRow, subRow, target);
+    }
+    const invoices = await readSaasInvoices(admin, target);
+    const catalogList = Array.isArray(catalog) ? catalog : DEFAULT_PROCESS_CATALOG;
+    const enabledKeys = new Set(
+      (entRows || []).filter(r => r.is_enabled === true).map(r => r.module_key)
+    );
+    const grantAll = isMasterHq || (!(entRows || []).length && target === DEFAULT_TENANT_ID);
+    const seatLimit = subRow?.user_seat_limit || (target === DEFAULT_TENANT_ID ? 200 : 5);
+    const enabledModules = catalogList
+      .filter(p => grantAll || enabledKeys.has(p.process_code))
+      .map(p => {
+        const entRow = (entRows || []).find(r => r.module_key === p.process_code);
+        const customSeats = Number(entRow?.config_json?.licensed_seats);
+        return {
+          process_code: p.process_code,
+          display_name: p.display_name,
+          category: p.category,
+          monthly_rate_per_user: Number(p.monthly_rate_per_user || 0),
+          licensed_seats: customSeats > 0 ? customSeats : seatLimit,
+          has_custom_seats: Boolean(customSeats > 0)
+        };
+      });
+
+    const activeUsersCount = (usersList || []).filter(u =>
+      userBelongsToSaasTenant(u, tenantRow, allTenants || []) && isSaasUserActive(u)
+    ).length;
+
+    const telEnt = (entRows || []).find(r => r.module_key === 'TELEPHONY_CONFIG');
+    const telConfig = telEnt?.config_json || {};
+    const smtpLimit = isMasterHq
+      ? 999
+      : (Number(smtpLimitsMap[tenantRow.id]) || Number(smtpLimitsMap[tenantRow.tenant_code]) || Number(smtpLimitsMap[tenantRow.name]) || 1);
+
+    let daysRemaining = null;
+    let isExpired = false;
+    let isExpiringSoon = false;
+    if (!isMasterHq && subRow?.valid_until) {
+      ({ daysRemaining, isExpired, isExpiringSoon } = getIstDaysSummary(subRow.valid_until));
+    }
+
+    const resolvedStatus = isMasterHq
+      ? 'ACTIVE'
+      : isExpired
+        ? 'EXPIRED'
+        : isExpiringSoon
+          ? 'EXPIRING_SOON'
+          : (tenantRow.status === 'TRIAL' || subRow?.status === 'TRIAL')
+            ? 'TRIAL'
+            : (subRow?.status || tenantRow.status || 'ACTIVE');
+
+    const safeInvoices = (invoices || []).map(inv => {
+      const rawDesc = String(inv.description || '');
+      const inferredModuleKey = inv.module_key || (
+        inv.category === 'ADDON_MODULE' && (rawDesc.startsWith('Module add-on request:') || rawDesc.startsWith('Module activation:'))
+          ? rawDesc.replace('Module add-on request:', '').replace('Module activation:', '').trim()
+          : null
+      );
+      const matchedCatalog = inferredModuleKey ? catalogList.find(c => c.process_code === inferredModuleKey) : null;
+      const cleanDesc = matchedCatalog && rawDesc.startsWith('Module add-on request:')
+        ? `${matchedCatalog.display_name} (${Number(inv.requested_users || inv.total_seats || subRow?.user_seat_limit || 0)} Users)`
+        : rawDesc;
+      const inferredUsers = inv.requested_users
+        ? Number(inv.requested_users)
+        : (inv.category === 'ADDON_MODULE' ? (Number(inv.total_seats || subRow?.user_seat_limit || 0) || null) : null);
+
+      return {
+        invoice_number: inv.invoice_number || inv.id || 'N/A',
+        created_at: inv.created_at || null,
+        category: inv.category || 'SUBSCRIPTION',
+        operation: inv.operation || null,
+        description: cleanDesc,
+        amount: Number(inv.amount || 0),
+        gst_type: inv.gst_type || 'IGST',
+        status: inv.status || 'PAID',
+        months_added: Number(inv.months_added || 0),
+        days_added: Number(inv.days_added || 0),
+        additional_seats: Number(inv.additional_seats || 0),
+        total_seats: Number(inv.total_seats || 0),
+        module_key: inferredModuleKey,
+        module_name: inv.module_name || matchedCatalog?.display_name || null,
+        seat_expansion: Boolean(inv.seat_expansion),
+        requested_users: inferredUsers,
+        unit_rate: inv.unit_rate != null ? Number(inv.unit_rate) : (matchedCatalog?.monthly_rate_per_user ?? null),
+        days_remaining: inv.days_remaining != null ? Number(inv.days_remaining) : null,
+        pricing_basis: inv.pricing_basis || '',
+        discount_percent: inv.discount_percent ? Number(inv.discount_percent) : 0,
+        line_items: Array.isArray(inv.line_items) ? inv.line_items : [],
+        void_reason: inv.void_reason || '',
+        billing_mode: inv.billing_mode || null,
+        new_seats: inv.new_seats || null,
+        current_seats: inv.current_seats || null,
+        payment_mode: inv.payment_mode || '',
+        transaction_id: inv.transaction_id || '',
+        valid_from: inv.valid_from || null,
+        valid_until: inv.valid_until || null
+      };
+    });
+
+    return {
+      success: true,
+      tenant: {
+        tenant_code: tenantRow.tenant_code || (target === DEFAULT_TENANT_ID ? 'TNT00002' : 'TNT00001'),
+        name: tenantRow.name,
+        status: resolvedStatus,
+        primary_contact_email: tenantRow.primary_contact_email || null,
+        phone: tenantRow.phone || null,
+        address: tenantRow.address || null,
+        gstin: tenantRow.gstin || null,
+        is_master_hq: isMasterHq
+      },
+      subscription: {
+        plan_name: subRow?.plan_name || (isMasterHq ? 'MASTER_HQ_LIFETIME' : 'ENTERPRISE_PLAN'),
+        billing_cycle: subRow?.billing_cycle || (isMasterHq ? 'LIFETIME' : 'YEARLY'),
+        status: resolvedStatus,
+        start_date: subRow?.valid_from || subRow?.starts_at || subRow?.created_at || tenantRow.created_at || null,
+        valid_until: isMasterHq ? null : (subRow?.valid_until || null),
+        days_remaining: daysRemaining,
+        is_expired: isExpired,
+        is_expiring_soon: isExpiringSoon,
+        is_master_hq: isMasterHq,
+        never_expires: isMasterHq,
+        user_seat_limit: subRow?.user_seat_limit || (target === DEFAULT_TENANT_ID ? 200 : 5),
+        active_users_count: activeUsersCount,
+        calling_seats_limit: isMasterHq ? 300 : (Number(telConfig.calling_seat_limit) || 5),
+        calling_mode: isMasterHq ? 'managed' : (telConfig.mode || 'managed'),
+        smtp_accounts_limit: smtpLimit,
+        enabled_modules: enabledModules
+      },
+      invoices: safeInvoices
+    };
+  } catch (err) {
+    console.error('getOwnTenantBillingSummary error:', err);
+    return {
+      success: false,
+      error: err.message || 'Unable to load billing summary.',
+      tenant: null,
+      subscription: null,
+      invoices: []
     };
   }
 }

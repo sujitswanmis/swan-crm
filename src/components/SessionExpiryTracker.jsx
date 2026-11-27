@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Clock, ShieldAlert, Activity, CheckCircle2, RefreshCw, AlertTriangle, UserCheck, Coffee, Utensils, Play, X, ChevronRight, Droplets, Users, BedDouble, Sliders } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { getSessionSecuritySettings, recordUserActivityHeartbeat, startEmployeeBreak, endEmployeeBreak, getCurrentEmployeeStatus } from '@/app/actions/sessionSettings';
+import { getClientDeviceSignature } from '@/utils/deviceSessionId';
 
 const BREAK_TYPES = [
   { id: 'tea', label: 'Tea / Coffee Break', icon: '☕', defaultMins: 15 },
@@ -266,7 +267,9 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
       }
 
       // C. Inactivity Timeout Countdown (Session Expiry)
-      if (settingsRef.current.enableAutoLogout) {
+      // Native Mobile APK sessions stay logged in so background field GPS tracking is never interrupted.
+      const isNativeMobileApp = typeof window !== 'undefined' && Boolean(window.Capacitor?.isNativePlatform?.());
+      if (settingsRef.current.enableAutoLogout && !isNativeMobileApp) {
         const remaining = Math.max(0, inactivityMaxSec - timeSinceLastActivitySec);
         setTimeLeftSeconds(prev => (prev === remaining ? prev : remaining));
 
@@ -316,7 +319,7 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
           activeSecondsIncrement: activeInc,
           idleSecondsIncrement: idleInc,
           status: currentBreakRef.current ? 'on_break' : isCurrentlyActive.current ? 'working' : 'away',
-          device: typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Browser'
+          device: getClientDeviceSignature()
         });
 
         if (res && res.valid === false) {
@@ -427,7 +430,7 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
         const { logAuditAction } = await import('@/app/actions/audit');
         await logAuditAction('Session Auto-Logout', 'Session automatically logged out due to inactivity timeout');
       } catch (e) {}
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' });
     } catch (err) {
       console.error('Auto logout error:', err);
     } finally {

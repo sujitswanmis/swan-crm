@@ -65,10 +65,16 @@ export async function GET() {
       }
     } catch {}
 
+    const commitSha =
+      process.env.VERCEL_GIT_COMMIT_SHA ||
+      process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
+      null;
+
     return NextResponse.json(
       {
         success: true,
         version: pkgVersion,
+        commitSha,
         timestamp: Date.now(),
         android: policies.android,
         windows: policies.windows,

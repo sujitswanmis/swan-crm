@@ -13,6 +13,6 @@ export const config = {
      * - favicon.ico, manifest.json, sw.js (PWA assets)
      * - static media files
      */
-    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest|mp3|wav)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|apps/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest|mp3|wav|apk)$).*)',
   ],
 };

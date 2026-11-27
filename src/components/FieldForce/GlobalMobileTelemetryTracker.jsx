@@ -78,8 +78,162 @@ export default function GlobalMobileTelemetryTracker({
   const [deviceHealthBanner, setDeviceHealthBanner] = useState(null);
   const [dismissedHealthBanner, setDismissedHealthBanner] = useState(false);
   const [showMandatoryPermissionModal, setShowMandatoryPermissionModal] = useState(false);
+  const [mandatoryGaps, setMandatoryGaps] = useState({ needsLocation: false, needsBattery: false });
   const isPunchedInRef = useRef(false);
   const lastHealthReportRef = useRef({ at: 0, sig: '' });
+
+  // Universal Lightweight App Version & Device Health Audit:
+  // Runs for ALL authenticated users & platforms (Android APK, iOS, Mobile Web, Windows Desktop App)
+  // even when not punched in or on PUNCH_ONLY/ATTENDANCE_ONLY policy, while GPS tracking stays Field-Force + On-Duty only.
+  useEffect(() => {
+    if (!userId || typeof window === 'undefined') return;
+    let disposed = false;
+    let inFlight = false;
+
+    const reportUniversalHealth = async (force = false) => {
+      if (disposed || inFlight || navigator.onLine === false) return;
+      inFlight = true;
+      try {
+        const plat = detectClientPlatform();
+        const ua = navigator.userAgent || '';
+        const plugin = window.Capacitor?.isNativePlatform?.() ? (window.Capacitor?.Plugins?.FieldTracker || null) : null;
+        const desktopBridge = window.desktopApp?.isDesktop ? window.desktopApp : null;
+
+        let payload = {
+          userId,
+          company,
+          branchCode,
+          platform: plat?.platform || PLATFORM_LABELS.WEB_APP,
+          platform_details: plat?.details || ua
+        };
+
+        if (plugin && typeof plugin.getStatus === 'function') {
+          let timer;
+          let st;
+          try {
+            st = await Promise.race([
+              plugin.getStatus(),
+              new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Native status timeout')), 5000); })
+            ]);
+          } finally {
+            clearTimeout(timer);
+          }
+          payload = {
+            ...payload,
+            platform: PLATFORM_LABELS.ANDROID_APP,
+            running: Boolean(st?.running),
+            pendingCount: Number(st?.pendingCount || 0),
+            hasForegroundLocation: st?.hasForegroundLocation,
+            hasBackgroundLocation: st?.hasBackgroundLocation,
+            locationMode: st?.locationMode,
+            appVersionCode: st?.appVersionCode,
+            appVersionName: st?.appVersionName,
+            osVersion: st?.osVersion,
+            sdkInt: st?.sdkInt,
+            deviceManufacturer: st?.deviceManufacturer,
+            deviceModel: st?.deviceModel,
+            batteryUnrestricted: st?.batteryUnrestricted,
+            notificationsEnabled: st?.notificationsEnabled,
+            gpsProviderEnabled: st?.gpsProviderEnabled
+          };
+          if (st?.appVersionCode) {
+            try { window.localStorage?.setItem('spc_android_version_code', String(st.appVersionCode)); } catch {}
+          }
+          if (typeof plugin.getFcmToken === 'function') {
+            try {
+              const fcmRes = await plugin.getFcmToken();
+              const fcmToken = fcmRes?.token;
+              if (fcmToken) {
+                const syncKey = `${userId}:${fcmToken}`;
+                const lastSynced = window.localStorage?.getItem('spc_fcm_token_synced');
+                if (lastSynced !== syncKey) {
+                  const regRes = await fetch('/api/push/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      fcmToken,
+                      company,
+                      platform: 'android',
+                      appVersionCode: st?.appVersionCode ?? null,
+                      deviceModel: st?.deviceModel ?? null
+                    })
+                  });
+                  if (regRes.ok) {
+                    try { window.localStorage?.setItem('spc_fcm_token_synced', syncKey); } catch {}
+                  }
+                }
+              }
+            } catch {}
+          }
+        } else if (desktopBridge) {
+          const desktopCode = Number(desktopBridge.appVersionCode || (desktopBridge.version === '3.0.0' ? 3 : 2));
+          payload = {
+            ...payload,
+            platform: plat?.platform === PLATFORM_LABELS.MACOS_APP ? PLATFORM_LABELS.MACOS_APP : PLATFORM_LABELS.WINDOWS_APP,
+            appVersionCode: desktopCode,
+            appVersionName: String(desktopBridge.appVersion || desktopBridge.version || `v${desktopCode}`),
+            osVersion: desktopBridge.platform === 'darwin' ? 'macOS' : 'Windows',
+            deviceManufacturer: 'Desktop',
+            deviceModel: 'SPC Workspace Electron'
+          };
+        } else if (plat?.platform === PLATFORM_LABELS.IOS_APP) {
+          payload = {
+            ...payload,
+            platform: PLATFORM_LABELS.IOS_APP,
+            appVersionCode: Number(window.localStorage?.getItem('spc_ios_version_code') || 1),
+            appVersionName: 'v1.0',
+            osVersion: 'iOS'
+          };
+        } else {
+          // Desktop Chrome/Edge browsers already log live presence via user_sessions; never overwrite mobile health rows
+          if (!/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) {
+            return;
+          }
+          payload.locationMode = 'browser';
+        }
+
+        const sig = JSON.stringify([
+          payload.platform,
+          payload.appVersionCode ?? null,
+          payload.locationMode ?? null,
+          payload.hasForegroundLocation ?? null,
+          payload.hasBackgroundLocation ?? null,
+          payload.batteryUnrestricted ?? null,
+          payload.gpsProviderEnabled ?? null,
+          payload.running ?? null
+        ]);
+        const now = Date.now();
+        if (!force && sig === lastHealthReportRef.current.sig && now - lastHealthReportRef.current.at < 45000) {
+          return;
+        }
+        const res = await reportEmployeeDeviceHealth(payload);
+        if (!disposed && res?.success && !res?.skippedOverwrite) {
+          lastHealthReportRef.current = { at: now, sig };
+        }
+      } catch {
+        // Non-blocking audit
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void reportUniversalHealth(true);
+    const interval = setInterval(() => { void reportUniversalHealth(false); }, 300000);
+    const onWake = () => {
+      if (document.visibilityState === 'hidden') return;
+      void reportUniversalHealth(false);
+    };
+    document.addEventListener('visibilitychange', onWake);
+    window.addEventListener('focus', onWake);
+    window.addEventListener('online', onWake);
+    return () => {
+      disposed = true;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onWake);
+      window.removeEventListener('focus', onWake);
+      window.removeEventListener('online', onWake);
+    };
+  }, [userId, company, branchCode]);
 
   useEffect(() => {
     if (!userId || typeof window === 'undefined') return;
@@ -109,19 +263,28 @@ export default function GlobalMobileTelemetryTracker({
     };
 
     // Immediate check on mobile app mount for Field Force users:
-    // Forcibly require "Allow all the time" before opening the app
+    // Forcibly require "Allow all the time" + Battery Unrestricted before opening the app
+    const applyMandatoryDiag = (diag) => {
+      if (!diag) return;
+      const hasAllTime = diag.locationMode === 'all_the_time' || diag.hasBackgroundLocation === true;
+      const needsLocation = !hasAllTime;
+      const needsBattery = diag.batteryUnrestricted === false;
+      setMandatoryGaps({ needsLocation, needsBattery });
+      if (needsLocation || needsBattery) {
+        setShowMandatoryPermissionModal(true);
+      } else {
+        setShowMandatoryPermissionModal(false);
+        setGpsAlert(null);
+      }
+    };
+
     const checkImmediateFieldPermission = async () => {
       const plugin = getNativeTrackerPlugin();
       const statusFn = plugin?.getStatus || plugin?.getDiagnostics;
       if (!plugin || typeof statusFn !== 'function') return;
       try {
         const diag = await statusFn.call(plugin);
-        if (diag && (diag.locationMode === 'while_using' || diag.locationMode === 'denied' || diag.hasBackgroundLocation === false)) {
-          setShowMandatoryPermissionModal(true);
-        } else if (diag && (diag.locationMode === 'all_the_time' || diag.hasBackgroundLocation === true)) {
-          setShowMandatoryPermissionModal(false);
-          setGpsAlert(null);
-        }
+        applyMandatoryDiag(diag);
       } catch {}
     };
     checkImmediateFieldPermission();
@@ -168,12 +331,12 @@ export default function GlobalMobileTelemetryTracker({
             clearInterval(heartbeatTimer);
             heartbeatTimer = null;
           }
-          // Only dismiss modal if background location is genuinely verified as all the time
+          // Only dismiss modal if BOTH background location is all_the_time AND battery is unrestricted
           try {
-            const diag = typeof statusFn === 'function' ? await statusFn.call(plugin) : null;
-            if (diag?.locationMode === 'all_the_time' || diag?.hasBackgroundLocation === true) {
-              setGpsAlert(null);
-              setShowMandatoryPermissionModal(false);
+            const pluginStatusFn = plugin?.getStatus || plugin?.getDiagnostics;
+            const diag = typeof pluginStatusFn === 'function' ? await pluginStatusFn.call(plugin) : null;
+            if (diag) {
+              applyMandatoryDiag(diag);
             }
           } catch {}
           return true;
@@ -419,10 +582,15 @@ export default function GlobalMobileTelemetryTracker({
         const showBatteryFix = Boolean(plugin && payload.batteryUnrestricted === false);
         const showGpsFix = Boolean(plugin && payload.gpsProviderEnabled === false);
 
-        // For Live Tracking (Field Force) users, forcibly require 'Allow all the time'
-        if (isPermissionRestricted) {
+        // For Live Tracking (Field Force) users, forcibly require BOTH 'Allow all the time' and Battery Unrestricted
+        if (plugin && (isPermissionRestricted || showBatteryFix)) {
+          setMandatoryGaps({
+            needsLocation: isPermissionRestricted,
+            needsBattery: showBatteryFix
+          });
           setShowMandatoryPermissionModal(true);
-        } else if (ev.locationMode === 'all_the_time') {
+        } else if (ev.locationMode === 'all_the_time' && !showBatteryFix) {
+          setMandatoryGaps({ needsLocation: false, needsBattery: false });
           setShowMandatoryPermissionModal(false);
           setGpsAlert(null);
         }
@@ -569,12 +737,18 @@ export default function GlobalMobileTelemetryTracker({
   };
 
   const handleManualCheckUnlock = async () => {
+    let needsLocation = mandatoryGaps.needsLocation;
+    let needsBattery = mandatoryGaps.needsBattery;
     try {
       const plugin = typeof window !== 'undefined' ? window.Capacitor?.Plugins?.FieldTracker : null;
       const statusFn = plugin?.getStatus || plugin?.getDiagnostics;
       if (plugin && typeof statusFn === 'function') {
         const diag = await statusFn.call(plugin);
-        if (diag?.locationMode === 'all_the_time' || diag?.hasBackgroundLocation === true) {
+        const hasAllTime = diag?.locationMode === 'all_the_time' || diag?.hasBackgroundLocation === true;
+        needsLocation = !hasAllTime;
+        needsBattery = diag?.batteryUnrestricted === false;
+        setMandatoryGaps({ needsLocation, needsBattery });
+        if (!needsLocation && !needsBattery) {
           setShowMandatoryPermissionModal(false);
           setGpsAlert(null);
           return;
@@ -582,9 +756,15 @@ export default function GlobalMobileTelemetryTracker({
       }
     } catch {}
     if (typeof window !== 'undefined') {
-      alert('⚠️ Location permission abhi bhi "Allow all the time" nahi mili hai.\n\nKripya phone settings me jakar Permissions ➔ Location ➔ "Allow all the time" select karein.');
+      if (needsLocation && needsBattery) {
+        alert('⚠️ Location ("Allow all the time") aur Battery ("Unrestricted") dono zaroori hain.\n\nKripya pehle dono permissions allow karein.');
+      } else if (needsBattery) {
+        alert('⚠️ Battery Optimization abhi bhi restricted hai.\n\nKripya "Allow" par tap karke SPC Workspace ke liye Battery Unrestricted set karein.');
+      } else {
+        alert('⚠️ Location permission abhi bhi "Allow all the time" nahi mili hai.\n\nKripya phone settings me jakar Permissions ➔ Location ➔ "Allow all the time" select karein.');
+      }
     }
-    handleSelfHealClick('app');
+    handleSelfHealClick(needsLocation ? 'app' : 'battery');
   };
 
   const showGpsAlert = Boolean(gpsAlert && !dismissedAlert);
@@ -649,63 +829,109 @@ export default function GlobalMobileTelemetryTracker({
                 border: '1px solid #fecaca',
                 borderRadius: '10px',
                 padding: '12px 14px',
-                margin: '0 0 1.15rem 0'
+                margin: '0 0 1rem 0'
               }}
             >
-              <p style={{ margin: '0 0 6px 0', fontSize: '0.94rem', fontWeight: 700, color: '#dc2626', lineHeight: 1.45 }}>
-                At official work start time, app permission "Allow all the time" is mandatory.
+              <p style={{ margin: '0 0 6px 0', fontSize: '0.92rem', fontWeight: 700, color: '#dc2626', lineHeight: 1.45 }}>
+                Live Tracking ke liye Location (&quot;Allow all the time&quot;) aur Battery (&quot;Unrestricted&quot;) dono anivarya hain.
               </p>
-              <p style={{ margin: 0, fontSize: '0.84rem', fontWeight: 600, color: '#991b1b', lineHeight: 1.45 }}>
-                Aapke account par 🚗 Live Tracking (Field Force) active hai. Continuous field tracking aur attendance ke liye Phone Settings me Location permission ko "Allow all the time" (Hamesha allow) karna anivarya hai.
+              <p style={{ margin: 0, fontSize: '0.82rem', fontWeight: 600, color: '#991b1b', lineHeight: 1.45 }}>
+                Aapke account par 🚗 Live Tracking (Field Force) active hai. Screen lock ya Battery Saver me GPS band na ho iske liye dono settings allow karein.
               </p>
             </div>
 
-            <div
-              style={{
-                textAlign: 'left',
-                background: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: '10px',
-                padding: '12px 16px',
-                margin: '0 0 1.35rem 0',
-                fontSize: '0.85rem',
-                color: '#334155',
-                lineHeight: 1.6
-              }}
-            >
-              <p style={{ margin: '0 0 6px 0', fontWeight: 700, color: '#0f172a' }}>
-                Settings allow karne ke asaan steps:
-              </p>
-              <ol style={{ margin: 0, paddingLeft: '18px' }}>
-                <li style={{ marginBottom: '4px' }}>Neeche <strong>"Open Settings &amp; Allow"</strong> button par tap karein</li>
-                <li style={{ marginBottom: '4px' }}>Phone Settings me <strong>Permissions ➔ Location</strong> par jayein</li>
-                <li><strong>"Allow all the time"</strong> select karein aur wapas app me aayein</li>
-              </ol>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1rem', textAlign: 'left' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  background: mandatoryGaps.needsLocation ? '#fff7ed' : '#f0fdf4',
+                  border: `1px solid ${mandatoryGaps.needsLocation ? '#fed7aa' : '#bbf7d0'}`
+                }}
+              >
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a' }}>
+                  📍 Location: &quot;Allow all the time&quot;
+                </div>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: mandatoryGaps.needsLocation ? '#c2410c' : '#15803d' }}>
+                  {mandatoryGaps.needsLocation ? 'Pending' : '✅ Allowed'}
+                </span>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  padding: '10px 12px',
+                  borderRadius: '10px',
+                  background: mandatoryGaps.needsBattery ? '#fff7ed' : '#f0fdf4',
+                  border: `1px solid ${mandatoryGaps.needsBattery ? '#fed7aa' : '#bbf7d0'}`
+                }}
+              >
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a' }}>
+                  🔋 Battery Saver: &quot;Unrestricted&quot;
+                </div>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: mandatoryGaps.needsBattery ? '#c2410c' : '#15803d' }}>
+                  {mandatoryGaps.needsBattery ? 'Pending' : '✅ Unrestricted'}
+                </span>
+              </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={() => handleSelfHealClick('app')}
-                style={{
-                  width: '100%',
-                  padding: '13px 20px',
-                  borderRadius: '10px',
-                  background: '#2563eb',
-                  color: '#ffffff',
-                  fontSize: '0.96rem',
-                  fontWeight: 700,
-                  border: 'none',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 14px rgba(37, 99, 235, 0.4)'
-                }}
-              >
-                <Settings size={18} /> Open Settings &amp; Allow
-              </button>
+              {mandatoryGaps.needsLocation && (
+                <button
+                  type="button"
+                  onClick={() => handleSelfHealClick('app')}
+                  style={{
+                    width: '100%',
+                    padding: '12px 18px',
+                    borderRadius: '10px',
+                    background: '#2563eb',
+                    color: '#ffffff',
+                    fontSize: '0.92rem',
+                    fontWeight: 700,
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(37, 99, 235, 0.38)'
+                  }}
+                >
+                  <Settings size={17} /> 1. Allow Location All the Time
+                </button>
+              )}
+
+              {mandatoryGaps.needsBattery && (
+                <button
+                  type="button"
+                  onClick={() => handleSelfHealClick('battery')}
+                  style={{
+                    width: '100%',
+                    padding: '12px 18px',
+                    borderRadius: '10px',
+                    background: '#d97706',
+                    color: '#ffffff',
+                    fontSize: '0.92rem',
+                    fontWeight: 700,
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(217, 119, 6, 0.35)'
+                  }}
+                >
+                  <BatteryCharging size={17} /> {mandatoryGaps.needsLocation ? '2. ' : ''}Set Battery Unrestricted
+                </button>
+              )}
 
               <button
                 type="button"
@@ -829,6 +1055,22 @@ export default function GlobalMobileTelemetryTracker({
               href={deviceHealthBanner.downloadUrl || '/api/public/android-apk'}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={(e) => {
+                const targetUrl = deviceHealthBanner.downloadUrl || 'https://app.supujacreations.com/api/public/android-apk';
+                if (window?.Capacitor?.isNativePlatform?.() && typeof document !== 'undefined') {
+                  e.preventDefault();
+                  const existing = document.getElementById('spc-apk-dl-frame');
+                  if (existing) existing.remove();
+                  const iframe = document.createElement('iframe');
+                  iframe.id = 'spc-apk-dl-frame';
+                  iframe.style.display = 'none';
+                  iframe.src = targetUrl;
+                  document.body.appendChild(iframe);
+                  setTimeout(() => {
+                    try { iframe.remove(); } catch {}
+                  }, 15000);
+                }
+              }}
               style={{
                 borderRadius: 6,
                 background: '#0f766e',

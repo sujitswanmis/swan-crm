@@ -349,13 +349,13 @@ export default function ComplaintManagementModule({
 
   const renderStatus = (ticket) => {
     const status = COMPLAINT_STATUSES[getComplaintStatus(ticket)];
-    return <span style={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', fontSize: '0.72rem', fontWeight: 700, padding: '0.18rem 0.45rem', borderRadius: '5px', background: `${status.color}18`, color: status.color }}>{status.label}</span>;
+    return <span style={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap', fontSize: '0.72rem', fontWeight: 700, padding: '0.18rem 0.45rem', borderRadius: '5px', background: `color-mix(in srgb, ${status.color} 13%, var(--spc-view-surface))`, color: `color-mix(in srgb, ${status.color} 30%, var(--spc-view-text))` }}>{status.label}</span>;
   };
   const renderActions = (ticket, nextStage) => (
     <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'nowrap', gap: '0.4rem', whiteSpace: 'nowrap' }}>
       {nextStage && getComplaintStatus(ticket) === 'PENDING' && (
         <button type="button" onClick={() => handleOpenAdvanceStage(ticket, nextStage)} title={`Advance to ${nextStage.id}: ${nextStage.name}`} aria-label={`Advance ${ticket.ticket_number} to ${nextStage.id}`}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0, whiteSpace: 'nowrap', minHeight: '32px', padding: '0.35rem 0.6rem', borderRadius: '6px', background: `${nextStage.color}20`, border: `1px solid ${nextStage.color}`, color: nextStage.color, cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}>
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', flexShrink: 0, whiteSpace: 'nowrap', minHeight: '32px', padding: '0.35rem 0.6rem', borderRadius: '6px', background: `color-mix(in srgb, ${nextStage.color} 13%, var(--spc-view-surface))`, border: `1px solid ${nextStage.color}`, color: `color-mix(in srgb, ${nextStage.color} 30%, var(--spc-view-text))`, cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700 }}>
           Advance {nextStage.id}<ArrowRight size={13} />
         </button>
       )}
@@ -375,42 +375,42 @@ export default function ComplaintManagementModule({
         gap: '0.75rem'
       }}>
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+          <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'var(--spc-view-danger-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--spc-view-danger)' }}>
             <AlertTriangle size={20} />
           </div>
           <div>
-            <div style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 600, textTransform: 'uppercase' }}>Active Complaints</div>
-            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ef4444' }}>{kpis.open}</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-danger)', fontWeight: 600, textTransform: 'uppercase' }}>Active Complaints</div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--spc-view-danger)' }}>{kpis.open}</div>
           </div>
         </div>
 
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f59e0b' }}>
+          <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'var(--spc-view-warning-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--spc-view-warning)' }}>
             <Wrench size={20} />
           </div>
           <div>
-            <div style={{ fontSize: '0.72rem', color: '#fbbf24', fontWeight: 600, textTransform: 'uppercase' }}>Field Service / Tech</div>
-            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#fbbf24' }}>{kpis.underService}</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-warning)', fontWeight: 600, textTransform: 'uppercase' }}>Field Service / Tech</div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--spc-view-warning)' }}>{kpis.underService}</div>
           </div>
         </div>
 
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+          <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'var(--spc-view-success-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--spc-view-success)' }}>
             <CheckCircle2 size={20} />
           </div>
           <div>
-            <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600, textTransform: 'uppercase' }}>Verified &amp; Closed</div>
-            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#10b981' }}>{kpis.closed}</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-success)', fontWeight: 600, textTransform: 'uppercase' }}>Verified &amp; Closed</div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--spc-view-success)' }}>{kpis.closed}</div>
           </div>
         </div>
 
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+          <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'var(--spc-view-danger-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--spc-view-danger)' }}>
             <ShieldAlert size={20} />
           </div>
           <div>
-            <div style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 600, textTransform: 'uppercase' }}>SLA Breached</div>
-            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#ef4444' }}>{kpis.breached}</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-danger)', fontWeight: 600, textTransform: 'uppercase' }}>SLA Breached</div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--spc-view-danger)' }}>{kpis.breached}</div>
           </div>
         </div>
       </div>
@@ -432,7 +432,7 @@ export default function ComplaintManagementModule({
           style={{
             padding: '0.45rem 0.85rem',
             borderRadius: '8px',
-            background: stageFilter === 'ALL' ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
+            background: stageFilter === 'ALL' ? 'var(--channel-action-fill)' : 'var(--bg-primary)',
             color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-primary)',
             border: '1px solid var(--border-light)',
             cursor: 'pointer',
@@ -450,8 +450,8 @@ export default function ComplaintManagementModule({
             fontSize: '0.72rem',
             padding: '0.1rem 0.4rem',
             borderRadius: '10px',
-            background: stageFilter === 'ALL' ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
-            color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary)'
+            background: stageFilter === 'ALL' ? 'rgba(255,255,255,0.1)' : 'var(--spc-view-raised)',
+            color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-primary)'
           }}>
             {stageCounts.ALL}
           </span>
@@ -468,7 +468,7 @@ export default function ComplaintManagementModule({
               style={{
                 padding: '0.45rem 0.75rem',
                 borderRadius: '8px',
-                background: isSelected ? `${st.color}20` : 'var(--bg-primary)',
+                background: isSelected ? `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 13%, var(--spc-view-surface))` : 'var(--bg-primary)',
                 border: isSelected ? `2px solid ${st.color}` : '1px solid var(--border-light)',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
@@ -481,8 +481,8 @@ export default function ComplaintManagementModule({
               <span style={{
                 fontSize: '0.7rem',
                 fontWeight: 800,
-                color: st.color,
-                background: `${st.color}20`,
+                color: `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 30%, var(--spc-view-text))`,
+                background: `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 13%, var(--spc-view-surface))`,
                 padding: '0.1rem 0.35rem',
                 borderRadius: '4px'
               }}>
@@ -500,8 +500,8 @@ export default function ComplaintManagementModule({
                 fontWeight: 700,
                 padding: '0.05rem 0.35rem',
                 borderRadius: '10px',
-                background: isSelected ? `${st.color}30` : 'var(--border-light)',
-                color: isSelected ? st.color : 'var(--text-secondary)'
+                background: isSelected ? `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 18%, var(--spc-view-surface))` : 'var(--spc-view-raised)',
+                color: isSelected ? `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 30%, var(--spc-view-text))` : 'var(--text-primary)'
               }}>
                 {count}
               </span>
@@ -515,8 +515,8 @@ export default function ComplaintManagementModule({
           style={{
             padding: '0.45rem 0.75rem',
             borderRadius: '8px',
-            background: stageFilter === 'BREACHED' ? 'rgba(239,68,68,0.2)' : 'var(--bg-primary)',
-            border: stageFilter === 'BREACHED' ? '2px solid #ef4444' : '1px solid var(--border-light)',
+            background: stageFilter === 'BREACHED' ? 'var(--spc-view-danger-bg)' : 'var(--bg-primary)',
+            border: stageFilter === 'BREACHED' ? '2px solid var(--spc-view-danger-border)' : '1px solid var(--border-light)',
             cursor: 'pointer',
             whiteSpace: 'nowrap',
             display: 'flex',
@@ -525,14 +525,14 @@ export default function ComplaintManagementModule({
             marginLeft: 'auto'
           }}
         >
-          <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#ef4444' }}>⚠️ SLA Breached</span>
+          <span style={{ fontSize: '0.74rem', fontWeight: 800, color: 'var(--spc-view-danger)' }}>⚠️ SLA Breached</span>
           <span style={{
             fontSize: '0.7rem',
             fontWeight: 800,
             padding: '0.05rem 0.35rem',
             borderRadius: '10px',
-            background: 'rgba(239,68,68,0.25)',
-            color: '#ef4444'
+            background: 'var(--spc-view-danger-bg)',
+            color: 'var(--spc-view-danger)'
           }}>
             {stageCounts.BREACHED}
           </span>
@@ -571,7 +571,7 @@ export default function ComplaintManagementModule({
             Ticket created date (IST): {dateRange.startDate ? `${dateRange.startDate} → ${dateRange.endDate}` : 'All Time'}
           </span>
         </div>
-        {dateRange.error && <div role="alert" style={{ width: '100%', color: '#dc2626', fontSize: '0.78rem' }}>{dateRange.error}</div>}
+        {dateRange.error && <div role="alert" style={{ width: '100%', color: 'var(--spc-view-danger)', fontSize: '0.78rem' }}>{dateRange.error}</div>}
         {/* Search */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: '1 1 280px', maxWidth: '380px' }}>
           <div style={{ position: 'relative', width: '100%' }}>
@@ -624,7 +624,7 @@ export default function ComplaintManagementModule({
               style={{
                 padding: '0.4rem 0.65rem',
                 borderRadius: '6px',
-                background: viewMode === 'table' ? 'var(--accent-color, #2563eb)' : 'transparent',
+                background: viewMode === 'table' ? 'var(--channel-action-fill)' : 'transparent',
                 color: viewMode === 'table' ? '#fff' : 'var(--text-secondary)',
                 border: 'none',
                 cursor: 'pointer',
@@ -644,7 +644,7 @@ export default function ComplaintManagementModule({
               style={{
                 padding: '0.4rem 0.65rem',
                 borderRadius: '6px',
-                background: viewMode === 'pipeline' ? 'var(--accent-color, #2563eb)' : 'transparent',
+                background: viewMode === 'pipeline' ? 'var(--channel-action-fill)' : 'transparent',
                 color: viewMode === 'pipeline' ? '#fff' : 'var(--text-secondary)',
                 border: 'none',
                 cursor: 'pointer',
@@ -664,7 +664,7 @@ export default function ComplaintManagementModule({
               style={{
                 padding: '0.4rem 0.65rem',
                 borderRadius: '6px',
-                background: viewMode === 'customers' ? 'var(--accent-color, #2563eb)' : 'transparent',
+                background: viewMode === 'customers' ? 'var(--channel-action-fill)' : 'transparent',
                 color: viewMode === 'customers' ? '#fff' : 'var(--text-secondary)',
                 border: 'none',
                 cursor: 'pointer',
@@ -706,7 +706,7 @@ export default function ComplaintManagementModule({
             onClick={() => setShowCreateModal(true)}
             style={{
               padding: '0.5rem 0.95rem',
-              background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+              background: 'var(--spc-view-danger-fill)',
               border: 'none',
               borderRadius: '8px',
               color: '#fff',
@@ -763,8 +763,8 @@ export default function ComplaintManagementModule({
                     <span style={{
                       fontSize: '0.72rem',
                       fontWeight: 800,
-                      color: st.color,
-                      background: `${st.color}20`,
+                      color: `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 30%, var(--spc-view-text))`,
+                      background: `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 13%, var(--spc-view-surface))`,
                       padding: '0.1rem 0.35rem',
                       borderRadius: '4px'
                     }}>
@@ -777,8 +777,8 @@ export default function ComplaintManagementModule({
                     fontWeight: 800,
                     padding: '0.1rem 0.45rem',
                     borderRadius: '10px',
-                    background: `${st.color}25`,
-                    color: st.color
+                    background: `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 18%, var(--spc-view-surface))`,
+                    color: `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 30%, var(--spc-view-text))`
                   }}>
                     {columnTickets.length}
                   </span>
@@ -798,7 +798,7 @@ export default function ComplaintManagementModule({
                           key={ticket.id}
                           style={{
                             background: 'var(--bg-primary)',
-                            border: isComplaintSlaBreached(ticket) ? '1px solid rgba(239,68,68,0.5)' : '1px solid var(--border-light)',
+                            border: isComplaintSlaBreached(ticket) ? '1px solid var(--spc-view-danger-border)' : '1px solid var(--border-light)',
                             borderRadius: '8px',
                             padding: '0.75rem',
                             display: 'flex',
@@ -810,16 +810,16 @@ export default function ComplaintManagementModule({
                         >
                           {/* Ticket Number & Urgency */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--accent-color, #38bdf8)' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--spc-view-accent)' }}>
                               #{ticket.ticket_number}
                             </span>
 
                             {getComplaintStatus(ticket) !== 'PENDING' ? renderStatus(ticket) : isComplaintSlaBreached(ticket) ? (
-                              <span style={{ fontSize: '0.68rem', fontWeight: 800, background: 'rgba(239,68,68,0.2)', color: '#ef4444', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+                              <span style={{ fontSize: '0.68rem', fontWeight: 800, background: 'var(--spc-view-danger-bg)', color: 'var(--spc-view-danger)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
                                 Breached
                               </span>
                             ) : (
-                              <span style={{ fontSize: '0.68rem', fontWeight: 700, background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
+                              <span style={{ fontSize: '0.68rem', fontWeight: 700, background: 'var(--spc-view-success-bg)', color: 'var(--spc-view-success)', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>
                                 {ticket.slaHoursRemaining ? `${ticket.slaHoursRemaining}h left` : 'On Time'}
                               </span>
                             )}
@@ -831,7 +831,7 @@ export default function ComplaintManagementModule({
                             <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                               {ticket.customer_name ? (
                                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                                  <User size={12} style={{ color: '#38bdf8' }} />
+                                  <User size={12} style={{ color: 'var(--spc-view-info)' }} />
                                   {ticket.customer_name}
                                 </span>
                               ) : (
@@ -852,8 +852,8 @@ export default function ComplaintManagementModule({
                             <span style={{
                               fontSize: '0.68rem',
                               fontWeight: 700,
-                              background: `${catObj.color || '#6366f1'}20`,
-                              color: catObj.color || '#6366f1',
+                              background: `color-mix(in srgb, ${catObj.color || 'var(--spc-view-violet)'} 13%, var(--spc-view-surface))`,
+                              color: `color-mix(in srgb, ${catObj.color || 'var(--spc-view-violet)'} 30%, var(--spc-view-text))`,
                               padding: '0.1rem 0.35rem',
                               borderRadius: '4px'
                             }}>
@@ -871,7 +871,7 @@ export default function ComplaintManagementModule({
 
                           {/* Technician Assigned Badge (if C03+) */}
                           {ticket.technician_name && (
-                            <div style={{ fontSize: '0.7rem', background: 'rgba(139, 92, 246, 0.15)', color: '#c084fc', padding: '0.2rem 0.4rem', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <div style={{ fontSize: '0.7rem', background: 'var(--spc-view-violet-bg)', color: 'var(--spc-view-violet)', padding: '0.2rem 0.4rem', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                               <Wrench size={11} />
                               <span>Tech: <strong>{ticket.technician_name}</strong></span>
                             </div>
@@ -947,7 +947,7 @@ export default function ComplaintManagementModule({
                     return (
                       <tr key={ticket.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <strong style={{ color: 'var(--accent-color, #38bdf8)' }}>#{ticket.ticket_number}</strong>
+                          <strong style={{ color: 'var(--spc-view-accent)' }}>#{ticket.ticket_number}</strong>
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                             {formatIST(ticket.created_at)}
                           </div>
@@ -956,7 +956,7 @@ export default function ComplaintManagementModule({
                         <td style={{ padding: '0.85rem 1rem' }}>
                           <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
                             {ticket.customer_name ? (
-                              <span style={{ color: '#38bdf8' }}>👤 {ticket.customer_name}</span>
+                              <span style={{ color: 'var(--spc-view-info)' }}>👤 {ticket.customer_name}</span>
                             ) : (
                               <span>🏢 {ticket.party?.firm_name || 'Dealer Partner'}</span>
                             )}
@@ -967,7 +967,7 @@ export default function ComplaintManagementModule({
                         </td>
 
                         <td style={{ padding: '0.85rem 1rem' }}>
-                          <span style={{ fontSize: '0.72rem', fontWeight: 700, background: `${catObj.color || '#6366f1'}20`, color: catObj.color || '#6366f1', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 700, background: `color-mix(in srgb, ${catObj.color || 'var(--spc-view-violet)'} 13%, var(--spc-view-surface))`, color: `color-mix(in srgb, ${catObj.color || 'var(--spc-view-violet)'} 30%, var(--spc-view-text))`, padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
                             {catObj.label || ticket.category}
                           </span>
                           <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
@@ -978,7 +978,7 @@ export default function ComplaintManagementModule({
                         <td style={{ padding: '0.85rem 1rem' }}>
                           <div style={{ marginBottom: '0.35rem' }}>{renderStatus(ticket)}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: st.color, background: `${st.color}20`, padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 30%, var(--spc-view-text))`, background: `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 13%, var(--spc-view-surface))`, padding: '0.1rem 0.35rem', borderRadius: '4px' }}>
                               {st.id}
                             </span>
                             <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -987,9 +987,9 @@ export default function ComplaintManagementModule({
                           </div>
                           {getComplaintStatus(ticket) === 'PENDING' && <div style={{ fontSize: '0.7rem', marginTop: '2px' }}>
                             {isComplaintSlaBreached(ticket) ? (
-                              <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠️ SLA Breached</span>
+                              <span style={{ color: 'var(--spc-view-danger)', fontWeight: 700 }}>⚠️ SLA Breached</span>
                             ) : (
-                              <span style={{ color: '#10b981' }}>✓ On Time</span>
+                              <span style={{ color: 'var(--spc-view-success)' }}>✓ On Time</span>
                             )}
                           </div>}
                         </td>
@@ -997,7 +997,7 @@ export default function ComplaintManagementModule({
                         <td style={{ padding: '0.85rem 1rem' }}>
                           {ticket.technician_name ? (
                             <div>
-                              <strong style={{ fontSize: '0.78rem', color: '#c084fc' }}>{ticket.technician_name}</strong>
+                              <strong style={{ fontSize: '0.78rem', color: 'var(--spc-view-violet)' }}>{ticket.technician_name}</strong>
                               <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{ticket.technician_phone || '-'}</div>
                             </div>
                           ) : (
@@ -1018,6 +1018,7 @@ export default function ComplaintManagementModule({
 
           {/* Standard Bottom Page Navigation */}
           <StandardTablePagination
+            style={{ '--accent-color': 'var(--channel-action-fill)' }}
             currentPage={displayPage}
             totalRecords={filteredTickets.length}
             pageSize={pageSize === 'All' ? 100000 : Number(pageSize)}
@@ -1078,7 +1079,7 @@ export default function ComplaintManagementModule({
           }}>
             <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <AlertTriangle size={18} style={{ color: '#ef4444' }} />
+                <AlertTriangle size={18} style={{ color: 'var(--spc-view-danger)' }} />
                 <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
                   Log New Complaint Ticket (C01)
                 </h3>
@@ -1133,7 +1134,7 @@ export default function ComplaintManagementModule({
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
                     <label style={{ fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                      Select Registered End Customer <span style={{ color: '#ef4444' }}>*</span>
+                      Select Registered End Customer <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                     </label>
                     <button
                       type="button"
@@ -1141,7 +1142,7 @@ export default function ComplaintManagementModule({
                       style={{
                         background: 'none',
                         border: 'none',
-                        color: 'var(--accent-color, #38bdf8)',
+                        color: 'var(--spc-view-accent)',
                         fontSize: '0.75rem',
                         fontWeight: 700,
                         cursor: 'pointer'
@@ -1179,7 +1180,7 @@ export default function ComplaintManagementModule({
               {/* 8 Categories */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                  Complaint Category (8 Categories) <span style={{ color: '#ef4444' }}>*</span>
+                  Complaint Category (8 Categories) <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                 </label>
                 <select
                   value={createForm.category}
@@ -1236,7 +1237,7 @@ export default function ComplaintManagementModule({
               {/* Issue Description */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.74rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-                  Issue Description &amp; Problem Details <span style={{ color: '#ef4444' }}>*</span>
+                  Issue Description &amp; Problem Details <span style={{ color: 'var(--spc-view-danger)' }}>*</span>
                 </label>
                 <textarea
                   rows={3}
@@ -1260,7 +1261,7 @@ export default function ComplaintManagementModule({
                 <button
                   type="submit"
                   disabled={submitting}
-                  style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', border: 'none', color: '#fff', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '0.84rem' }}
+                  style={{ padding: '0.5rem 1.25rem', borderRadius: '6px', background: 'var(--spc-view-danger-fill)', border: 'none', color: '#fff', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: '0.84rem' }}
                 >
                   {submitting ? 'Logging...' : 'Create Ticket'}
                 </button>

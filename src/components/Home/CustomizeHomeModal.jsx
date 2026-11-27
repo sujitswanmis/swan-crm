@@ -263,7 +263,7 @@ export default function CustomizeHomeModal({
           alignItems: 'center',
           justifyContent: 'flex-end',
           gap: '0.75rem',
-          backgroundColor: 'rgba(248, 250, 252, 0.8)'
+          backgroundColor: 'var(--bg-primary, #f8fafc)'
         }}>
           <button
             type="button"
@@ -272,8 +272,8 @@ export default function CustomizeHomeModal({
               padding: '0.55rem 1.25rem',
               borderRadius: '8px',
               border: '1px solid var(--border-light, #cbd5e1)',
-              backgroundColor: '#ffffff',
-              color: 'var(--text-secondary, #475569)',
+              backgroundColor: 'var(--bg-surface, #ffffff)',
+              color: 'var(--text-primary, #1e293b)',
               fontWeight: 600,
               fontSize: '0.85rem',
               cursor: 'pointer'

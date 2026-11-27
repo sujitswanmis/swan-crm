@@ -323,6 +323,11 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
       if (moduleId === 'settings' && subItemId === 'complaints_config') {
         return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
       }
+      // Billing & Subscription History in settings is strictly Admin/Manager only by default.
+      if (moduleId === 'settings' && subItemId === 'subscription_billing') {
+        const isPrivileged = isAdmin || parentPerms.is_manager === true;
+        return { view: isPrivileged, add: false, edit: false, delete: false };
+      }
       // If this is holidays in settings, inherit from parent settings view if not explicitly disabled
       if (moduleId === 'settings' && subItemId === 'holidays') {
         return { view: parentPerms.view, add: parentPerms.add, edit: parentPerms.edit, delete: false };
@@ -387,6 +392,10 @@ export function getSubItemPermissions(moduleAccess, userRole, moduleId, subItemI
     if (subItemId === 'live_tracking' && !isAdmin && parentPerms.is_manager !== true) {
       return { view: false, add: false, edit: false, delete: false };
     }
+  }
+
+  if (moduleId === 'settings' && subItemId === 'subscription_billing' && !isAdmin && parentPerms.is_manager !== true) {
+    return { view: false, add: false, edit: false, delete: false };
   }
 
   if (moduleId === 'field_force') {

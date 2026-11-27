@@ -3,6 +3,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, Download, Sparkles, X, Smartphone } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
+import pkg from '../../../package.json';
+
+const BUNDLE_VERSION = String(pkg?.version || '').trim();
+const BUNDLE_COMMIT = String(process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || '').trim();
 
 export default function AppLiveUpdateBanner() {
   const [hasNewVersion, setHasNewVersion] = useState(false);
@@ -15,12 +19,15 @@ export default function AppLiveUpdateBanner() {
   const [hasNewIos, setHasNewIos] = useState(false);
   const [iosInfo, setIosInfo] = useState(null);
   const [dismissed, setDismissed] = useState(false);
+  const [dismissedWebUpdate, setDismissedWebUpdate] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [pullProgress, setPullProgress] = useState(0);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [isReadyToRefresh, setIsReadyToRefresh] = useState(false);
 
   const initialVersionRef = useRef('');
+  const initialCommitRef = useRef('');
+  const lastDetectedKeyRef = useRef('');
   const touchStartYRef = useRef(0);
   const touchStartXRef = useRef(0);
   const touchStartTimeRef = useRef(0);
@@ -39,11 +46,33 @@ export default function AppLiveUpdateBanner() {
       const data = await res.json();
       if (!data || !data.version) return;
 
+      const serverVer = String(data.version || '').trim();
+      const serverCommit = String(data.commitSha || '').trim();
+
       if (!initialVersionRef.current) {
-        initialVersionRef.current = data.version;
-      } else if (data.version !== initialVersionRef.current) {
-        setServerVersion(data.version);
+        initialVersionRef.current = serverVer;
+      }
+      if (!initialCommitRef.current && serverCommit) {
+        initialCommitRef.current = serverCommit;
+      }
+
+      const versionMismatch = Boolean(
+        (BUNDLE_VERSION && serverVer && serverVer !== BUNDLE_VERSION) ||
+        (initialVersionRef.current && serverVer && serverVer !== initialVersionRef.current)
+      );
+      const commitMismatch = Boolean(
+        (BUNDLE_COMMIT && serverCommit && serverCommit !== BUNDLE_COMMIT) ||
+        (initialCommitRef.current && serverCommit && serverCommit !== initialCommitRef.current)
+      );
+
+      if (versionMismatch || commitMismatch) {
+        const detectedKey = serverCommit ? `${serverVer}#${serverCommit}` : serverVer;
+        setServerVersion(serverVer);
         setHasNewVersion(true);
+        if (lastDetectedKeyRef.current !== detectedKey) {
+          lastDetectedKeyRef.current = detectedKey;
+          setDismissedWebUpdate(false);
+        }
       }
 
       // Check if Android native APK needs upgrade
@@ -143,7 +172,7 @@ export default function AppLiveUpdateBanner() {
 
   // Poll version periodically and on window focus/resume
   useEffect(() => {
-    checkVersion();
+    const initTimer = setTimeout(checkVersion, 0);
     const interval = setInterval(checkVersion, 180000); // Check every 3 min
 
     const handleFocus = () => checkVersion();
@@ -160,14 +189,20 @@ export default function AppLiveUpdateBanner() {
       const channel = supabase.channel('crm_live_updates');
       channel.on('broadcast', { event: 'crm_force_live_reload' }, (payload) => {
         if (payload?.payload?.version) {
-          setServerVersion(payload.payload.version);
+          const pushedVer = String(payload.payload.version).trim();
+          setServerVersion(pushedVer);
           setHasNewVersion(true);
+          if (lastDetectedKeyRef.current !== pushedVer) {
+            lastDetectedKeyRef.current = pushedVer;
+            setDismissedWebUpdate(false);
+          }
         } else {
           checkVersion();
         }
       }).subscribe();
 
       return () => {
+        clearTimeout(initTimer);
         clearInterval(interval);
         window.removeEventListener('focus', handleFocus);
         document.removeEventListener('visibilitychange', handleVisibility);
@@ -175,6 +210,7 @@ export default function AppLiveUpdateBanner() {
       };
     } catch {
       return () => {
+        clearTimeout(initTimer);
         clearInterval(interval);
         window.removeEventListener('focus', handleFocus);
         document.removeEventListener('visibilitychange', handleVisibility);
@@ -316,20 +352,51 @@ export default function AppLiveUpdateBanner() {
     window.location.reload();
   };
 
-  // Action: 1-Click Direct Native APK Download (Launches external Chrome directly)
+  // Action: 1-Click Direct Native APK Download (Never navigates main WebView onto .apk binary)
   const handleDownloadApk = (e) => {
-    const launcherUrl = 'https://tinyurl.com/22jnrvlx';
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
+    const launcherUrl = apkInfo?.download_url || 'https://app.supujacreations.com/api/public/android-apk';
     try {
-      window.location.href = launcherUrl;
+      const plugin = window?.Capacitor?.Plugins?.FieldTracker;
+      if (plugin && typeof plugin.openExternalUrl === 'function') {
+        plugin.openExternalUrl({ url: launcherUrl }).catch(() => {});
+        return;
+      }
+
+      const isCapNative = Boolean(
+        window?.Capacitor?.isNativePlatform?.() ||
+        (navigator.userAgent || '').includes('Capacitor')
+      );
+      if (isCapNative && typeof document !== 'undefined') {
+        // Trigger Android WebView DownloadListener via hidden iframe so main CRM page never navigates/aborts
+        const existing = document.getElementById('spc-apk-dl-frame');
+        if (existing) existing.remove();
+        const iframe = document.createElement('iframe');
+        iframe.id = 'spc-apk-dl-frame';
+        iframe.style.display = 'none';
+        iframe.src = launcherUrl;
+        document.body.appendChild(iframe);
+        setTimeout(() => {
+          try { iframe.remove(); } catch {}
+        }, 15000);
+        return;
+      }
+
+      const win = window.open(launcherUrl, '_blank', 'noopener,noreferrer');
+      if (!win) {
+        window.location.assign(launcherUrl);
+      }
     } catch {
       try {
-        window.open(launcherUrl, '_system');
+        window.open(launcherUrl, '_blank', 'noopener,noreferrer');
       } catch {}
     }
   };
 
   const handleCopyLink = () => {
-    const directUrl = 'https://app.supujacreations.com/api/public/android-apk';
+    const directUrl = apkInfo?.download_url || 'https://app.supujacreations.com/api/public/android-apk';
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(directUrl);
@@ -447,7 +514,7 @@ export default function AppLiveUpdateBanner() {
                 marginBottom: '0.65rem'
               }}
             >
-              Installed: v{apkInfo.currentCode || '6'} → New Version: v{apkInfo.latest_version_code || 9}
+              Installed: v{apkInfo.currentCode ?? '?'} → New Version: v{apkInfo.latest_version_code || 10}
             </div>
 
             <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0f172a', marginBottom: '0.4rem', textAlign: 'left' }}>
@@ -462,9 +529,9 @@ export default function AppLiveUpdateBanner() {
               ⚡ Update now to unlock the latest improvements and continue using the app.
             </p>
 
-            {/* ACTION 1: Download & Update Button (1-Click Chrome Launcher) */}
+            {/* ACTION 1: Download & Update Button (1-Click Direct Download) */}
             <a
-              href="https://tinyurl.com/22jnrvlx"
+              href={apkInfo.download_url || 'https://app.supujacreations.com/api/public/android-apk'}
               target="_blank"
               rel="noopener noreferrer"
               onClick={handleDownloadApk}
@@ -760,7 +827,7 @@ export default function AppLiveUpdateBanner() {
       )}
 
       {/* Banner 2: Live CRM Web & Policy Hot-Update */}
-      {!dismissed && !hasNewApk && hasNewVersion && (
+      {!dismissedWebUpdate && !isForceUpgrade && hasNewVersion && (
         <div style={{
           position: 'fixed',
           top: '12px',
@@ -780,7 +847,7 @@ export default function AppLiveUpdateBanner() {
         }}>
           <Sparkles size={15} style={{ color: '#a7f3d0' }} />
           <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>
-            ⚡ Naya Live Update Aaya Hai ({serverVersion || 'vLatest'})!
+            ✨ Naye Features & Live Update Aaya Hai ({serverVersion || 'vLatest'})!
           </span>
           <button
             onClick={handleReload}
@@ -799,10 +866,10 @@ export default function AppLiveUpdateBanner() {
             }}
           >
             <RefreshCw size={12} />
-            Refresh
+            Refresh Now
           </button>
           <button
-            onClick={() => setDismissed(true)}
+            onClick={() => setDismissedWebUpdate(true)}
             style={{ background: 'transparent', border: 'none', color: '#ffffff', opacity: 0.75, cursor: 'pointer', padding: '2px', display: 'flex' }}
           >
             <X size={14} />

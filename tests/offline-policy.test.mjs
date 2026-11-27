@@ -223,3 +223,72 @@ test('failed delegation sync stays queued when no matching force fallback exists
   assert.equal(result.failed, 1);
   assert.equal(removed, false);
 });
+
+test('attendance sync logs employee name instead of undefined in history', async () => {
+  const source = fs.readFileSync(new URL('../src/utils/offlineSync.js', import.meta.url), 'utf8');
+  const start = source.indexOf('function toAttendanceDbPayload');
+  const end = source.indexOf('/**\n * Determines whether an entire module', start);
+  const removedItems = [];
+  const queue = [{
+    queueId: 'queue-att-1', entityType: 'attendance', actionType: 'create',
+    payload: {
+      email: 'EMPLOYEE@EXAMPLE.COM', empName: 'Sujit Verma', tenantId: 'tenant-123',
+      attendance_date: '2026-11-26', in_time: '2026-11-26T03:30:00.000Z', status: 'PRESENT'
+    }
+  }];
+  const sync = vm.runInNewContext(`${source.slice(start, end).replace('export async function syncPendingQueue', 'async function syncPendingQueue')}\nsyncPendingQueue`, {
+    navigator: { onLine: true },
+    getPendingQueue: async () => queue,
+    removeQueueItem: async (id, data) => { removedItems.push(data); },
+    console: { warn() {}, error() {} }
+  });
+  const client = { from: () => ({ async upsert() { return { error: null }; } }) };
+  const result = await sync(client);
+  assert.equal(result.count, 1);
+  assert.equal(removedItems[0].title, 'Punch-In: Sujit Verma');
+});
+
+test('forceSyncOfflineItem rejects unsupported entity types instead of falsely succeeding', async () => {
+  const source = fs.readFileSync(new URL('../src/app/actions/offlineForceSync.js', import.meta.url), 'utf8');
+  const start = source.indexOf('const VALID_LEAD_DB_COLUMNS');
+  const action = vm.runInNewContext(`${source.slice(start).replace('export async function forceSyncOfflineItem', 'async function forceSyncOfflineItem')}\nforceSyncOfflineItem`, {
+    getAdminClient: () => ({ from() { return {}; } }),
+    console: { error() {} }
+  });
+  const result = await action({ queueId: 'q-del-1', entityType: 'delegation_task', payload: { title: 'Test' } });
+  assert.equal(result.success, false);
+  assert.match(result.error, /not supported/i);
+});
+
+test('isModuleAllowedOffline respects homeWorkspace, taskPlanner, and userManagement toggles', () => {
+  const source = fs.readFileSync(new URL('../src/utils/offlineSync.js', import.meta.url), 'utf8');
+  const start = source.indexOf('export function isModuleAllowedOffline');
+  let mockRules = { isOfflineEnabled: true, features: { homeWorkspace: true, taskPlanner: false, userManagement: false } };
+  const fn = vm.runInNewContext(`${source.slice(start).replace('export function isModuleAllowedOffline', 'function isModuleAllowedOffline')}\nisModuleAllowedOffline`, {
+    navigator: { onLine: false },
+    getOfflineRules: () => mockRules
+  });
+  assert.equal(fn('home'), true);
+  assert.equal(fn('task_planner'), false);
+  assert.equal(fn('user_management_new'), false);
+
+  mockRules = { isOfflineEnabled: true, features: { homeWorkspace: false, taskPlanner: true, userManagement: true } };
+  assert.equal(fn('home'), false);
+  assert.equal(fn('task_planner'), true);
+  assert.equal(fn('user_management_new'), true);
+
+  mockRules = { isOfflineEnabled: false, features: { homeWorkspace: true, taskPlanner: true, userManagement: true } };
+  assert.equal(fn('home'), false);
+  assert.equal(fn('task_planner'), false);
+  assert.equal(fn('user_management_new'), false);
+});
+
+test('saveOfflineRuleSettings clamps maxQueueItemsPerDevice between 50 and 2000', async () => {
+  const harness = policyHarness();
+  const lowRes = await harness.saveOfflineRuleSettings({ isOfflineEnabled: true, maxQueueItemsPerDevice: 10 });
+  assert.equal(lowRes.success, true);
+  assert.equal(harness.saved.maxQueueItemsPerDevice, 50);
+  const highRes = await harness.saveOfflineRuleSettings({ isOfflineEnabled: true, maxQueueItemsPerDevice: 9999 });
+  assert.equal(highRes.success, true);
+  assert.equal(harness.saved.maxQueueItemsPerDevice, 2000);
+});

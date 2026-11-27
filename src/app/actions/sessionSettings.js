@@ -5,6 +5,7 @@ import { createClient } from '@/utils/supabase/server';
 import { headers } from 'next/headers';
 import fs from 'fs/promises';
 import path from 'path';
+import { extractSessionDeviceId } from '@/utils/deviceSessionId';
 
 const SETTINGS_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'session_security_settings.json');
 const ACTIVITY_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'user_daily_activity.json');
@@ -285,14 +286,29 @@ export async function recordUserActivityHeartbeat({
     const today = getOfficeTodayDateStr(); // YYYY-MM-DD (IST Office Date)
     const nowIso = new Date().toISOString();
 
-    // 1. Check if user's session was terminated by Admin recently
+    // 1. Check if this device instance's session was terminated by Admin recently
+    const incomingSid = extractSessionDeviceId(device);
+    const isMobileDev = /Android|iPhone|iPad|iPod|Mobile|SPC Workspace APK|; wv\)/i.test(String(device || ''));
     const { data: recentSessions } = await adminClient.from('user_sessions')
-      .select('id, is_active, last_active')
+      .select('id, is_active, last_active, device')
       .eq('user_id', user.id)
       .order('last_active', { ascending: false })
-      .limit(1);
+      .limit(20);
 
-    const existingSess = recentSessions && recentSessions.length > 0 ? recentSessions[0] : null;
+    const existingSess = (recentSessions || []).find((s) => {
+      if (incomingSid) {
+        const rowSid = extractSessionDeviceId(s?.device || '');
+        if (rowSid === incomingSid) return true;
+        if (!rowSid) {
+          const rowIsMobile = /Android|iPhone|iPad|iPod|Mobile|SPC Workspace APK|; wv\)/i.test(String(s?.device || ''));
+          return rowIsMobile === isMobileDev;
+        }
+        return false;
+      }
+      const rowIsMobile = /Android|iPhone|iPad|iPod|Mobile|SPC Workspace APK|; wv\)/i.test(String(s?.device || ''));
+      return rowIsMobile === isMobileDev;
+    }) || null;
+
     if (existingSess && existingSess.is_active === false) {
       const lastActiveMs = existingSess.last_active ? new Date(existingSess.last_active).getTime() : 0;
       const diffSec = Math.floor((Date.now() - lastActiveMs) / 1000);
@@ -770,12 +786,13 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         .order('created_at', { ascending: true })
         .limit(5000),
 
-      // 5. User sessions active during period
+      // 5. User sessions active during period (newest first for accurate primary selection)
       adminClient
         .from('user_sessions')
         .select('id, user_id, email, is_active, last_active, device, ip_address')
         .gte('last_active', dateStartIso)
-        .lte('last_active', dateEndIso),
+        .lte('last_active', dateEndIso)
+        .order('last_active', { ascending: false }),
 
       // 6. Break events from audit_logs
       adminClient
@@ -927,14 +944,72 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       });
     }
 
-    // Process 5: Sessions map
+    // Process 5: Sessions map + full per-user multi-device sessions list
     const sessionMap = {};
+    const sessionsByUser = {};
+    const pushUserSession = (key, s) => {
+      if (!key) return;
+      if (!sessionsByUser[key]) sessionsByUser[key] = [];
+      if (!sessionsByUser[key].some((existing) => existing.id === s.id)) {
+        sessionsByUser[key].push(s);
+      }
+      // Prefer an active session, otherwise newest (already ordered newest-first)
+      if (!sessionMap[key] || (!sessionMap[key].is_active && s.is_active)) {
+        sessionMap[key] = s;
+      }
+    };
+    const formatSessionRow = (s) => {
+      const lastActiveMs = s?.last_active ? new Date(s.last_active).getTime() : 0;
+      const isActiveFlag = s?.is_active === true;
+      const isLiveRow = isActiveFlag && lastActiveMs > 0 && (now - lastActiveMs) <= THREE_MINUTES_MS;
+      return {
+        id: s.id,
+        device: s.device || 'Web Browser',
+        ipAddress: (!s.ip_address || s.ip_address === 'Logged via Web App' || s.ip_address === 'Web App') ? '127.0.0.1 (Local)' : s.ip_address,
+        lastActive: s.last_active || null,
+        lastActiveFormatted: s.last_active
+          ? new Date(s.last_active).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })
+          : '--:--',
+        isActive: isActiveFlag,
+        isLive: isLiveRow
+      };
+    };
+    const getUserFormattedSessions = (userIdKey, emailKey) => {
+      const rawList = [
+        ...((userIdKey && sessionsByUser[userIdKey]) || []),
+        ...((emailKey && sessionsByUser[emailKey]) || [])
+      ];
+      const seenIds = new Set();
+      const seenDeviceKeys = new Set();
+      const deduped = [];
+
+      // rawList inherits newest-first ordering from user_sessions query
+      rawList.forEach((item) => {
+        if (!item?.id || seenIds.has(item.id)) return;
+        seenIds.add(item.id);
+        const sid = extractSessionDeviceId(item.device || '');
+        const deviceKey = sid
+          ? `sid:${sid}`
+          : `legacy:${String(item.device || 'Web Browser').trim().toLowerCase()}`;
+        if (seenDeviceKeys.has(deviceKey)) return;
+        seenDeviceKeys.add(deviceKey);
+        deduped.push(item);
+      });
+
+      const formatted = deduped.map(formatSessionRow);
+      const activeList = formatted.filter((s) => s.isActive);
+      return {
+        formatted,
+        activeSessionCount: activeList.length,
+        liveSessionCount: activeList.filter((s) => s.isLive).length
+      };
+    };
     if (sessionsResult.status === 'fulfilled' && sessionsResult.value?.data) {
       sessionsResult.value.data.forEach(s => {
         const keyUserId = s.user_id;
         const keyEmail = s.email ? s.email.toLowerCase() : null;
-        if (keyUserId) sessionMap[keyUserId] = s;
-        if (keyEmail) sessionMap[keyEmail] = s;
+        pushUserSession(keyUserId, s);
+        pushUserSession(keyEmail, s);
       });
     }
 
@@ -955,6 +1030,11 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       const d = (userId && dbMap[userId]) || dbMap[emailLower] || {};
       const f = (userId && aggregatedFileRecords[userId]) || aggregatedFileRecords[emailLower] || aggregatedFileRecords[emp.email] || {};
       const sess = (userId && sessionMap[userId]) || sessionMap[emailLower] || null;
+      const {
+        formatted: formattedUserSessions,
+        activeSessionCount,
+        liveSessionCount
+      } = getUserFormattedSessions(userId, emailLower);
       const auditFirst = (userId && firstAuditMap[userId]) || firstAuditMap[emailLower] || null;
       const auditLast = (userId && lastAuditMap[userId]) || lastAuditMap[emailLower] || null;
 
@@ -987,6 +1067,8 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       let liveStatus = 'offline';
       if (currentBreak) {
         liveStatus = 'on_break';
+      } else if (liveSessionCount > 0) {
+        liveStatus = status === 'away' ? 'away' : 'working';
       } else if (hasActivityToday && lastSeen) {
         const lastSeenTime = new Date(lastSeen).getTime();
         const diffMs = now - lastSeenTime;
@@ -1075,6 +1157,9 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         sessionId: sess?.id || null,
         device: sess?.device || 'Web Browser',
         ipAddress: (!sess?.ip_address || sess.ip_address === 'Logged via Web App' || sess.ip_address === 'Web App') ? '127.0.0.1 (Local)' : sess.ip_address,
+        sessions: formattedUserSessions,
+        activeSessionCount,
+        liveSessionCount,
         currentBreak,
         breaks: breaksList,
         breakCount: breaksList.length,
@@ -1116,6 +1201,7 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         const d = (userId && dbMap[userId]) || dbMap[emailLower] || {};
         const f = (userId && aggregatedFileRecords[userId]) || aggregatedFileRecords[emailLower] || {};
         const activeSeconds = Math.max(d.active_seconds || 0, f.activeSeconds || 0);
+        const orphanSessionInfo = getUserFormattedSessions(userId, emailLower);
 
         records.push({
           userId: sess.user_id,
@@ -1137,6 +1223,9 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
           sessionId: sess.id || null,
           device: sess.device || 'Web Browser',
           ipAddress: (!sess.ip_address || sess.ip_address === 'Logged via Web App' || sess.ip_address === 'Web App') ? '127.0.0.1 (Local)' : sess.ip_address,
+          sessions: orphanSessionInfo.formatted,
+          activeSessionCount: orphanSessionInfo.activeSessionCount,
+          liveSessionCount: orphanSessionInfo.liveSessionCount,
           currentBreak: null,
           breaks: [],
           breakCount: 0,

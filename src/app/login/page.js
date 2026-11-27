@@ -200,9 +200,10 @@ function LoginFormContent() {
     try {
       Promise.all([
         import('@/app/actions/audit'),
-        import('@/utils/platformDetection')
-      ]).then(([{ logUserSession, logAuditAction }, { detectClientPlatform }]) => {
-        const device = typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Browser';
+        import('@/utils/platformDetection'),
+        import('@/utils/deviceSessionId')
+      ]).then(([{ logUserSession, logAuditAction }, { detectClientPlatform }, { getClientDeviceSignature }]) => {
+        const device = getClientDeviceSignature();
         const { platform, details: platformDetails } = detectClientPlatform();
         logUserSession(device).catch(err => console.warn('Non-blocking session log:', err));
         logAuditAction('User Login', `User successfully logged in via ${platform}`, {
@@ -216,7 +217,7 @@ function LoginFormContent() {
     
     // 2. Instant Redirect without blocking for round-trip queries
     const currentSearchParams = new URLSearchParams(window.location.search);
-    const nextPath = currentSearchParams.get('next') || '/';
+    const nextPath = currentSearchParams.get('next') || '/home';
     window.location.href = nextPath;
   };
 
@@ -353,92 +354,47 @@ function LoginFormContent() {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'radial-gradient(circle at 10% 10%, rgba(37, 99, 235, 0.08) 0%, transparent 40%), radial-gradient(circle at 90% 90%, rgba(124, 58, 237, 0.08) 0%, transparent 40%), #f8fafc',
-      padding: '2rem'
-    }}>
-      <div className="card" style={{
-        padding: '2.5rem 2.25rem',
-        width: '100%',
-        maxWidth: '460px',
-        borderRadius: '20px',
-        backgroundColor: 'rgba(255, 255, 255, 0.92)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(255, 255, 255, 0.8)',
-        border: '1px solid #e2e8f0'
-      }}>
-        
+    <main className={styles.screen}>
+      <section className={styles.card}>
+
         {/* Logo / Header */}
-        <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0.6rem 1.25rem',
-            borderRadius: '14px',
-            backgroundColor: '#ffffff',
-            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.06), 0 0 0 1px #e2e8f0',
-            marginBottom: '1rem'
-          }}>
-            <img 
-              src="/supuja-logo.png" 
-              alt="SuPuja Creations" 
-              style={{ width: '135px', height: 'auto', maxHeight: '68px', objectFit: 'contain' }} 
+        <header className={styles.brand}>
+          <div className={styles.logoPlate}>
+            <img
+              src="/supuja-logo.png"
+              alt="SuPuja Creations"
+              className={styles.logo}
             />
           </div>
-          <h1 style={{ fontSize: '1.45rem', fontWeight: 800, margin: 0, color: '#0f172a', lineHeight: 1.25, letterSpacing: '-0.02em' }}>
+          <h1 className={styles.title}>
             {mode === 'login' && (
               <>
-                <div>SuPuja Creations</div>
-                <div style={{ fontSize: '1rem', fontWeight: 700, color: '#4338ca', marginTop: '0.35rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.45rem' }}>
-                  <span>Workplace Gateway</span>
+                <span className={styles.brandName}>SPC Workspace</span>
+                <span className={styles.product}>
                   <span
                     suppressHydrationWarning
-                    style={{
-                      fontSize: '0.68rem',
-                      fontWeight: 700,
-                      color: '#4338ca',
-                      background: '#eef2ff',
-                      padding: '0.12rem 0.55rem',
-                      borderRadius: '9999px',
-                      border: '1px solid #c7d2fe',
-                      letterSpacing: '0.02em'
-                    }}
+                    className={styles.version}
                   >
-                    v{pkg.version || '1.0.584'} PRO
+                    v{pkg.version}
                   </span>
-                </div>
+                </span>
               </>
             )}
             {mode === 'register' && 'Create Employee Account'}
             {mode === 'forgot' && (forgotStep === 2 && forgotOtp ? 'Set Your Account Password' : 'Reset Your Password')}
           </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.45rem', marginBottom: 0, fontSize: '0.86rem', lineHeight: 1.45 }}>
+          <p className={styles.intro}>
             {mode === 'login' && (loginMethod === 'password' ? 'Sign in with your email & password' : 'Sign in securely using Email OTP')}
             {mode === 'register' && 'Enter your official details to register'}
             {mode === 'forgot' && (forgotStep === 1 ? 'Enter your official email to receive a secure reset code' : 'Enter OTP and create your new password')}
           </p>
-        </div>
+        </header>
 
         {/* ========================================================================= */}
         {/* LOGIN METHOD SELECTOR TABS (Password vs Email OTP) */}
         {/* ========================================================================= */}
         {mode === 'login' && (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: '0.35rem',
-            background: '#f1f5f9',
-            padding: '0.3rem',
-            borderRadius: '10px',
-            marginBottom: '1.5rem',
-            border: '1px solid #e2e8f0'
-          }}>
+          <div className={styles.modeSwitch}>
             <button
               type="button"
               disabled={loginOtpLoading}
@@ -446,22 +402,8 @@ function LoginFormContent() {
                 setLoginMethod('password');
                 setError(null);
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.4rem',
-                padding: '0.55rem',
-                borderRadius: '8px',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                transition: 'all 0.2s',
-                backgroundColor: loginMethod === 'password' ? '#ffffff' : 'transparent',
-                color: loginMethod === 'password' ? '#4338ca' : '#64748b',
-                boxShadow: loginMethod === 'password' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-              }}
+              className={styles.modeButton}
+              aria-pressed={loginMethod === 'password'}
             >
               <Lock size={15} /> Password
             </button>
@@ -477,22 +419,8 @@ function LoginFormContent() {
                 setLoginOtpChallenge(null);
                 setLoginOtp('');
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.4rem',
-                padding: '0.55rem',
-                borderRadius: '8px',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                transition: 'all 0.2s',
-                backgroundColor: loginMethod === 'otp' ? '#ffffff' : 'transparent',
-                color: loginMethod === 'otp' ? '#4338ca' : '#64748b',
-                boxShadow: loginMethod === 'otp' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-              }}
+              className={styles.modeButton}
+              aria-pressed={loginMethod === 'otp'}
             >
               <Mail size={15} /> Email OTP
             </button>
@@ -501,14 +429,14 @@ function LoginFormContent() {
 
         {/* Error Notification */}
         {error && (
-          <div style={{ backgroundColor: '#fee2e2', color: '#b91c1c', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem', border: '1px solid #fecaca' }}>
+          <div className={`${styles.notice} ${styles.error}`} role="alert">
             {error}
           </div>
         )}
 
         {/* Forgot Success Message */}
         {forgotSuccessMsg && mode === 'forgot' && (
-          <div style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div className={`${styles.notice} ${styles.success}`} role="status">
             <CheckCircle2 size={16} />
             <span>{forgotSuccessMsg}</span>
           </div>
@@ -516,7 +444,7 @@ function LoginFormContent() {
 
         {/* Login OTP Success Message */}
         {loginOtpSuccessMsg && mode === 'login' && loginMethod === 'otp' && (
-          <div style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.85rem', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div className={`${styles.notice} ${styles.success}`} role="status">
             <CheckCircle2 size={16} />
             <span>{loginOtpSuccessMsg}</span>
           </div>
@@ -528,94 +456,93 @@ function LoginFormContent() {
         {mode === 'login' && loginMethod === 'password' && (
           <>
             <form onSubmit={(e) => { e.preventDefault(); handleAuth(); }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.25rem' }}>
-              <div>
-                <label htmlFor="login-email" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>
-                  Official Email Address
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    id="login-email"
-                    name="email"
-                    type="email"
-                    autoComplete="username"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@company.com"
-                    style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.6rem', paddingLeft: '2.6rem', borderRadius: '9px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
-                  />
-                  <Mail size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', pointerEvents: 'none', zIndex: 2 }} />
+              <div className={styles.formStack}>
+                <div>
+                  <label htmlFor="login-email" className={styles.label}>
+                    Official Email Address
+                  </label>
+                  <div className={styles.fieldWithIcon}>
+                    <input
+                      id="login-email"
+                      name="email"
+                      type="email"
+                      autoComplete="username"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@company.com"
+                      className={styles.field}
+                    />
+                    <Mail size={16} className={styles.fieldIcon} aria-hidden="true" />
+                  </div>
+                </div>
+
+                <div>
+                  <div className={styles.fieldHeading}>
+                    <label htmlFor="login-password" className={styles.label}>Password *</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode('forgot');
+                        setForgotEmail(email);
+                        setError(null);
+                        setForgotStep(1);
+                      }}
+                      className={styles.textButton}
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                  <div className={styles.passwordField}>
+                    <input
+                      id="login-password"
+                      name="password"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="current-password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className={styles.field}
+                    />
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setShowPassword(prev => !prev)}
+                      className={styles.passwordToggle}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      aria-pressed={showPassword}
+                      title={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Remember ID & Password Checkbox */}
+                <div className={styles.rememberRow}>
+                   <label className={styles.remember}>
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className={styles.checkbox}
+                    />
+                     <span>Remember ID &amp; Password (याद रखें)</span>
+                  </label>
                 </div>
               </div>
 
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                  <label htmlFor="login-password" style={{ fontSize: '0.85rem', fontWeight: 600 }}>Password *</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode('forgot');
-                      setForgotEmail(email);
-                      setError(null);
-                      setForgotStep(1);
-                    }}
-                    style={{ background: 'none', border: 'none', color: '#4338ca', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-                <div className={styles.passwordField}>
-                  <input
-                    id="login-password"
-                    name="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="current-password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    style={{ width: '100%', padding: '0.65rem 2.5rem 0.65rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
-                  />
-                  <button
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => setShowPassword(prev => !prev)}
-                    className={styles.passwordToggle}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                    aria-pressed={showPassword}
-                    title={showPassword ? "Hide password" : "Show password"}
-                  >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Remember ID & Password Checkbox */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '-0.25rem' }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.55rem', fontSize: '0.84rem', cursor: 'pointer', userSelect: 'none', color: 'var(--text-secondary, #475569)' }}>
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    style={{ accentColor: '#4338ca', width: '16px', height: '16px', cursor: 'pointer', borderRadius: '4px' }}
-                  />
-                  <span style={{ fontWeight: 500 }}>Remember ID &amp; Password (याद रखें)</span>
-                </label>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || !email || !password}
-              className="btn-primary"
-              style={{ width: '100%', marginBottom: '0.75rem', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', backgroundColor: '#4338ca', cursor: 'pointer' }}
-            >
-              {loading ? 'Signing in...' : 'Sign In with Password'}
-            </button>
+              <button
+                type="submit"
+                disabled={loading || !email || !password}
+                className={styles.primary}
+              >
+                {loading ? 'Signing in...' : 'Sign In with Password'}
+              </button>
           </form>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+          <div className={styles.alternate}>
             <button
               type="button"
               onClick={() => {
@@ -626,13 +553,13 @@ function LoginFormContent() {
                 setLoginOtpChallenge(null);
                 setLoginOtp('');
               }}
-              style={{ width: '100%', padding: '0.65rem', fontSize: '0.85rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+              className={styles.secondary}
             >
-              <Mail size={14} color="#4338ca" /> Sign in with Email OTP instead
+              <Mail size={14} aria-hidden="true" /> Sign in with Email OTP instead
             </button>
           </div>
-        </>
-      )}
+          </>
+        )}
 
         {/* ========================================================================= */}
         {/* OPTION 2: EMAIL OTP LOGIN */}
@@ -640,23 +567,24 @@ function LoginFormContent() {
         {mode === 'login' && loginMethod === 'otp' && (
           <div>
             {loginOtpStep === 1 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div className={styles.formStack}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                  <label htmlFor="otp-email" className={styles.label}>
                     Registered Official Email Address *
                   </label>
-                  <div style={{ position: 'relative' }}>
+                  <div className={styles.fieldWithIcon}>
                     <input
+                      id="otp-email"
                       type="email"
                       value={email}
                       disabled={loginOtpLoading}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="e.g. employee@company.com"
-                      style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.6rem', paddingLeft: '2.6rem', borderRadius: '9px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                      className={styles.field}
                     />
-                    <Mail size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', pointerEvents: 'none', zIndex: 2 }} />
+                    <Mail size={16} className={styles.fieldIcon} aria-hidden="true" />
                   </div>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.4rem', marginBottom: 0 }}>
+                  <p className={styles.hint}>
                     We&apos;ll send a login verification code directly to this official mailbox.
                   </p>
                 </div>
@@ -665,28 +593,28 @@ function LoginFormContent() {
                   type="button"
                   onClick={handleRequestLoginOtp}
                   disabled={loginOtpLoading || loginOtpCooldown > 0 || !email}
-                  className="btn-primary"
-                  style={{ width: '100%', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', backgroundColor: '#4338ca' }}
+                  className={styles.primary}
                 >
                   {loginOtpLoading ? <RefreshCw size={16} className="animate-spin" /> : <Mail size={16} />}
                   {loginOtpLoading ? 'Sending Login Code...' : loginOtpCooldown > 0 ? `Send again in ${loginOtpCooldown}s` : 'Send Login OTP'}
                 </button>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div className={styles.formStack}>
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Enter {loginOtpLength}-Digit Login OTP *</label>
+                  <div className={styles.fieldHeading}>
+                    <label htmlFor="login-otp" className={styles.label}>Enter {loginOtpLength}-Digit Login OTP *</label>
                     <button
                       type="button"
                       onClick={handleRequestLoginOtp}
                       disabled={loginOtpLoading || loginOtpCooldown > 0}
-                      style={{ background: 'none', border: 'none', color: '#4338ca', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+                      className={styles.textButton}
                     >
                       {loginOtpCooldown > 0 ? `Resend in ${loginOtpCooldown}s` : 'Resend Code'}
                     </button>
                   </div>
                   <input
+                    id="login-otp"
                     type="text"
                     maxLength={loginOtpLength}
                     inputMode="numeric"
@@ -700,10 +628,10 @@ function LoginFormContent() {
                     }}
                     placeholder={`Enter ${loginOtpLength}-digit OTP`}
                     autoFocus
-                    style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '8px', border: '2px solid #4338ca', fontSize: '1.3rem', textAlign: 'center', letterSpacing: '8px', fontWeight: 800 }}
+                    className={`${styles.field} ${styles.codeField}`}
                   />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.4rem' }}>
-                    <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>Sent to: <b>{email}</b></span>
+                  <div className={styles.recipient}>
+                    <span>Sent to: <strong>{email}</strong></span>
                     <button
                       type="button"
                       disabled={loginOtpLoading}
@@ -714,7 +642,7 @@ function LoginFormContent() {
                         setLoginOtpSuccessMsg(null);
                         setError(null);
                       }}
-                      style={{ background: 'none', border: 'none', color: '#4338ca', fontSize: '0.76rem', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                      className={styles.textButton}
                     >
                       Change Email
                     </button>
@@ -725,8 +653,7 @@ function LoginFormContent() {
                   type="button"
                   onClick={handleVerifyLoginOtp}
                   disabled={loginOtpLoading || !loginOtpChallenge || loginOtp.length !== loginOtpLength}
-                  className="btn-primary"
-                  style={{ width: '100%', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', backgroundColor: '#16a34a' }}
+                  className={styles.primary}
                 >
                   {loginOtpLoading ? <RefreshCw size={16} className="animate-spin" /> : <UserCheck size={16} />}
                   {loginOtpLoading ? 'Verifying Code...' : 'Verify & Sign In'}
@@ -734,7 +661,7 @@ function LoginFormContent() {
               </div>
             )}
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1.25rem' }}>
+            <div className={styles.alternate}>
               <button
                 type="button"
                 disabled={loginOtpLoading}
@@ -742,9 +669,9 @@ function LoginFormContent() {
                   setLoginMethod('password');
                   setError(null);
                 }}
-                style={{ width: '100%', padding: '0.65rem', fontSize: '0.85rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
+                className={styles.secondary}
               >
-                <Lock size={14} color="#4338ca" /> Sign in with Password instead
+                <Lock size={14} aria-hidden="true" /> Sign in with Password instead
               </button>
             </div>
           </div>
@@ -755,43 +682,47 @@ function LoginFormContent() {
         {/* ========================================================================= */}
         {mode === 'register' && (
           <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div className={styles.formStack}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp ID *</label>
+                <label htmlFor="register-id" className={styles.label}>Emp ID *</label>
                 <input
+                  id="register-id"
                   type="text"
                   value={empId}
                   onChange={(e) => setEmpId(e.target.value)}
                   placeholder="E.g. EMP001"
-                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                  className={styles.field}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Name *</label>
+                <label htmlFor="register-name" className={styles.label}>Emp Name *</label>
                 <input
+                  id="register-name"
                   type="text"
                   value={empName}
                   onChange={(e) => setEmpName(e.target.value)}
                   placeholder="Full Name"
-                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                  className={styles.field}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Mobile Number *</label>
+                <label htmlFor="register-mobile" className={styles.label}>Mobile Number *</label>
                 <input
+                  id="register-mobile"
                   type="tel"
                   value={empMobile}
                   onChange={(e) => setEmpMobile(e.target.value)}
                   placeholder="10-digit mobile number"
-                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                  className={styles.field}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Department *</label>
+                <label htmlFor="register-department" className={styles.label}>Emp Department *</label>
                 <select
+                  id="register-department"
                   value={empDepartment}
                   onChange={(e) => setEmpDepartment(e.target.value)}
-                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                  className={styles.field}
                 >
                   <option value="">Select Department...</option>
                   {DEPARTMENTS.map(dept => (
@@ -800,34 +731,37 @@ function LoginFormContent() {
                 </select>
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Designation *</label>
+                <label htmlFor="register-designation" className={styles.label}>Emp Designation *</label>
                 <input
+                  id="register-designation"
                   type="text"
                   value={empDesignation}
                   onChange={(e) => setEmpDesignation(e.target.value)}
                   placeholder="E.g. Sales Executive"
-                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                  className={styles.field}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Emp Official Mail ID *</label>
+                <label htmlFor="register-email" className={styles.label}>Emp Official Mail ID *</label>
                 <input
+                  id="register-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@company.com"
-                  style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                  className={styles.field}
                 />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Password *</label>
+                <label htmlFor="register-password" className={styles.label}>Password *</label>
                 <div className={styles.passwordField}>
                   <input
+                    id="register-password"
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    style={{ width: '100%', padding: '0.6rem 2.5rem 0.6rem 1rem', borderRadius: '6px', border: '1px solid var(--border-light)' }}
+                    className={styles.field}
                   />
                   <button
                     type="button"
@@ -846,18 +780,17 @@ function LoginFormContent() {
             <button
               onClick={handleAuth}
               disabled={loading || !empId || !empName || !empDepartment || !empDesignation || !empMobile || !email || !password}
-              className="btn-primary"
-              style={{ width: '100%', marginBottom: '0.75rem', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px' }}
+              className={styles.primary}
             >
               {loading ? 'Processing...' : 'Register Account'}
             </button>
-            
+
             <button
               onClick={() => {
                 setMode('login');
                 setError(null);
               }}
-              style={{ width: '100%', padding: '0.7rem', fontSize: '0.88rem', background: 'transparent', border: '1px solid var(--border-light)', borderRadius: '8px', cursor: 'pointer', fontWeight: 500 }}
+              className={styles.secondary}
             >
               Back to Login
             </button>
@@ -870,22 +803,23 @@ function LoginFormContent() {
         {mode === 'forgot' && (
           <div>
             {forgotStep === 1 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div className={styles.formStack}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                  <label htmlFor="reset-email" className={styles.label}>
                     Registered Official Email Address *
                   </label>
-                  <div style={{ position: 'relative' }}>
+                  <div className={styles.fieldWithIcon}>
                     <input
+                      id="reset-email"
                       type="email"
                       value={forgotEmail}
                       onChange={(e) => setForgotEmail(e.target.value)}
                       placeholder="e.g. employee@company.com"
-                      style={{ width: '100%', padding: '0.65rem 1rem 0.65rem 2.6rem', paddingLeft: '2.6rem', borderRadius: '9px', border: '1px solid var(--border-light)', fontSize: '0.9rem' }}
+                      className={styles.field}
                     />
-                    <Mail size={16} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', pointerEvents: 'none', zIndex: 2 }} />
+                    <Mail size={16} className={styles.fieldIcon} aria-hidden="true" />
                   </div>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.4rem', marginBottom: 0 }}>
+                  <p className={styles.hint}>
                     We will send a 6-digit verification code to this email via SuPuja Creations Admin Mail.
                   </p>
                 </div>
@@ -894,48 +828,49 @@ function LoginFormContent() {
                   type="button"
                   onClick={handleRequestForgotOtp}
                   disabled={forgotLoading || !forgotEmail}
-                  className="btn-primary"
-                  style={{ width: '100%', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', backgroundColor: '#4338ca' }}
+                  className={styles.primary}
                 >
                   {forgotLoading ? <RefreshCw size={16} className="animate-spin" /> : <Mail size={16} />}
                   {forgotLoading ? 'Sending Security Code...' : 'Send Verification OTP'}
                 </button>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div className={styles.formStack}>
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Enter 6-Digit OTP *</label>
+                  <div className={styles.fieldHeading}>
+                    <label htmlFor="reset-otp" className={styles.label}>Enter 6-Digit OTP *</label>
                     <button
                       type="button"
                       onClick={handleRequestForgotOtp}
                       disabled={forgotLoading}
-                      style={{ background: 'none', border: 'none', color: '#4338ca', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+                      className={styles.textButton}
                     >
                       Resend Code
                     </button>
                   </div>
                   <input
+                    id="reset-otp"
                     type="text"
                     maxLength={6}
                     value={forgotOtp}
                     onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, ''))}
                     placeholder="Enter 6-digit OTP"
-                    style={{ width: '100%', padding: '0.65rem 1rem', borderRadius: '8px', border: '2px solid #4338ca', fontSize: '1.2rem', textAlign: 'center', letterSpacing: '6px', fontWeight: 800 }}
+                    className={`${styles.field} ${styles.codeField}`}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                  <label htmlFor="reset-password" className={styles.label}>
                     New Password *
                   </label>
                   <div className={styles.passwordField}>
                     <input
+                      id="reset-password"
                       type={showForgotNewPassword ? "text" : "password"}
                       value={forgotNewPassword}
                       onChange={(e) => setForgotNewPassword(e.target.value)}
                       placeholder="At least 6 characters"
-                      style={{ width: '100%', padding: '0.6rem 2.5rem 0.6rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}
+                      className={styles.field}
                     />
                     <button
                       type="button"
@@ -952,15 +887,16 @@ function LoginFormContent() {
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                  <label htmlFor="reset-confirm-password" className={styles.label}>
                     Confirm New Password *
                   </label>
                   <input
+                    id="reset-confirm-password"
                     type={showForgotNewPassword ? "text" : "password"}
                     value={forgotConfirmPassword}
                     onChange={(e) => setForgotConfirmPassword(e.target.value)}
                     placeholder="Re-enter new password"
-                    style={{ width: '100%', padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid var(--border-light)' }}
+                    className={styles.field}
                   />
                 </div>
 
@@ -968,8 +904,7 @@ function LoginFormContent() {
                   type="button"
                   onClick={handleResetPassword}
                   disabled={forgotLoading || !forgotOtp || !forgotNewPassword || !forgotConfirmPassword}
-                  className="btn-primary"
-                  style={{ width: '100%', marginTop: '0.5rem', padding: '0.75rem', fontSize: '0.95rem', fontWeight: 600, borderRadius: '8px', backgroundColor: '#16a34a' }}
+                  className={styles.primary}
                 >
                   {forgotLoading ? 'Updating Password...' : 'Save Password & Sign In'}
                 </button>
@@ -983,21 +918,7 @@ function LoginFormContent() {
                 setError(null);
                 setForgotSuccessMsg(null);
               }}
-              style={{
-                width: '100%',
-                marginTop: '1rem',
-                padding: '0.65rem',
-                fontSize: '0.85rem',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.4rem',
-                fontWeight: 600
-              }}
+              className={styles.back}
             >
               <ArrowLeft size={16} /> Back to Login
             </button>
@@ -1005,33 +926,22 @@ function LoginFormContent() {
         )}
 
         {/* Enterprise Security Badge */}
-        <div style={{
-          marginTop: '1.75rem',
-          paddingTop: '1rem',
-          borderTop: '1px solid #e2e8f0',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '0.4rem',
-          fontSize: '0.73rem',
-          color: 'var(--text-secondary)',
-          fontWeight: 600
-        }}>
-          <ShieldCheck size={14} style={{ color: '#10b981' }} />
+        <footer className={styles.footer}>
+          <ShieldCheck size={14} aria-hidden="true" />
           <span>256-Bit SSL Encrypted Enterprise Workspace</span>
-        </div>
+        </footer>
 
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }
 
 export default function LoginPage() {
   return (
     <Suspense fallback={
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc' }}>
+      <main className={styles.screen}>
         <PremiumProgressLoader message="Loading SuPuja Creations Workplace..." active={true} />
-      </div>
+      </main>
     }>
       <LoginFormContent />
     </Suspense>

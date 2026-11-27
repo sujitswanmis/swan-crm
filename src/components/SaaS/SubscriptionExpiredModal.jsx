@@ -7,8 +7,14 @@ import { Lock, LogOut, ShieldAlert, CreditCard, RefreshCw } from 'lucide-react';
  * SubscriptionExpiredModal
  * Renders an unbypassable modal when a tenant's subscription validity period has expired
  */
-export default function SubscriptionExpiredModal({ subscription }) {
-  if (!subscription || !subscription.is_expired) {
+export default function SubscriptionExpiredModal({ subscription, isMasterAdmin = false }) {
+  if (
+    isMasterAdmin ||
+    !subscription ||
+    subscription.is_master_hq ||
+    subscription.never_expires ||
+    !subscription.is_expired
+  ) {
     return null;
   }
 

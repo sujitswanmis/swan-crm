@@ -89,7 +89,7 @@ export const STANDARD_SWAN_BRANCH_MAP = {
   'NSE3': { branch_code: 'TNT00002-B0006', branch_name: 'New Swan Enterprises - 3', custom_code: 'NSE3' },
   'NSE4': { branch_code: 'TNT00002-B0007', branch_name: 'New Swan Enterprises - 4', custom_code: 'NSE4' },
   'NSACPL1': { branch_code: 'TNT00002-B0008', branch_name: 'New Swan Autocomp Pvt. Ltd.', custom_code: 'NSACPL1' },
-  'SUPUJA_CREATIONS': { branch_code: 'TNT00001-B0001', branch_name: 'SuPuja Creations (Headquarters)', custom_code: 'HQ' }
+  'SUPUJA_CREATIONS': { branch_code: 'TNT00001-B0001', branch_name: 'SuPuja Creations (Headquarters)', custom_code: 'SUPUJA_CREATIONS' }
 };
 
 export const STANDARD_SWAN_BRANCH_LIST = Object.values(STANDARD_SWAN_BRANCH_MAP);

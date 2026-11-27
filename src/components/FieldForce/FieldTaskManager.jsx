@@ -1254,8 +1254,8 @@ export default function FieldTaskManager({
         position: 'sticky',
         top: 0,
         zIndex: 10,
-        backgroundColor: '#f8fafc',
-        color: '#334155',
+        backgroundColor: 'var(--spc-view-canvas)',
+        color: 'var(--spc-view-text)',
         fontSize: '0.73rem',
         fontWeight: 700,
         textTransform: 'uppercase',
@@ -1285,23 +1285,23 @@ export default function FieldTaskManager({
           cursor: 'col-resize',
           userSelect: 'none',
           touchAction: 'none',
-          backgroundColor: activeResizeCol === colKey ? '#2563eb' : 'transparent',
-          borderRight: activeResizeCol === colKey ? '2px solid #2563eb' : '1px solid #e2e8f0',
+          backgroundColor: activeResizeCol === colKey ? 'var(--spc-view-action)' : 'transparent',
+          borderRight: activeResizeCol === colKey ? '2px solid var(--spc-view-info-border)' : '1px solid var(--spc-view-border)',
         }}
       />
     </th>
   );
 
   return (
-    <div style={{ padding: '1.25rem', background: 'var(--bg-canvas, #f8fafc)', color: 'var(--text-primary, #0f172a)', minHeight: 'calc(100vh - 120px)' }}>
+    <div data-spc-module-theme style={{ padding: '1.25rem', background: 'var(--bg-canvas, #f8fafc)', color: 'var(--text-primary, #0f172a)', minHeight: 'calc(100vh - 120px)' }}>
       {/* Top Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
         <div>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#0f172a' }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--spc-view-text)' }}>
             <Calendar size={22} style={{ color: 'var(--accent-color, #2563eb)' }} />
             Field Task Manager &amp; Visit Tracking
           </h2>
-          <p style={{ margin: '0.2rem 0 0', fontSize: '0.83rem', color: '#64748b' }}>
+          <p style={{ margin: '0.2rem 0 0', fontSize: '0.83rem', color: 'var(--spc-view-muted)' }}>
             Track every assigned visit task, inspect multiple tasks per lead/party, and edit/reassign active tasks.
           </p>
         </div>
@@ -1311,8 +1311,8 @@ export default function FieldTaskManager({
             <div
               style={{
                 display: 'inline-flex',
-                background: '#f1f5f9',
-                border: '1px solid #cbd5e1',
+                background: 'var(--spc-view-raised)',
+                border: '1px solid var(--spc-view-border)',
                 borderRadius: 6,
                 padding: 2,
                 gap: 2,
@@ -1336,8 +1336,8 @@ export default function FieldTaskManager({
                       padding: '0.38rem 0.65rem',
                       borderRadius: 4,
                       border: 'none',
-                      background: active ? '#ffffff' : 'transparent',
-                      color: active ? '#0f172a' : '#64748b',
+                      background: active ? 'var(--spc-view-surface)' : 'transparent',
+                      color: active ? 'var(--spc-view-text)' : 'var(--spc-view-muted)',
                       fontSize: '0.78rem',
                       fontWeight: 700,
                       cursor: 'pointer',
@@ -1359,9 +1359,9 @@ export default function FieldTaskManager({
               disabled={exportingExcel || filteredTasks.length === 0}
               style={{
                 padding: '0.48rem 0.85rem',
-                background: '#ffffff',
-                color: '#15803d',
-                border: '1px solid #bbf7d0',
+                background: 'var(--spc-view-surface)',
+                color: 'var(--spc-view-success)',
+                border: '1px solid var(--spc-view-success-border)',
                 borderRadius: '6px',
                 cursor: exportingExcel || filteredTasks.length === 0 ? 'not-allowed' : 'pointer',
                 fontWeight: 600,
@@ -1384,9 +1384,9 @@ export default function FieldTaskManager({
               disabled={loading || syncing}
               style={{
                 padding: '0.48rem 0.85rem',
-                background: '#ffffff',
-                color: '#334155',
-                border: '1px solid #cbd5e1',
+                background: 'var(--spc-view-surface)',
+                color: 'var(--spc-view-text)',
+                border: '1px solid var(--spc-view-border)',
                 borderRadius: '6px',
                 cursor: 'pointer',
                 fontWeight: 600,
@@ -1425,27 +1425,27 @@ export default function FieldTaskManager({
 
       {/* CREATE TASK VIEW */}
       {isCreating ? (
-        <div style={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', padding: '1.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
+        <div style={{ background: 'var(--spc-view-surface)', borderRadius: '8px', border: '1px solid var(--spc-view-border)', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', padding: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--spc-view-border)', paddingBottom: '0.75rem' }}>
             <button
               type="button"
               onClick={() => setIsCreating(false)}
-              style={{ background: '#ffffff', border: '1px solid #cbd5e1', color: '#334155', padding: '0.4rem 0.6rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+              style={{ background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', padding: '0.4rem 0.6rem', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
             >
               <ArrowLeft size={16} />
             </button>
-            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>Tasks - Create Task</h3>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--spc-view-text)' }}>Tasks - Create Task</h3>
           </div>
 
           <form onSubmit={handleCreateTask}>
             {/* Row 1: Task Type & Customer */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.35rem' }}>Task Type*</label>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: '0.35rem' }}>Task Type*</label>
                 <select
                   value={selectedTaskType}
                   onChange={(e) => handleTaskTypeChange(e.target.value)}
-                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px', fontSize: '0.875rem' }}
+                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', fontSize: '0.875rem' }}
                   required
                 >
                   <option value="">-- Select Task Type --</option>
@@ -1459,13 +1459,13 @@ export default function FieldTaskManager({
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.35rem' }}>Customer / Party Name*</label>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: '0.35rem' }}>Customer / Party Name*</label>
                 <input
                   type="text"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="e.g. Sharma Traders, Noida"
-                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px', fontSize: '0.875rem' }}
+                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', fontSize: '0.875rem' }}
                   required
                 />
               </div>
@@ -1474,24 +1474,24 @@ export default function FieldTaskManager({
             {/* Row 2: Customer Address & Phone */}
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.35rem' }}>Party Address</label>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: '0.35rem' }}>Party Address</label>
                 <input
                   type="text"
                   value={customerAddress}
                   onChange={(e) => setCustomerAddress(e.target.value)}
                   placeholder="Street, City, PIN Code"
-                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px', fontSize: '0.875rem' }}
+                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', fontSize: '0.875rem' }}
                 />
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.35rem' }}>Contact Mobile</label>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: '0.35rem' }}>Contact Mobile</label>
                 <input
                   type="text"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
                   placeholder="+91 XXXXX XXXXX"
-                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px', fontSize: '0.875rem' }}
+                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', fontSize: '0.875rem' }}
                 />
               </div>
             </div>
@@ -1499,11 +1499,11 @@ export default function FieldTaskManager({
             {/* Row 3: Priority & Assign to Employee */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.35rem' }}>Priority*</label>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: '0.35rem' }}>Priority*</label>
                 <select
                   value={priority}
                   onChange={(e) => setPriority(e.target.value)}
-                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px', fontSize: '0.875rem' }}
+                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', fontSize: '0.875rem' }}
                 >
                   <option value="CRITICAL">🔴 Critical</option>
                   <option value="URGENT">🟠 Urgent</option>
@@ -1514,11 +1514,11 @@ export default function FieldTaskManager({
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.35rem' }}>Assign to Employee*</label>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: '0.35rem' }}>Assign to Employee*</label>
                 <select
                   value={assignedEmployeeId}
                   onChange={(e) => setAssignedEmployeeId(e.target.value)}
-                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px', fontSize: '0.875rem' }}
+                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', fontSize: '0.875rem' }}
                   required
                 >
                   <option value="">-- Select Field Person --</option>
@@ -1537,44 +1537,44 @@ export default function FieldTaskManager({
             {/* Row 4: Start Time & End Time */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.35rem' }}>Start Time (IST)*</label>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: '0.35rem' }}>Start Time (IST)*</label>
                 <input
                   type="datetime-local"
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
-                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px', fontSize: '0.875rem' }}
+                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', fontSize: '0.875rem' }}
                   required
                 />
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.35rem' }}>End Time (IST)</label>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: '0.35rem' }}>End Time (IST)</label>
                 <input
                   type="datetime-local"
                   value={endTime}
                   onChange={(e) => setEndTime(e.target.value)}
-                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px', fontSize: '0.875rem' }}
+                  style={{ width: '100%', padding: '0.55rem 0.75rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', fontSize: '0.875rem' }}
                 />
               </div>
             </div>
 
             {/* DYNAMIC CUSTOM FORM FIELDS */}
             {selectedForm && selectedForm.fields && selectedForm.fields.length > 0 && (
-              <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1.25rem' }}>
-                <h4 style={{ fontSize: '0.9rem', fontWeight: 600, margin: '0 0 0.75rem', color: '#1d4ed8' }}>
+              <div style={{ background: 'var(--spc-view-canvas)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--spc-view-border)', marginBottom: '1.25rem' }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: 600, margin: '0 0 0.75rem', color: 'var(--spc-view-info)' }}>
                   | Custom Fields for {selectedForm.title}
                 </h4>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   {selectedForm.fields.filter((f) => f.stage === 'creator' || !f.stage).map((field) => (
                     <div key={field.id}>
-                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.35rem' }}>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: '0.35rem' }}>
                         {field.label} {field.required && '*'}
                       </label>
                       {field.type === 'list' ? (
                         <select
                           value={dynamicFormValues[field.id] || ''}
                           onChange={(e) => setDynamicFormValues({ ...dynamicFormValues, [field.id]: e.target.value })}
-                          style={{ width: '100%', padding: '0.55rem 0.75rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px', fontSize: '0.875rem' }}
+                          style={{ width: '100%', padding: '0.55rem 0.75rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', fontSize: '0.875rem' }}
                           required={field.required}
                         >
                           <option value="">-- Select --</option>
@@ -1586,7 +1586,7 @@ export default function FieldTaskManager({
                           placeholder={field.placeholder || `Please enter ${field.label}`}
                           value={dynamicFormValues[field.id] || ''}
                           onChange={(e) => setDynamicFormValues({ ...dynamicFormValues, [field.id]: e.target.value })}
-                          style={{ width: '100%', padding: '0.55rem 0.75rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px', fontSize: '0.875rem' }}
+                          style={{ width: '100%', padding: '0.55rem 0.75rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', fontSize: '0.875rem' }}
                         />
                       )}
                     </div>
@@ -1597,24 +1597,24 @@ export default function FieldTaskManager({
 
             {/* Description */}
             <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '0.35rem' }}>Description / Special Instructions</label>
+              <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: '0.35rem' }}>Description / Special Instructions</label>
               <textarea
                 rows={3}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Please enter task description for field executive..."
-                style={{ width: '100%', padding: '0.55rem 0.75rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px', fontSize: '0.875rem', outline: 'none' }}
+                style={{ width: '100%', padding: '0.55rem 0.75rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', fontSize: '0.875rem', outline: 'none' }}
               />
             </div>
 
             {/* Additional Fields */}
-            <div style={{ marginBottom: '1.5rem', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
+            <div style={{ marginBottom: '1.5rem', borderTop: '1px solid var(--spc-view-border)', paddingTop: '1rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                <h4 style={{ fontSize: '0.9rem', fontWeight: 600, margin: 0, color: '#475569' }}>| Additional Fields</h4>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: 600, margin: 0, color: 'var(--spc-view-muted)' }}>| Additional Fields</h4>
                 <button
                   type="button"
                   onClick={handleAddAdditionalField}
-                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '4px', cursor: 'pointer', fontWeight: 500 }}
+                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', background: 'var(--spc-view-info-bg)', color: 'var(--spc-view-info)', border: '1px solid var(--spc-view-info-border)', borderRadius: '4px', cursor: 'pointer', fontWeight: 500 }}
                 >
                   Add More Fields
                 </button>
@@ -1630,7 +1630,7 @@ export default function FieldTaskManager({
                       updated[idx].name = e.target.value;
                       setAdditionalFields(updated);
                     }}
-                    style={{ padding: '0.45rem 0.65rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px', fontSize: '0.825rem' }}
+                    style={{ padding: '0.45rem 0.65rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', fontSize: '0.825rem' }}
                   />
                   <input
                     type="text"
@@ -1641,7 +1641,7 @@ export default function FieldTaskManager({
                       updated[idx].value = e.target.value;
                       setAdditionalFields(updated);
                     }}
-                    style={{ padding: '0.45rem 0.65rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '6px', fontSize: '0.825rem' }}
+                    style={{ padding: '0.45rem 0.65rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', fontSize: '0.825rem' }}
                   />
                 </div>
               ))}
@@ -1652,14 +1652,14 @@ export default function FieldTaskManager({
               <button
                 type="button"
                 onClick={() => setIsCreating(false)}
-                style={{ padding: '0.5rem 1rem', background: '#ffffff', border: '1px solid #cbd5e1', color: '#334155', borderRadius: '6px', cursor: 'pointer', fontWeight: 500, boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+                style={{ padding: '0.5rem 1rem', background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', color: 'var(--spc-view-text)', borderRadius: '6px', cursor: 'pointer', fontWeight: 500, boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submitLoading}
-                style={{ padding: '0.5rem 1.5rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, boxShadow: '0 1px 3px rgba(37,99,235,0.2)' }}
+                style={{ padding: '0.5rem 1.5rem', background: 'var(--spc-view-action)', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, boxShadow: '0 1px 3px rgba(37,99,235,0.2)' }}
               >
                 {submitLoading ? 'Creating Task...' : 'Create & Assign Task'}
               </button>
@@ -1694,7 +1694,7 @@ export default function FieldTaskManager({
                   gap: '0.2rem',
                 }}
               >
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{kpi.label}</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--spc-view-muted)', textTransform: 'uppercase' }}>{kpi.label}</span>
                 <span style={{ fontSize: '1.35rem', fontWeight: 800, color: kpi.color }}>{kpi.value}</span>
               </button>
             ))}
@@ -1702,7 +1702,7 @@ export default function FieldTaskManager({
 
           {/* Scope Tabs */}
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-            <div style={{ display: 'inline-flex', background: '#ffffff', padding: 4, borderRadius: 8, border: '1px solid #e2e8f0', gap: 4 }}>
+            <div style={{ display: 'inline-flex', background: 'var(--spc-view-surface)', padding: 4, borderRadius: 8, border: '1px solid var(--spc-view-border)', gap: 4 }}>
               {[
                 { id: 'assigned_by_me', label: '👤 My Assigned Tasks (Created By Me)' },
                 { id: 'all_team', label: '🏢 All Team Tasks' },
@@ -1725,8 +1725,8 @@ export default function FieldTaskManager({
                       cursor: 'pointer',
                       fontSize: '0.8rem',
                       fontWeight: 700,
-                      background: active ? '#2563eb' : 'transparent',
-                      color: active ? '#ffffff' : '#475569',
+                      background: active ? 'var(--spc-view-action)' : 'transparent',
+                      color: active ? '#ffffff' : 'var(--spc-view-muted)',
                     }}
                   >
                     {tab.label}
@@ -1740,9 +1740,9 @@ export default function FieldTaskManager({
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 8,
-                background: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                color: '#1d4ed8',
+                background: 'var(--spc-view-info-bg)',
+                border: '1px solid var(--spc-view-info-border)',
+                color: 'var(--spc-view-info)',
                 padding: '0.35rem 0.75rem',
                 borderRadius: 9999,
                 fontSize: '0.78rem',
@@ -1752,7 +1752,7 @@ export default function FieldTaskManager({
                 <button
                   type="button"
                   onClick={() => setLeadFilter(null)}
-                  style={{ background: 'none', border: 'none', color: '#1d4ed8', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center' }}
+                  style={{ background: 'none', border: 'none', color: 'var(--spc-view-info)', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center' }}
                   title="Show all leads"
                 >
                   <X size={14} />
@@ -1763,8 +1763,8 @@ export default function FieldTaskManager({
 
           {/* Filter Bar */}
           <div style={{
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
+            background: 'var(--spc-view-surface)',
+            border: '1px solid var(--spc-view-border)',
             borderRadius: '8px',
             padding: '0.75rem',
             display: 'flex',
@@ -1773,20 +1773,20 @@ export default function FieldTaskManager({
             alignItems: 'center',
           }}>
             <div style={{ position: 'relative', flex: '1 1 220px', minWidth: 200 }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--spc-view-muted)' }} />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search Task ID, Party/Lead, Phone, Instructions, Executive..."
-                style={{ width: '100%', padding: '0.45rem 0.65rem 0.45rem 1.95rem', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: '0.8rem', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '0.45rem 0.65rem 0.45rem 1.95rem', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: '0.8rem', boxSizing: 'border-box' }}
               />
             </div>
 
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              style={{ padding: '0.45rem 0.6rem', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: '0.8rem', background: '#ffffff' }}
+              style={{ padding: '0.45rem 0.6rem', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: '0.8rem', background: 'var(--spc-view-surface)' }}
             >
               <option value="ALL">All Statuses</option>
               <option value="SCHEDULED">Scheduled</option>
@@ -1799,7 +1799,7 @@ export default function FieldTaskManager({
             <select
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value)}
-              style={{ padding: '0.45rem 0.6rem', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: '0.8rem', background: '#ffffff' }}
+              style={{ padding: '0.45rem 0.6rem', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: '0.8rem', background: 'var(--spc-view-surface)' }}
             >
               <option value="ALL">All Priorities</option>
               <option value="CRITICAL">🔴 Critical</option>
@@ -1812,7 +1812,7 @@ export default function FieldTaskManager({
             <select
               value={purposeFilter}
               onChange={(e) => setPurposeFilter(e.target.value)}
-              style={{ padding: '0.45rem 0.6rem', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: '0.8rem', background: '#ffffff', maxWidth: 185 }}
+              style={{ padding: '0.45rem 0.6rem', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: '0.8rem', background: 'var(--spc-view-surface)', maxWidth: 185 }}
             >
               <option value="ALL">All Task Types</option>
               {availablePurposes.map((p) => (
@@ -1823,7 +1823,7 @@ export default function FieldTaskManager({
             <select
               value={execFilter}
               onChange={(e) => setExecFilter(e.target.value)}
-              style={{ padding: '0.45rem 0.6rem', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: '0.8rem', background: '#ffffff', maxWidth: 185 }}
+              style={{ padding: '0.45rem 0.6rem', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: '0.8rem', background: 'var(--spc-view-surface)', maxWidth: 185 }}
             >
               <option value="ALL">All Field Executives</option>
               {availableExecutives.map((ex) => (
@@ -1835,8 +1835,8 @@ export default function FieldTaskManager({
               <div
                 style={{
                   display: 'inline-flex',
-                  background: '#f1f5f9',
-                  border: '1px solid #cbd5e1',
+                  background: 'var(--spc-view-raised)',
+                  border: '1px solid var(--spc-view-border)',
                   borderRadius: 6,
                   padding: 2,
                 }}
@@ -1856,8 +1856,8 @@ export default function FieldTaskManager({
                         padding: '0.32rem 0.55rem',
                         borderRadius: 4,
                         border: 'none',
-                        background: active ? '#2563eb' : 'transparent',
-                        color: active ? '#ffffff' : '#475569',
+                        background: active ? 'var(--spc-view-action)' : 'transparent',
+                        color: active ? '#ffffff' : 'var(--spc-view-muted)',
                         fontSize: '0.74rem',
                         fontWeight: 700,
                         cursor: 'pointer',
@@ -1883,7 +1883,7 @@ export default function FieldTaskManager({
                 style={{
                   padding: '0.42rem 0.7rem',
                   borderRadius: '6px',
-                  border: '1px solid #cbd5e1',
+                  border: '1px solid var(--spc-view-border)',
                   fontSize: '0.8rem',
                   fontWeight: 600,
                 }}
@@ -1904,9 +1904,9 @@ export default function FieldTaskManager({
                   gap: 5,
                   padding: '0.45rem 0.75rem',
                   borderRadius: '6px',
-                  border: '1px solid #cbd5e1',
-                  background: showFilterModal ? '#0284c7' : activeRuleCount > 0 ? '#eff6ff' : '#ffffff',
-                  color: showFilterModal ? '#ffffff' : activeRuleCount > 0 ? '#1d4ed8' : '#334155',
+                  border: '1px solid var(--spc-view-border)',
+                  background: showFilterModal ? 'var(--spc-view-action)' : activeRuleCount > 0 ? 'var(--spc-view-info-bg)' : 'var(--spc-view-surface)',
+                  color: showFilterModal ? '#ffffff' : activeRuleCount > 0 ? 'var(--spc-view-info)' : 'var(--spc-view-text)',
                   fontSize: '0.8rem',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -1926,8 +1926,8 @@ export default function FieldTaskManager({
                       height: 16,
                       padding: '0 4px',
                       borderRadius: 9999,
-                      background: showFilterModal ? '#ffffff' : '#2563eb',
-                      color: showFilterModal ? '#0284c7' : '#ffffff',
+                      background: showFilterModal ? 'var(--spc-view-surface)' : 'var(--spc-view-action)',
+                      color: showFilterModal ? 'var(--spc-view-info)' : '#ffffff',
                       fontSize: '0.68rem',
                       fontWeight: 800,
                     }}
@@ -1971,9 +1971,9 @@ export default function FieldTaskManager({
                   gap: 5,
                   padding: '0.45rem 0.75rem',
                   borderRadius: '6px',
-                  border: '1px solid #cbd5e1',
-                  background: showColumnModal ? '#0284c7' : '#ffffff',
-                  color: showColumnModal ? '#ffffff' : '#334155',
+                  border: '1px solid var(--spc-view-border)',
+                  background: showColumnModal ? 'var(--spc-view-action)' : 'var(--spc-view-surface)',
+                  color: showColumnModal ? '#ffffff' : 'var(--spc-view-text)',
                   fontSize: '0.8rem',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -2037,9 +2037,9 @@ export default function FieldTaskManager({
                 style={{
                   padding: '0.42rem 0.7rem',
                   borderRadius: 6,
-                  border: '1px solid #fecaca',
-                  background: '#fef2f2',
-                  color: '#dc2626',
+                  border: '1px solid var(--spc-view-danger-border)',
+                  background: 'var(--spc-view-danger-bg)',
+                  color: 'var(--spc-view-danger)',
                   fontSize: '0.78rem',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -2051,21 +2051,21 @@ export default function FieldTaskManager({
           </div>
 
           {loadError && (
-            <div style={{ padding: '0.75rem 1rem', borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: '0.84rem', fontWeight: 600 }}>
+            <div style={{ padding: '0.75rem 1rem', borderRadius: 8, background: 'var(--spc-view-danger-bg)', border: '1px solid var(--spc-view-danger-border)', color: 'var(--spc-view-danger)', fontSize: '0.84rem', fontWeight: 600 }}>
               ⚠️ {loadError}
             </div>
           )}
 
           {/* Tasks Display Card (Table or Tiles) */}
-          <div style={{ background: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+          <div style={{ background: 'var(--spc-view-surface)', borderRadius: '8px', border: '1px solid var(--spc-view-border)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
             {layoutMode === 'tiles' ? (
               <div style={{ padding: '1rem', overflow: 'auto', maxHeight: 'calc(100vh - 380px)', minHeight: '320px' }}>
                 {loading ? (
-                  <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
+                  <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--spc-view-muted)' }}>
                     Loading assigned field tasks...
                   </div>
                 ) : paginatedTasks.length === 0 ? (
-                  <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
+                  <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--spc-view-muted)' }}>
                     <div style={{ fontWeight: 600, marginBottom: 4 }}>No field tasks found in this view.</div>
                     <div style={{ fontSize: '0.78rem' }}>Try switching tabs/filters or click &quot;+ Create Task&quot; to assign a new field visit.</div>
                   </div>
@@ -2089,8 +2089,8 @@ export default function FieldTaskManager({
                         <div
                           key={t.id}
                           style={{
-                            background: '#ffffff',
-                            border: '1px solid #e2e8f0',
+                            background: 'var(--spc-view-surface)',
+                            border: '1px solid var(--spc-view-border)',
                             borderRadius: 10,
                             padding: '0.9rem',
                             display: 'flex',
@@ -2109,13 +2109,13 @@ export default function FieldTaskManager({
                                 fontSize: '0.75rem',
                                 padding: '2px 7px',
                                 borderRadius: 5,
-                                background: isSelfCheckIn ? '#ecfdf5' : '#eff6ff',
-                                color: isSelfCheckIn ? '#047857' : '#1d4ed8',
-                                border: `1px solid ${isSelfCheckIn ? '#a7f3d0' : '#bfdbfe'}`,
+                                background: isSelfCheckIn ? 'var(--spc-view-success-bg)' : 'var(--spc-view-info-bg)',
+                                color: isSelfCheckIn ? 'var(--spc-view-success)' : 'var(--spc-view-info)',
+                                border: `1px solid ${isSelfCheckIn ? 'var(--spc-view-success-border)' : 'var(--spc-view-info-border)'}`,
                               }}>
                                 {t.task_code || 'TASK'}
                               </span>
-                              <span style={{ fontSize: '0.68rem', fontWeight: 600, color: isSelfCheckIn ? '#047857' : '#64748b' }}>
+                              <span style={{ fontSize: '0.68rem', fontWeight: 600, color: isSelfCheckIn ? 'var(--spc-view-success)' : 'var(--spc-view-muted)' }}>
                                 {isSelfCheckIn ? '🏃 Self Check-In' : '📋 Assigned Task'}
                               </span>
                             </div>
@@ -2147,15 +2147,15 @@ export default function FieldTaskManager({
 
                           {/* Party / Customer */}
                           <div>
-                            <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#0f172a' }}>{t.party_name || 'Lead Party'}</div>
+                            <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--spc-view-text)' }}>{t.party_name || 'Lead Party'}</div>
                             {t.party_phone && (
-                              <div style={{ fontSize: '0.74rem', color: '#475569', marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <div style={{ fontSize: '0.74rem', color: 'var(--spc-view-muted)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
                                 <Phone size={11} color="#2563eb" />
                                 <span>{t.party_phone}</span>
                               </div>
                             )}
                             {t.party_address && (
-                              <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 2, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--spc-view-muted)', marginTop: 2, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
                                 <MapPin size={11} color="#64748b" style={{ flexShrink: 0, marginTop: 2 }} />
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
                                   {t.party_address}
@@ -2165,39 +2165,39 @@ export default function FieldTaskManager({
                           </div>
 
                           {/* Purpose & Stage */}
-                          <div style={{ background: '#f8fafc', padding: '0.5rem 0.65rem', borderRadius: 6, border: '1px solid #f1f5f9', fontSize: '0.75rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, color: '#1e293b' }}>
+                          <div style={{ background: 'var(--spc-view-canvas)', padding: '0.5rem 0.65rem', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: '0.75rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, color: 'var(--spc-view-text)' }}>
                               <Layers size={12} color="#2563eb" />
                               <span>{t.task_type || 'Field Visit'}</span>
                             </div>
                             {stageVal && (
-                              <div style={{ marginTop: 3, color: '#0369a1', fontWeight: 600, fontSize: '0.7rem' }}>
+                              <div style={{ marginTop: 3, color: 'var(--spc-view-info)', fontWeight: 600, fontSize: '0.7rem' }}>
                                 {stageLabel}: {stageVal}
                               </div>
                             )}
                             {instructions && (
-                              <div style={{ marginTop: 4, color: '#475569', fontSize: '0.72rem', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                              <div style={{ marginTop: 4, color: 'var(--spc-view-muted)', fontSize: '0.72rem', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                 {instructions}
                               </div>
                             )}
                           </div>
 
                           {/* Execution & Assignment Grid */}
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.72rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.45rem' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.72rem', borderTop: '1px solid var(--spc-view-border)', paddingTop: '0.45rem' }}>
                             <div>
-                              <span style={{ color: '#64748b', display: 'block', fontSize: '0.66rem' }}>ASSIGNED TO</span>
-                              <strong style={{ color: '#0f172a' }}>{t.assigned_to_name}</strong>
+                              <span style={{ color: 'var(--spc-view-muted)', display: 'block', fontSize: '0.66rem' }}>ASSIGNED TO</span>
+                              <strong style={{ color: 'var(--spc-view-text)' }}>{t.assigned_to_name}</strong>
                             </div>
                             <div>
-                              <span style={{ color: '#64748b', display: 'block', fontSize: '0.66rem' }}>SCHEDULED (IST)</span>
-                              <strong style={{ color: '#0f172a' }}>{formatISTDateTime(t.scheduled_start_time)}</strong>
+                              <span style={{ color: 'var(--spc-view-muted)', display: 'block', fontSize: '0.66rem' }}>SCHEDULED (IST)</span>
+                              <strong style={{ color: 'var(--spc-view-text)' }}>{formatISTDateTime(t.scheduled_start_time)}</strong>
                             </div>
                           </div>
 
                           {/* Delay & Check Duration Badges */}
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.72rem', background: '#fafaf9', padding: '0.45rem', borderRadius: 6 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.72rem', background: 'var(--spc-view-canvas)', padding: '0.45rem', borderRadius: 6 }}>
                             <div>
-                              <span style={{ color: '#64748b', display: 'block', fontSize: '0.65rem' }}>DELAY STATUS</span>
+                              <span style={{ color: 'var(--spc-view-muted)', display: 'block', fontSize: '0.65rem' }}>DELAY STATUS</span>
                               <span style={{
                                 display: 'inline-block',
                                 fontSize: '0.68rem',
@@ -2218,8 +2218,8 @@ export default function FieldTaskManager({
                               )}
                             </div>
                             <div>
-                              <span style={{ color: '#64748b', display: 'block', fontSize: '0.65rem' }}>CHECK DURATION</span>
-                              <span style={{ fontWeight: 700, color: checkDur.isActive ? '#047857' : (checkDur.text !== '—' ? '#0f172a' : '#94a3b8') }}>
+                              <span style={{ color: 'var(--spc-view-muted)', display: 'block', fontSize: '0.65rem' }}>CHECK DURATION</span>
+                              <span style={{ fontWeight: 700, color: checkDur.isActive ? 'var(--spc-view-success)' : (checkDur.text !== '—' ? 'var(--spc-view-text)' : 'var(--spc-view-muted)') }}>
                                 {checkDur.text}
                               </span>
                             </div>
@@ -2227,29 +2227,29 @@ export default function FieldTaskManager({
 
                           {/* Check-In / Check-Out Timestamps */}
                           {(t.actual_start_time || t.actual_end_time) && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.7rem', color: '#64748b' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.7rem', color: 'var(--spc-view-muted)' }}>
                               <div>
                                 <span>In: </span>
-                                <strong style={{ color: '#059669' }}>{t.actual_start_time ? formatISTDateTime(t.actual_start_time) : '—'}</strong>
+                                <strong style={{ color: 'var(--spc-view-success)' }}>{t.actual_start_time ? formatISTDateTime(t.actual_start_time) : '—'}</strong>
                               </div>
                               <div>
                                 <span>Out: </span>
-                                <strong style={{ color: '#7c3aed' }}>{t.actual_end_time ? formatISTDateTime(t.actual_end_time) : '—'}</strong>
+                                <strong style={{ color: 'var(--spc-view-violet)' }}>{t.actual_end_time ? formatISTDateTime(t.actual_end_time) : '—'}</strong>
                               </div>
                             </div>
                           )}
 
                           {/* Action Buttons */}
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem', marginTop: 'auto' }}>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, borderTop: '1px solid var(--spc-view-border)', paddingTop: '0.5rem', marginTop: 'auto' }}>
                             <button
                               type="button"
                               onClick={() => setViewingTask(t)}
                               style={{
                                 padding: '0.35rem 0.65rem',
                                 borderRadius: 5,
-                                border: '1px solid #cbd5e1',
-                                background: '#ffffff',
-                                color: '#334155',
+                                border: '1px solid var(--spc-view-border)',
+                                background: 'var(--spc-view-surface)',
+                                color: 'var(--spc-view-text)',
                                 fontSize: '0.74rem',
                                 fontWeight: 600,
                                 cursor: 'pointer',
@@ -2267,9 +2267,9 @@ export default function FieldTaskManager({
                                 style={{
                                   padding: '0.35rem 0.65rem',
                                   borderRadius: 5,
-                                  border: '1px solid #93c5fd',
-                                  background: '#eff6ff',
-                                  color: '#1d4ed8',
+                                  border: '1px solid var(--spc-view-info-border)',
+                                  background: 'var(--spc-view-info-bg)',
+                                  color: 'var(--spc-view-info)',
                                   fontSize: '0.74rem',
                                   fontWeight: 700,
                                   cursor: 'pointer',
@@ -2299,13 +2299,13 @@ export default function FieldTaskManager({
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={orderedColumns.length} style={{ padding: '2.5rem', textAlign: 'center', color: '#64748b' }}>
+                        <td colSpan={orderedColumns.length} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--spc-view-muted)' }}>
                           Loading assigned field tasks...
                         </td>
                       </tr>
                     ) : paginatedTasks.length === 0 ? (
                       <tr>
-                        <td colSpan={orderedColumns.length} style={{ padding: '2.5rem', textAlign: 'center', color: '#64748b' }}>
+                        <td colSpan={orderedColumns.length} style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--spc-view-muted)' }}>
                           <div style={{ fontWeight: 600, marginBottom: 4 }}>No field tasks found in this view.</div>
                           <div style={{ fontSize: '0.78rem' }}>Try switching tabs/filters or click &quot;+ Create Task&quot; to assign a new field visit.</div>
                         </td>
@@ -2334,13 +2334,13 @@ export default function FieldTaskManager({
                                     fontSize: '0.75rem',
                                     padding: '2px 7px',
                                     borderRadius: 5,
-                                    background: isSelfCheckIn ? '#ecfdf5' : '#eff6ff',
-                                    color: isSelfCheckIn ? '#047857' : '#1d4ed8',
-                                    border: `1px solid ${isSelfCheckIn ? '#a7f3d0' : '#bfdbfe'}`,
+                                    background: isSelfCheckIn ? 'var(--spc-view-success-bg)' : 'var(--spc-view-info-bg)',
+                                    color: isSelfCheckIn ? 'var(--spc-view-success)' : 'var(--spc-view-info)',
+                                    border: `1px solid ${isSelfCheckIn ? 'var(--spc-view-success-border)' : 'var(--spc-view-info-border)'}`,
                                   }}>
                                     {t.task_code || 'TASK'}
                                   </span>
-                                  <div style={{ fontSize: '0.66rem', fontWeight: 700, color: isSelfCheckIn ? '#047857' : '#64748b', marginTop: 3 }}>
+                                  <div style={{ fontSize: '0.66rem', fontWeight: 700, color: isSelfCheckIn ? 'var(--spc-view-success)' : 'var(--spc-view-muted)', marginTop: 3 }}>
                                     {isSelfCheckIn ? '🏃 Self Check-In' : '📋 Assigned Task'}
                                   </div>
                                   {samePartyCount > 1 && !leadFilter && (
@@ -2351,9 +2351,9 @@ export default function FieldTaskManager({
                                         style={{
                                           fontSize: '0.68rem',
                                           fontWeight: 700,
-                                          color: '#0369a1',
-                                          background: '#f0f9ff',
-                                          border: '1px solid #bae6fd',
+                                          color: 'var(--spc-view-info)',
+                                          background: 'var(--spc-view-info-bg)',
+                                          border: '1px solid var(--spc-view-info-border)',
                                           borderRadius: 9999,
                                           padding: '1px 6px',
                                           cursor: 'pointer',
@@ -2371,15 +2371,15 @@ export default function FieldTaskManager({
                             case 'party':
                               return (
                                 <td key={colKey} style={{ padding: '0.65rem 0.75rem', overflow: 'hidden' }}>
-                                  <div style={{ fontWeight: 700, color: '#0f172a', wordBreak: 'break-word' }}>{t.party_name || 'Lead Party'}</div>
+                                  <div style={{ fontWeight: 700, color: 'var(--spc-view-text)', wordBreak: 'break-word' }}>{t.party_name || 'Lead Party'}</div>
                                   {t.party_phone && (
-                                    <div style={{ fontSize: '0.73rem', color: '#475569', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <div style={{ fontSize: '0.73rem', color: 'var(--spc-view-muted)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
                                       <Phone size={11} color="#2563eb" />
                                       <span>{t.party_phone}</span>
                                     </div>
                                   )}
                                   {t.party_address && (
-                                    <div style={{ fontSize: '0.71rem', color: '#64748b', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.party_address}>
+                                    <div style={{ fontSize: '0.71rem', color: 'var(--spc-view-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.party_address}>
                                       <MapPin size={10} style={{ marginRight: 3, verticalAlign: 'middle' }} />
                                       {t.party_address}
                                     </div>
@@ -2389,7 +2389,7 @@ export default function FieldTaskManager({
                             case 'purpose':
                               return (
                                 <td key={colKey} style={{ padding: '0.65rem 0.75rem', overflow: 'hidden' }}>
-                                  <div style={{ fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <div style={{ fontWeight: 700, color: 'var(--spc-view-text)', display: 'flex', alignItems: 'center', gap: 4 }}>
                                     <Layers size={12} color="#2563eb" />
                                     <span>{t.task_type || 'Field Visit'}</span>
                                   </div>
@@ -2398,9 +2398,9 @@ export default function FieldTaskManager({
                                       marginTop: 4,
                                       fontSize: '0.7rem',
                                       fontWeight: 600,
-                                      color: '#0369a1',
-                                      background: '#f0f9ff',
-                                      border: '1px solid #bae6fd',
+                                      color: 'var(--spc-view-info)',
+                                      background: 'var(--spc-view-info-bg)',
+                                      border: '1px solid var(--spc-view-info-border)',
                                       borderRadius: 5,
                                       padding: '2px 6px',
                                       display: 'inline-block',
@@ -2416,7 +2416,7 @@ export default function FieldTaskManager({
                                     <div style={{
                                       marginTop: 4,
                                       fontSize: '0.73rem',
-                                      color: '#475569',
+                                      color: 'var(--spc-view-muted)',
                                       display: '-webkit-box',
                                       WebkitLineClamp: 2,
                                       WebkitBoxOrient: 'vertical',
@@ -2448,7 +2448,7 @@ export default function FieldTaskManager({
                             case 'assigned_to':
                               return (
                                 <td key={colKey} style={{ padding: '0.65rem 0.75rem' }}>
-                                  <div style={{ fontWeight: 600, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <div style={{ fontWeight: 600, color: 'var(--spc-view-text)', display: 'flex', alignItems: 'center', gap: 4 }}>
                                     <User size={12} color="#64748b" />
                                     <span>{t.assigned_to_name}</span>
                                   </div>
@@ -2456,16 +2456,16 @@ export default function FieldTaskManager({
                               );
                             case 'assigned_by':
                               return (
-                                <td key={colKey} style={{ padding: '0.65rem 0.75rem', color: '#475569' }}>
+                                <td key={colKey} style={{ padding: '0.65rem 0.75rem', color: 'var(--spc-view-muted)' }}>
                                   <div>{t.assigned_by_name}</div>
-                                  <div style={{ fontSize: '0.69rem', color: '#94a3b8', marginTop: 2 }}>
+                                  <div style={{ fontSize: '0.69rem', color: 'var(--spc-view-muted)', marginTop: 2 }}>
                                     {formatISTDateTime(t.created_at)}
                                   </div>
                                 </td>
                               );
                             case 'scheduled':
                               return (
-                                <td key={colKey} style={{ padding: '0.65rem 0.75rem', color: '#0f172a', fontWeight: 600 }}>
+                                <td key={colKey} style={{ padding: '0.65rem 0.75rem', color: 'var(--spc-view-text)', fontWeight: 600 }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                     <Clock size={12} color="#2563eb" />
                                     <span>{formatISTDateTime(t.scheduled_start_time)}</span>
@@ -2492,13 +2492,13 @@ export default function FieldTaskManager({
                               );
                             case 'delay_duration':
                               return (
-                                <td key={colKey} style={{ padding: '0.65rem 0.75rem', fontWeight: 600, color: delayInfo.isDelayed ? delayInfo.color : '#64748b', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                                <td key={colKey} style={{ padding: '0.65rem 0.75rem', fontWeight: 600, color: delayInfo.isDelayed ? delayInfo.color : 'var(--spc-view-muted)', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                                   {delayInfo.durationText}
                                 </td>
                               );
                             case 'check_in':
                               return (
-                                <td key={colKey} style={{ padding: '0.65rem 0.75rem', color: t.actual_start_time ? '#059669' : '#94a3b8', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                                <td key={colKey} style={{ padding: '0.65rem 0.75rem', color: t.actual_start_time ? 'var(--spc-view-success)' : 'var(--spc-view-muted)', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                                   {t.actual_start_time ? (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                       <Clock size={12} color="#059669" />
@@ -2509,7 +2509,7 @@ export default function FieldTaskManager({
                               );
                             case 'check_out':
                               return (
-                                <td key={colKey} style={{ padding: '0.65rem 0.75rem', color: t.actual_end_time ? '#7c3aed' : '#94a3b8', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                                <td key={colKey} style={{ padding: '0.65rem 0.75rem', color: t.actual_end_time ? 'var(--spc-view-violet)' : 'var(--spc-view-muted)', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                                   {t.actual_end_time ? (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                       <Clock size={12} color="#7c3aed" />
@@ -2521,7 +2521,7 @@ export default function FieldTaskManager({
                             case 'check_duration': {
                               const cDur = computeTaskCheckDuration(t, nowTimestamp);
                               return (
-                                <td key={colKey} style={{ padding: '0.65rem 0.75rem', fontWeight: 600, color: cDur.isActive ? '#047857' : (cDur.text !== '—' ? '#0f172a' : '#94a3b8'), fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                                <td key={colKey} style={{ padding: '0.65rem 0.75rem', fontWeight: 600, color: cDur.isActive ? 'var(--spc-view-success)' : (cDur.text !== '—' ? 'var(--spc-view-text)' : 'var(--spc-view-muted)'), fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
                                   {cDur.text}
                                 </td>
                               );
@@ -2554,9 +2554,9 @@ export default function FieldTaskManager({
                                       style={{
                                         padding: '4px 8px',
                                         borderRadius: 5,
-                                        border: '1px solid #cbd5e1',
-                                        background: '#ffffff',
-                                        color: '#334155',
+                                        border: '1px solid var(--spc-view-border)',
+                                        background: 'var(--spc-view-surface)',
+                                        color: 'var(--spc-view-text)',
                                         fontSize: '0.73rem',
                                         fontWeight: 600,
                                         cursor: 'pointer',
@@ -2575,9 +2575,9 @@ export default function FieldTaskManager({
                                         style={{
                                           padding: '4px 8px',
                                           borderRadius: 5,
-                                          border: '1px solid #93c5fd',
-                                          background: '#eff6ff',
-                                          color: '#1d4ed8',
+                                          border: '1px solid var(--spc-view-info-border)',
+                                          background: 'var(--spc-view-info-bg)',
+                                          color: 'var(--spc-view-info)',
                                           fontSize: '0.73rem',
                                           fontWeight: 700,
                                           cursor: 'pointer',
@@ -2599,7 +2599,7 @@ export default function FieldTaskManager({
                         };
 
                         return (
-                          <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' }}>
+                          <tr key={t.id} style={{ borderBottom: '1px solid var(--spc-view-border)', verticalAlign: 'top' }}>
                             {orderedColumns.map((col) => renderCell(col.key))}
                           </tr>
                         );
@@ -2610,7 +2610,7 @@ export default function FieldTaskManager({
               </div>
             )}
 
-            <div style={{ padding: '0.65rem 0.9rem', borderTop: '1px solid #e2e8f0', background: '#ffffff' }}>
+            <div style={{ padding: '0.65rem 0.9rem', borderTop: '1px solid var(--spc-view-border)', background: 'var(--spc-view-surface)' }}>
               <StandardTablePagination
                 currentPage={effectivePage}
                 totalRecords={filteredTasks.length}
@@ -2629,44 +2629,44 @@ export default function FieldTaskManager({
       {/* VIEW TASK DETAILS MODAL */}
       {viewingTask && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.55)', zIndex: 10020, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: '#ffffff', borderRadius: 12, width: 'min(520px, 94vw)', maxHeight: '88vh', overflowY: 'auto', padding: 20, boxShadow: '0 20px 40px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: 10 }}>
+          <div style={{ background: 'var(--spc-view-surface)', borderRadius: 12, width: 'min(520px, 94vw)', maxHeight: '88vh', overflowY: 'auto', padding: 20, boxShadow: '0 20px 40px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--spc-view-border)', paddingBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{
                   fontFamily: 'monospace',
                   fontWeight: 800,
-                  background: String(viewingTask.task_code || '').toUpperCase().startsWith('CHK-') ? '#ecfdf5' : '#eff6ff',
-                  color: String(viewingTask.task_code || '').toUpperCase().startsWith('CHK-') ? '#047857' : '#1d4ed8',
-                  border: `1px solid ${String(viewingTask.task_code || '').toUpperCase().startsWith('CHK-') ? '#a7f3d0' : '#bfdbfe'}`,
+                  background: String(viewingTask.task_code || '').toUpperCase().startsWith('CHK-') ? 'var(--spc-view-success-bg)' : 'var(--spc-view-info-bg)',
+                  color: String(viewingTask.task_code || '').toUpperCase().startsWith('CHK-') ? 'var(--spc-view-success)' : 'var(--spc-view-info)',
+                  border: `1px solid ${String(viewingTask.task_code || '').toUpperCase().startsWith('CHK-') ? 'var(--spc-view-success-border)' : 'var(--spc-view-info-border)'}`,
                   padding: '2px 8px',
                   borderRadius: 6,
                   fontSize: 13
                 }}>
                   {viewingTask.task_code || 'TASK'}
                 </span>
-                <strong style={{ fontSize: 15, color: '#0f172a' }}>{viewingTask.party_name}</strong>
+                <strong style={{ fontSize: 15, color: 'var(--spc-view-text)' }}>{viewingTask.party_name}</strong>
               </div>
-              <button type="button" onClick={() => setViewingTask(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+              <button type="button" onClick={() => setViewingTask(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--spc-view-muted)' }}>
                 <X size={18} />
               </button>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12.5 }}>
-              <div><span style={{ color: '#64748b' }}>Status:</span> <strong>{getStatusMeta(viewingTask.status).label}</strong></div>
+              <div><span style={{ color: 'var(--spc-view-muted)' }}>Status:</span> <strong>{getStatusMeta(viewingTask.status).label}</strong></div>
               <div>
-                <span style={{ color: '#64748b' }}>Priority:</span>{' '}
+                <span style={{ color: 'var(--spc-view-muted)' }}>Priority:</span>{' '}
                 <strong>{getPriorityMeta(viewingTask.priority).emoji} {getPriorityMeta(viewingTask.priority).label.toUpperCase()}</strong>
               </div>
-              <div><span style={{ color: '#64748b' }}>Purpose / Type:</span> <strong>{viewingTask.task_type}</strong></div>
-              <div><span style={{ color: '#64748b' }}>Assigned To:</span> <strong>{viewingTask.assigned_to_name}</strong></div>
-              <div><span style={{ color: '#64748b' }}>Assigned By:</span> <strong>{viewingTask.assigned_by_name}</strong></div>
-              <div><span style={{ color: '#64748b' }}>Scheduled (IST):</span> <strong>{formatISTDateTime(viewingTask.scheduled_start_time)}</strong></div>
+              <div><span style={{ color: 'var(--spc-view-muted)' }}>Purpose / Type:</span> <strong>{viewingTask.task_type}</strong></div>
+              <div><span style={{ color: 'var(--spc-view-muted)' }}>Assigned To:</span> <strong>{viewingTask.assigned_to_name}</strong></div>
+              <div><span style={{ color: 'var(--spc-view-muted)' }}>Assigned By:</span> <strong>{viewingTask.assigned_by_name}</strong></div>
+              <div><span style={{ color: 'var(--spc-view-muted)' }}>Scheduled (IST):</span> <strong>{formatISTDateTime(viewingTask.scheduled_start_time)}</strong></div>
               {(() => {
                 const dInfo = computeFieldTaskDelay(viewingTask, nowTimestamp);
                 return (
                   <>
                     <div>
-                      <span style={{ color: '#64748b' }}>Delay Status:</span>{' '}
+                      <span style={{ color: 'var(--spc-view-muted)' }}>Delay Status:</span>{' '}
                       <span style={{
                         display: 'inline-block',
                         fontSize: '0.72rem',
@@ -2681,47 +2681,47 @@ export default function FieldTaskManager({
                       </span>
                     </div>
                     <div>
-                      <span style={{ color: '#64748b' }}>Delay Duration:</span>{' '}
-                      <strong style={{ color: dInfo.isDelayed ? dInfo.color : '#0f172a' }}>{dInfo.durationText}</strong>
+                      <span style={{ color: 'var(--spc-view-muted)' }}>Delay Duration:</span>{' '}
+                      <strong style={{ color: dInfo.isDelayed ? dInfo.color : 'var(--spc-view-text)' }}>{dInfo.durationText}</strong>
                     </div>
                   </>
                 );
               })()}
               <div>
-                <span style={{ color: '#64748b' }}>Check-In (IST):</span>{' '}
-                <strong style={{ color: viewingTask.actual_start_time ? '#059669' : '#0f172a' }}>
+                <span style={{ color: 'var(--spc-view-muted)' }}>Check-In (IST):</span>{' '}
+                <strong style={{ color: viewingTask.actual_start_time ? 'var(--spc-view-success)' : 'var(--spc-view-text)' }}>
                   {viewingTask.actual_start_time ? formatISTDateTime(viewingTask.actual_start_time) : 'Not Checked In'}
                 </strong>
               </div>
               <div>
-                <span style={{ color: '#64748b' }}>Check-Out (IST):</span>{' '}
-                <strong style={{ color: viewingTask.actual_end_time ? '#7c3aed' : '#0f172a' }}>
+                <span style={{ color: 'var(--spc-view-muted)' }}>Check-Out (IST):</span>{' '}
+                <strong style={{ color: viewingTask.actual_end_time ? 'var(--spc-view-violet)' : 'var(--spc-view-text)' }}>
                   {viewingTask.actual_end_time ? formatISTDateTime(viewingTask.actual_end_time) : 'Not Checked Out'}
                 </strong>
               </div>
               <div>
-                <span style={{ color: '#64748b' }}>Check Duration:</span>{' '}
+                <span style={{ color: 'var(--spc-view-muted)' }}>Check Duration:</span>{' '}
                 <strong>{computeTaskCheckDuration(viewingTask, nowTimestamp).text}</strong>
               </div>
-              {viewingTask.party_phone && <div><span style={{ color: '#64748b' }}>Phone:</span> <strong>{viewingTask.party_phone}</strong></div>}
-              <div><span style={{ color: '#64748b' }}>Created (IST):</span> <strong>{formatISTDateTime(viewingTask.created_at)}</strong></div>
+              {viewingTask.party_phone && <div><span style={{ color: 'var(--spc-view-muted)' }}>Phone:</span> <strong>{viewingTask.party_phone}</strong></div>}
+              <div><span style={{ color: 'var(--spc-view-muted)' }}>Created (IST):</span> <strong>{formatISTDateTime(viewingTask.created_at)}</strong></div>
             </div>
 
             {viewingTask.party_address && (
-              <div style={{ fontSize: 12.5, color: '#334155', background: '#f8fafc', padding: 8, borderRadius: 6, border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: 12.5, color: 'var(--spc-view-text)', background: 'var(--spc-view-canvas)', padding: 8, borderRadius: 6, border: '1px solid var(--spc-view-border)' }}>
                 <strong>Address:</strong> {viewingTask.party_address}
               </div>
             )}
 
             {(viewingTask.form_details?.task_stage || viewingTask.form_details?.lead_status) && (
-              <div style={{ fontSize: 12.5, color: '#0369a1', background: '#f0f9ff', padding: 8, borderRadius: 6, border: '1px solid #bae6fd' }}>
+              <div style={{ fontSize: 12.5, color: 'var(--spc-view-info)', background: 'var(--spc-view-info-bg)', padding: 8, borderRadius: 6, border: '1px solid var(--spc-view-info-border)' }}>
                 <strong>{viewingTask.form_details?.task_stage_label || 'Stage'}:</strong>{' '}
                 {viewingTask.form_details?.task_stage || viewingTask.form_details?.lead_status}
               </div>
             )}
 
-            <div style={{ fontSize: 12.5, color: '#0f172a', background: '#fffbeb', padding: 10, borderRadius: 6, border: '1px solid #fde68a', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
-              <strong style={{ display: 'block', marginBottom: 4, color: '#92400e' }}>Task Instructions / Description:</strong>
+            <div style={{ fontSize: 12.5, color: 'var(--spc-view-text)', background: 'var(--spc-view-warning-bg)', padding: 10, borderRadius: 6, border: '1px solid var(--spc-view-warning-border)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+              <strong style={{ display: 'block', marginBottom: 4, color: 'var(--spc-view-warning)' }}>Task Instructions / Description:</strong>
               {viewingTask.form_details?.description || viewingTask.form_details?.issue_description || 'No description provided.'}
             </div>
 
@@ -2734,7 +2734,7 @@ export default function FieldTaskManager({
                     setViewingTask(null);
                     openEditModal(target);
                   }}
-                  style={{ padding: '7px 14px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+                  style={{ padding: '7px 14px', borderRadius: 6, border: 'none', background: 'var(--spc-view-action)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
                 >
                   ✏️ Edit This Task
                 </button>
@@ -2742,7 +2742,7 @@ export default function FieldTaskManager({
               <button
                 type="button"
                 onClick={() => setViewingTask(null)}
-                style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+                style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--spc-view-border)', background: 'var(--spc-view-surface)', color: 'var(--spc-view-text)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
               >
                 Close
               </button>
@@ -2756,29 +2756,29 @@ export default function FieldTaskManager({
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.6)', zIndex: 10030, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <form
             onSubmit={handleSaveTaskEdit}
-            style={{ background: '#ffffff', borderRadius: 12, width: 'min(520px, 95vw)', maxHeight: '90vh', overflowY: 'auto', padding: 20, boxShadow: '0 25px 50px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', gap: 12 }}
+            style={{ background: 'var(--spc-view-surface)', borderRadius: 12, width: 'min(520px, 95vw)', maxHeight: '90vh', overflowY: 'auto', padding: 20, boxShadow: '0 25px 50px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', gap: 12 }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--spc-view-border)', paddingBottom: 10 }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#0f172a' }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--spc-view-text)' }}>
                   Edit Field Task ({editingTask.task_code || 'TASK'})
                 </h3>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--spc-view-muted)' }}>
                   Party: <strong>{editingTask.party_name}</strong>
                 </p>
               </div>
-              <button type="button" onClick={() => setEditingTask(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+              <button type="button" onClick={() => setEditingTask(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--spc-view-muted)' }}>
                 <X size={18} />
               </button>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Reassign Field Executive *</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: 4 }}>Reassign Field Executive *</label>
                 <select
                   value={editExecId}
                   onChange={(e) => setEditExecId(e.target.value)}
-                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 13 }}
                   required
                 >
                   <option value="">-- Select Executive --</option>
@@ -2789,11 +2789,11 @@ export default function FieldTaskManager({
               </div>
 
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Task Priority *</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: 4 }}>Task Priority *</label>
                 <select
                   value={editPriority}
                   onChange={(e) => setEditPriority(e.target.value)}
-                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 13 }}
                 >
                   <option value="CRITICAL">🔴 Critical</option>
                   <option value="URGENT">🟠 Urgent</option>
@@ -2806,11 +2806,11 @@ export default function FieldTaskManager({
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Visit Purpose / Task Type *</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: 4 }}>Visit Purpose / Task Type *</label>
                 <select
                   value={editPurpose}
                   onChange={(e) => setEditPurpose(e.target.value)}
-                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 13 }}
                 >
                   {!availablePurposes.includes(editPurpose) && editPurpose && (
                     <option value={editPurpose}>{editPurpose}</option>
@@ -2822,11 +2822,11 @@ export default function FieldTaskManager({
               </div>
 
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Task Status</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: 4 }}>Task Status</label>
                 <select
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value)}
-                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 13 }}
                 >
                   <option value="SCHEDULED">⏳ Scheduled</option>
                   <option value="PENDING">🕒 Pending</option>
@@ -2838,60 +2838,60 @@ export default function FieldTaskManager({
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Scheduled Visit Date &amp; Time (IST)</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: 4 }}>Scheduled Visit Date &amp; Time (IST)</label>
                 <input
                   type="datetime-local"
                   value={editDateLocal}
                   onChange={(e) => setEditDateLocal(e.target.value)}
-                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 13, boxSizing: 'border-box' }}
                 />
               </div>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Stage / Status Note</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: 4 }}>Stage / Status Note</label>
                 <input
                   type="text"
                   value={editStage}
                   onChange={(e) => setEditStage(e.target.value)}
                   placeholder="Optional stage / status"
-                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 13, boxSizing: 'border-box' }}
                 />
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Party Phone</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: 4 }}>Party Phone</label>
                 <input
                   type="text"
                   value={editPartyPhone}
                   onChange={(e) => setEditPartyPhone(e.target.value)}
-                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 13, boxSizing: 'border-box' }}
                 />
               </div>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Party Address</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: 4 }}>Party Address</label>
                 <input
                   type="text"
                   value={editPartyAddress}
                   onChange={(e) => setEditPartyAddress(e.target.value)}
-                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '7px 9px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 13, boxSizing: 'border-box' }}
                 />
               </div>
             </div>
 
             <div>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Task Description / Instructions *</label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--spc-view-muted)', display: 'block', marginBottom: 4 }}>Task Description / Instructions *</label>
               <textarea
                 rows={3}
                 value={editDesc}
                 onChange={(e) => setEditDesc(e.target.value)}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--spc-view-border)', fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }}
                 required
               />
             </div>
 
             {editError && (
-              <div style={{ padding: '8px 10px', borderRadius: 6, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12, fontWeight: 600 }}>
+              <div style={{ padding: '8px 10px', borderRadius: 6, background: 'var(--spc-view-danger-bg)', border: '1px solid var(--spc-view-danger-border)', color: 'var(--spc-view-danger)', fontSize: 12, fontWeight: 600 }}>
                 ⚠️ {editError}
               </div>
             )}
@@ -2900,14 +2900,14 @@ export default function FieldTaskManager({
               <button
                 type="button"
                 onClick={() => setEditingTask(null)}
-                style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', fontSize: 12.5, cursor: 'pointer' }}
+                style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid var(--spc-view-border)', background: 'var(--spc-view-surface)', fontSize: 12.5, cursor: 'pointer' }}
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={editSaving}
-                style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: 'var(--spc-view-action)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
               >
                 <Send size={13} />
                 {editSaving ? 'Saving...' : 'Save Task Updates'}

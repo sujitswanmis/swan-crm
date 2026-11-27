@@ -207,6 +207,7 @@ export async function forceSyncOfflineItem(item) {
       const payload = item.payload || {};
       const templateId = payload.template_id;
       const periodKey = payload.period_key;
+      const tenantId = payload.tenant_id || payload.tenantId || '00000000-0000-0000-0000-000000000001';
       const rawEmail = payload.employee_email || '';
       const emailClean = rawEmail.replace(/^\[([^\]]+)\].*$/, '$1').trim().toLowerCase();
 
@@ -217,6 +218,7 @@ export async function forceSyncOfflineItem(item) {
           .from('checklist_submissions')
           .select('id')
           .eq('id', payload.id)
+          .eq('tenant_id', tenantId)
           .maybeSingle();
         if (existById) alreadyExists = true;
       }
@@ -228,6 +230,7 @@ export async function forceSyncOfflineItem(item) {
           .eq('template_id', templateId)
           .eq('employee_email', emailClean)
           .eq('period_key', periodKey)
+          .eq('tenant_id', tenantId)
           .maybeSingle();
         if (existByKey) alreadyExists = true;
       }
@@ -237,14 +240,17 @@ export async function forceSyncOfflineItem(item) {
       }
 
       const { submitChecklistResponse } = await import('@/app/actions/checklist');
-      const res = await submitChecklistResponse({ ...item.payload, employee_email: emailClean, isOfflineSync: true });
+      const res = await submitChecklistResponse({ ...item.payload, employee_email: emailClean, isOfflineSync: true }, tenantId);
       if (res && !res.success && res.error) {
         throw new Error(res.error);
       }
       return { success: true, item: { ...item, title: `Checklist: ${item.payload.template_title || item.payload.period_key}` } };
     }
 
-    return { success: true, item };
+    return {
+      success: false,
+      error: `Force sync is not supported for '${item.entityType}'. Please retry when online.`
+    };
   } catch (err) {
     console.error('[FORCE SYNC ERROR]', item?.queueId, err);
     return { success: false, error: err.message || String(err) };

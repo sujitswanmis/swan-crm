@@ -73,7 +73,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
     }
   }, []);
 
-  const triggerSync = useCallback(async () => {
+  const triggerSync = useCallback(async ({ silentErrorToast = false } = {}) => {
     if (isSyncingRef.current || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
     isSyncingRef.current = true;
     setIsSyncing(true);
@@ -84,7 +84,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
         setToastMessage(`🎉 ${result.count} offline update${result.count > 1 ? 's' : ''} synchronized successfully to Supabase!`, 'success', 5000);
         if (onSyncCompleteRef.current) onSyncCompleteRef.current();
       }
-      if (result?.failed > 0) {
+      if (result?.failed > 0 && !silentErrorToast) {
         setToastMessage(`${result.failed} offline update${result.failed > 1 ? 's' : ''} could not sync. Check the pending queue.`, 'error', 6000);
       }
       await loadQueueState();
@@ -192,11 +192,21 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
     };
   }, []);
 
-  // Refresh usage and queue when modal is opened
+  // Refresh usage, policy rules, and queue when modal is opened
   useEffect(() => {
     if (showModal) {
       setOfflineUsage(getDailyOfflineUsage());
       loadQueueState();
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        getOfflineRuleSettings()
+          .then((res) => {
+            if (res?.success && res?.settings) {
+              saveOfflineRulesToLocal(res.settings);
+              setOfflineUsage(getDailyOfflineUsage());
+            }
+          })
+          .catch(() => {});
+      }
     }
   }, [showModal, loadQueueState]);
 
@@ -264,7 +274,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
         loadQueueState().then(() => {
           getPendingQueue().then(queue => {
             if (queue.length > 0 && triggerSyncRef.current) {
-              triggerSyncRef.current();
+              triggerSyncRef.current({ silentErrorToast: true });
             }
           }).catch(() => {});
         }).catch(() => {});
@@ -561,7 +571,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
                               {item.title || `${item.actionType.toUpperCase()} ${item.entityType}`}
                             </div>
                             <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                              Saved {new Date(item.timestamp).toLocaleTimeString()} on device
+                              Saved {new Date(item.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })} IST on device
                             </div>
                             {item.lastError && (
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginTop: '4px', background: 'rgba(239, 68, 68, 0.15)', padding: '4px 8px', borderRadius: '6px' }}>
@@ -634,6 +644,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
                               >
                                 Retry
                               </button>
+                              {['lead', 'attendance', 'lead_note', 'checklist_response'].includes(item.entityType) && (
                                 <button
                                   type="button"
                                   onClick={async (e) => {
@@ -642,6 +653,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
                                       const supabase = createClient();
                                       if (item.entityType === 'checklist_response') {
                                         const payload = item.payload || {};
+                                        const tenantId = payload.tenant_id || payload.tenantId || '00000000-0000-0000-0000-000000000001';
                                         const rawEmail = payload.employee_email || '';
                                         const emailClean = rawEmail.replace(/^\[([^\]]+)\].*$/, '$1').trim().toLowerCase();
 
@@ -652,6 +664,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
                                             .from('checklist_submissions')
                                             .select('id')
                                             .eq('id', payload.id)
+                                            .eq('tenant_id', tenantId)
                                             .maybeSingle();
                                           if (existById) alreadyExists = true;
                                         }
@@ -663,15 +676,16 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
                                             .eq('template_id', payload.template_id)
                                             .eq('employee_email', emailClean)
                                             .eq('period_key', payload.period_key)
+                                            .eq('tenant_id', tenantId)
                                             .maybeSingle();
                                           if (existByKey) alreadyExists = true;
                                         }
 
                                         if (alreadyExists) {
                                           await removeQueueItem(item.queueId, { ...item, title: `Checklist: ${payload.template_title || payload.period_key}` });
-                                          setToastMessage('⚡ Item was already safely saved in cloud database! Cleared from offline queue.');
+                                          setToastMessage('⚡ Item was already safely saved in cloud database! Cleared from offline queue.', 'success', 5000);
                                           await loadQueueState();
-                                          if (onSyncComplete) onSyncComplete();
+                                          if (onSyncCompleteRef.current) onSyncCompleteRef.current();
                                           return;
                                         }
 
@@ -687,7 +701,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
 
                                         const subPayload = {
                                           id: payload.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `sub_${Date.now()}`),
-                                          tenant_id: payload.tenant_id || '00000000-0000-0000-0000-000000000001',
+                                          tenant_id: tenantId,
                                           template_id: payload.template_id,
                                           template_title: payload.template_title || 'Checklist',
                                           frequency: (payload.frequency || 'DAILY').toUpperCase(),
@@ -712,9 +726,9 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
 
                                         if (!directErr) {
                                           await removeQueueItem(item.queueId, { ...item, title: `Checklist: ${payload.template_title || payload.period_key}` });
-                                          setToastMessage('⚡ Force Sync Successful! Data safely written to cloud.');
+                                          setToastMessage('⚡ Force Sync Successful! Data safely written to cloud.', 'success', 5000);
                                           await loadQueueState();
-                                          if (onSyncComplete) onSyncComplete();
+                                          if (onSyncCompleteRef.current) onSyncCompleteRef.current();
                                           return;
                                         }
                                       }
@@ -723,14 +737,14 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
                                       const res = await forceSyncOfflineItem(item);
                                       if (res && res.success) {
                                         await removeQueueItem(item.queueId, res.item || item);
-                                        setToastMessage('⚡ Force Sync Successful! Data safely written to cloud.');
+                                        setToastMessage('⚡ Force Sync Successful! Data safely written to cloud.', 'success', 5000);
                                         await loadQueueState();
-                                        if (onSyncComplete) onSyncComplete();
+                                        if (onSyncCompleteRef.current) onSyncCompleteRef.current();
                                       } else {
-                                        alert('Force sync issue: ' + (res?.error || 'Unknown error'));
+                                        setToastMessage('Force sync issue: ' + (res?.error || 'Unknown error'), 'error', 6000);
                                       }
                                     } catch (err) {
-                                      alert('Force sync error: ' + err.message);
+                                      setToastMessage('Force sync error: ' + err.message, 'error', 6000);
                                     }
                                   }}
                                 style={{
@@ -750,6 +764,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
                               >
                                 ⚡ Force Sync
                               </button>
+                              )}
                             </>
                           )}
                         </div>
@@ -782,7 +797,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
                         <span style={{ color: '#cbd5e1' }}>{h.title}</span>
                         <span style={{ color: '#4ade80', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <CheckCircle2 style={{ width: '12px', height: '12px' }} />
-                          {new Date(h.syncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(h.syncedAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })}
                         </span>
                       </div>
                     ))}

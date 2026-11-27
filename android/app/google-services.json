@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "83658968562",
+    "project_id": "spc-workspace",
+    "storage_bucket": "spc-workspace.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:83658968562:android:f79490ab7a69ccdcb52f6b",
+        "android_client_info": {
+          "package_name": "com.supujacreations.workspace"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC6kbYWxGvSWk2iX4QxQKe8IHdJHZt4cfQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

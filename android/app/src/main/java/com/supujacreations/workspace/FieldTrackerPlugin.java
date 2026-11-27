@@ -21,6 +21,7 @@ import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.pm.PackageInfoCompat;
 import androidx.core.location.LocationManagerCompat;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
@@ -29,6 +30,12 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+import com.google.firebase.messaging.FirebaseMessaging;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import org.json.JSONArray;
 
 @CapacitorPlugin(
     name = "FieldTracker",
@@ -39,12 +46,73 @@ import com.getcapacitor.annotation.PermissionCallback;
                 Manifest.permission.ACCESS_COARSE_LOCATION
             },
             alias = "location"
+        ),
+        @Permission(
+            strings = {
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            },
+            alias = "background_location"
+        ),
+        @Permission(
+            strings = {
+                Manifest.permission.CAMERA
+            },
+            alias = "camera"
+        ),
+        @Permission(
+            strings = {
+                Manifest.permission.RECORD_AUDIO,
+                Manifest.permission.MODIFY_AUDIO_SETTINGS
+            },
+            alias = "microphone"
+        ),
+        @Permission(
+            strings = {
+                Manifest.permission.POST_NOTIFICATIONS
+            },
+            alias = "notifications"
+        ),
+        @Permission(
+            strings = {
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_VIDEO
+            },
+            alias = "storage_media"
+        ),
+        @Permission(
+            strings = {
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            },
+            alias = "storage_legacy"
+        ),
+        @Permission(
+            strings = {
+                Manifest.permission.CALL_PHONE
+            },
+            alias = "phone_call"
+        ),
+        @Permission(
+            strings = {
+                Manifest.permission.BLUETOOTH_CONNECT
+            },
+            alias = "bluetooth"
         )
     }
 )
 public class FieldTrackerPlugin extends Plugin {
 
     private static final int BG_PERM_REQ_CODE = 1002;
+    private static final String[] SUPPORTED_PERMISSION_KEYS = new String[] {
+        "camera",
+        "microphone",
+        "location",
+        "background_location",
+        "notifications",
+        "storage_media",
+        "battery_unrestricted",
+        "phone_call",
+        "bluetooth"
+    };
 
     @Override public void load() {
         FieldDeviceStatusReporter.get(getContext()).ensureScheduled();
@@ -111,6 +179,7 @@ public class FieldTrackerPlugin extends Plugin {
             boolean started = launchService(FieldTrackingService.ACTION_START);
             SharedPreferences prefs = getContext().getSharedPreferences(FieldTrackingService.PREFS_NAME, Context.MODE_PRIVATE);
             maybeRequestBackgroundPermissionOnce(prefs);
+            maybeRequestBatteryExemptionOnce(prefs);
 
             JSObject res = new JSObject();
             res.put("started", started);
@@ -378,6 +447,339 @@ public class FieldTrackerPlugin extends Plugin {
         call.resolve(res);
     }
 
+    @PluginMethod
+    public void getCapabilities(PluginCall call) {
+        Context ctx = getContext();
+        long versionCode = 11L;
+        String versionName = "";
+        try {
+            @SuppressWarnings("deprecation")
+            PackageInfo pInfo = ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0);
+            if (pInfo != null) {
+                versionCode = PackageInfoCompat.getLongVersionCode(pInfo);
+                versionName = pInfo.versionName != null ? pInfo.versionName : "";
+            }
+        } catch (Exception ignored) {}
+
+        JSArray keys = new JSArray();
+        for (String k : SUPPORTED_PERMISSION_KEYS) {
+            keys.put(k);
+        }
+        JSObject res = new JSObject();
+        res.put("supportsDynamicPermissions", true);
+        res.put("appVersionCode", (int) versionCode);
+        res.put("appVersionName", versionName);
+        res.put("sdkInt", Build.VERSION.SDK_INT);
+        res.put("supportedKeys", keys);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void getFcmToken(PluginCall call) {
+        Context ctx = getContext();
+        try {
+            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
+                if (task.isSuccessful() && task.getResult() != null && !task.getResult().isEmpty()) {
+                    String token = task.getResult();
+                    if (ctx != null) {
+                        ctx.getSharedPreferences(FieldTrackingService.PREFS_NAME, Context.MODE_PRIVATE)
+                            .edit()
+                            .putString(SpcFirebaseMessagingService.PREF_FCM_TOKEN, token)
+                            .apply();
+                    }
+                    JSObject res = new JSObject();
+                    res.put("token", token);
+                    res.put("available", true);
+                    call.resolve(res);
+                    return;
+                }
+                String cached = ctx != null
+                    ? ctx.getSharedPreferences(FieldTrackingService.PREFS_NAME, Context.MODE_PRIVATE)
+                        .getString(SpcFirebaseMessagingService.PREF_FCM_TOKEN, "")
+                    : "";
+                JSObject res = new JSObject();
+                res.put("token", cached);
+                res.put("available", cached != null && !cached.isEmpty());
+                call.resolve(res);
+            });
+        } catch (Exception e) {
+            JSObject res = new JSObject();
+            res.put("token", "");
+            res.put("available", false);
+            call.resolve(res);
+        }
+    }
+
+    @PluginMethod
+    public void checkModulePermissions(PluginCall call) {
+        List<String> keys = extractRequestedKeys(call);
+        JSObject result = buildModulePermissionSnapshot(keys);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void requestModulePermissions(PluginCall call) {
+        Context ctx = getContext();
+        if (ctx == null) {
+            call.reject("Context is null");
+            return;
+        }
+
+        List<String> keys = extractRequestedKeys(call);
+        if (keys.isEmpty()) {
+            call.resolve(buildModulePermissionSnapshot(keys));
+            return;
+        }
+
+        SharedPreferences prefs = ctx.getSharedPreferences(FieldTrackingService.PREFS_NAME, Context.MODE_PRIVATE);
+        Set<String> aliasesToRequest = new LinkedHashSet<>();
+
+        for (String key : keys) {
+            if (isLogicalPermissionGranted(ctx, key)) continue;
+            if ("battery_unrestricted".equals(key)) continue;
+            if ("background_location".equals(key)) continue; // Handled separately after foreground location
+            String alias = resolveCapacitorAlias(key);
+            if (alias != null && canRequestAliasDirectly(ctx, prefs, key)) {
+                aliasesToRequest.add(alias);
+                markPermissionAsked(prefs, key);
+            }
+        }
+
+        // Handle foreground permissions first via Capacitor ActivityResultLauncher
+        if (!aliasesToRequest.isEmpty()) {
+            requestPermissionForAliases(aliasesToRequest.toArray(new String[0]), call, "modulePermissionsCallback");
+            return;
+        }
+
+        // If foreground location is already granted and only background_location is pending
+        if (keys.contains("background_location")
+                && !isLogicalPermissionGranted(ctx, "background_location")
+                && isLogicalPermissionGranted(ctx, "location")
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && canRequestAliasDirectly(ctx, prefs, "background_location")) {
+            markPermissionAsked(prefs, "background_location");
+            requestPermissionForAlias("background_location", call, "modulePermissionsCallback");
+            return;
+        }
+
+        // If battery_unrestricted is requested and still restricted, launch exemption dialog
+        if (keys.contains("battery_unrestricted") && !isLogicalPermissionGranted(ctx, "battery_unrestricted")) {
+            triggerBatteryExemptionDialog(ctx);
+        }
+
+        call.resolve(buildModulePermissionSnapshot(keys));
+    }
+
+    @PermissionCallback
+    private void modulePermissionsCallback(PluginCall call) {
+        Context ctx = getContext();
+        if (ctx == null) {
+            call.reject("Context is null");
+            return;
+        }
+
+        List<String> keys = extractRequestedKeys(call);
+        SharedPreferences prefs = ctx.getSharedPreferences(FieldTrackingService.PREFS_NAME, Context.MODE_PRIVATE);
+
+        // If background_location was also requested and foreground location just got granted, prompt once for background_location
+        if (keys.contains("background_location")
+                && !isLogicalPermissionGranted(ctx, "background_location")
+                && isLogicalPermissionGranted(ctx, "location")
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && !prefs.getBoolean("dyn_bg_followup_done", false)
+                && canRequestAliasDirectly(ctx, prefs, "background_location")) {
+            prefs.edit().putBoolean("dyn_bg_followup_done", true).apply();
+            markPermissionAsked(prefs, "background_location");
+            requestPermissionForAlias("background_location", call, "modulePermissionsCallback");
+            return;
+        }
+
+        prefs.edit().remove("dyn_bg_followup_done").apply();
+
+        if (keys.contains("battery_unrestricted") && !isLogicalPermissionGranted(ctx, "battery_unrestricted")) {
+            triggerBatteryExemptionDialog(ctx);
+        }
+
+        FieldDeviceStatusReporter.get(ctx).reportNow(true);
+        call.resolve(buildModulePermissionSnapshot(keys));
+    }
+
+    private List<String> extractRequestedKeys(PluginCall call) {
+        List<String> keys = new ArrayList<>();
+        JSArray arr = call.getArray("permissions");
+        if (arr == null) return keys;
+        for (int i = 0; i < arr.length(); i++) {
+            String raw = arr.optString(i, "").trim().toLowerCase();
+            if (!raw.isEmpty() && !keys.contains(raw)) {
+                keys.add(raw);
+            }
+        }
+        return keys;
+    }
+
+    private String resolveCapacitorAlias(String key) {
+        switch (key) {
+            case "camera":
+                return "camera";
+            case "microphone":
+                return "microphone";
+            case "location":
+                return "location";
+            case "background_location":
+                return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ? "background_location" : null;
+            case "notifications":
+                return Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ? "notifications" : null;
+            case "storage_media":
+                return Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ? "storage_media" : "storage_legacy";
+            case "phone_call":
+                return "phone_call";
+            case "bluetooth":
+                return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? "bluetooth" : null;
+            default:
+                return null;
+        }
+    }
+
+    private String[] androidPermissionsForKey(String key) {
+        switch (key) {
+            case "camera":
+                return new String[] { Manifest.permission.CAMERA };
+            case "microphone":
+                return new String[] { Manifest.permission.RECORD_AUDIO };
+            case "location":
+                return new String[] { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION };
+            case "background_location":
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    return new String[] { Manifest.permission.ACCESS_BACKGROUND_LOCATION };
+                }
+                return new String[0];
+            case "notifications":
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    return new String[] { Manifest.permission.POST_NOTIFICATIONS };
+                }
+                return new String[0];
+            case "storage_media":
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    return new String[] { Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO };
+                }
+                return new String[] { Manifest.permission.READ_EXTERNAL_STORAGE };
+            case "phone_call":
+                return new String[] { Manifest.permission.CALL_PHONE };
+            case "bluetooth":
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    return new String[] { Manifest.permission.BLUETOOTH_CONNECT };
+                }
+                return new String[0];
+            default:
+                return new String[0];
+        }
+    }
+
+    private boolean isLogicalPermissionGranted(Context ctx, String key) {
+        if ("location".equals(key)) {
+            return hasLocationPermission();
+        }
+        if ("background_location".equals(key)) {
+            return hasLocationPermission() && (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                || ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED);
+        }
+        if ("notifications".equals(key)) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                return NotificationManagerCompat.from(ctx).areNotificationsEnabled();
+            }
+            return ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                && NotificationManagerCompat.from(ctx).areNotificationsEnabled();
+        }
+        if ("battery_unrestricted".equals(key)) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true;
+            try {
+                PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+                return pm == null || pm.isIgnoringBatteryOptimizations(ctx.getPackageName());
+            } catch (Exception ignored) {
+                return true;
+            }
+        }
+        String[] perms = androidPermissionsForKey(key);
+        if (perms.length == 0) return true;
+        for (String p : perms) {
+            if (ContextCompat.checkSelfPermission(ctx, p) != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean canRequestAliasDirectly(Context ctx, SharedPreferences prefs, String key) {
+        if ("battery_unrestricted".equals(key)) return true;
+        String[] perms = androidPermissionsForKey(key);
+        if (perms.length == 0) return false;
+        boolean askedBefore = prefs.getBoolean("perm_asked_" + key, false);
+        if (!askedBefore) return true;
+        Activity act = getActivity();
+        if (act == null) return false;
+        for (String p : perms) {
+            if (ContextCompat.checkSelfPermission(ctx, p) != PackageManager.PERMISSION_GRANTED
+                    && ActivityCompat.shouldShowRequestPermissionRationale(act, p)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void markPermissionAsked(SharedPreferences prefs, String key) {
+        prefs.edit().putBoolean("perm_asked_" + key, true).apply();
+    }
+
+    private JSObject buildModulePermissionSnapshot(List<String> keys) {
+        Context ctx = getContext();
+        SharedPreferences prefs = ctx.getSharedPreferences(FieldTrackingService.PREFS_NAME, Context.MODE_PRIVATE);
+        JSObject statuses = new JSObject();
+        boolean allGranted = true;
+        boolean requiresAppSettings = false;
+
+        for (String key : keys) {
+            boolean granted = isLogicalPermissionGranted(ctx, key);
+            String state;
+            boolean canRequestDirectly = false;
+            if (granted) {
+                state = "granted";
+            } else if ("battery_unrestricted".equals(key)) {
+                state = "prompt";
+                canRequestDirectly = true;
+            } else if (canRequestAliasDirectly(ctx, prefs, key)) {
+                state = "prompt";
+                canRequestDirectly = true;
+            } else {
+                state = "permanently_denied";
+                requiresAppSettings = true;
+            }
+            if (!granted) allGranted = false;
+
+            JSObject entry = new JSObject();
+            entry.put("granted", granted);
+            entry.put("state", state);
+            entry.put("canRequestDirectly", canRequestDirectly);
+            statuses.put(key, entry);
+        }
+
+        JSObject res = new JSObject();
+        res.put("allGranted", allGranted);
+        res.put("requiresAppSettings", requiresAppSettings);
+        res.put("statuses", statuses);
+        return res;
+    }
+
+    private void triggerBatteryExemptionDialog(Context ctx) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
+        boolean opened = openIntentSafely(new Intent(
+            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+            Uri.parse("package:" + ctx.getPackageName())
+        ));
+        if (!opened) {
+            openIntentSafely(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+        }
+    }
+
     private boolean hasLocationPermission() {
         Context ctx = getContext();
         return ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -401,7 +803,7 @@ public class FieldTrackerPlugin extends Plugin {
     }
 
     private void maybeRequestBackgroundPermissionOnce(SharedPreferences prefs) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || getActivity() == null) return;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || getActivity() == null) return;
         if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             return;
         }

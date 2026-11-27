@@ -103,16 +103,16 @@ function TaskStageBadge({ info }) {
       gap: 5,
       padding: '3px 8px',
       borderRadius: 6,
-      background: '#f0f9ff',
-      border: '1px solid #bae6fd',
-      color: '#0369a1',
+      background: 'var(--spc-view-info-bg)',
+      border: '1px solid var(--spc-view-info-border)',
+      color: 'var(--spc-view-info)',
       fontSize: 11.5,
       fontWeight: 600,
       maxWidth: '100%',
       flexWrap: 'wrap',
     }}>
       <span>{info.label}:</span>
-      <strong style={{ color: '#0c4a6e' }}>{info.displayValue}</strong>
+      <strong style={{ color: 'var(--spc-view-info)' }}>{info.displayValue}</strong>
     </div>
   );
 }
@@ -125,9 +125,9 @@ function TaskInstructionsBox({ text, compact = false }) {
       marginTop: compact ? 6 : 8,
       padding: compact ? '6px 8px' : '8px 10px',
       borderRadius: 7,
-      background: '#fffbeb',
-      border: '1px solid #fde68a',
-      color: '#78350f',
+      background: 'var(--spc-view-warning-bg)',
+      border: '1px solid var(--spc-view-warning-border)',
+      color: 'var(--spc-view-warning)',
       fontSize: compact ? 11.5 : 12,
       lineHeight: 1.45,
       whiteSpace: 'pre-wrap',
@@ -137,7 +137,7 @@ function TaskInstructionsBox({ text, compact = false }) {
     }}>
       <FileText size={compact ? 12 : 13} color="#b45309" style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
       <div style={{ minWidth: 0 }}>
-        <strong style={{ color: '#92400e', fontWeight: 700 }}>Instructions: </strong>
+        <strong style={{ color: 'var(--spc-view-warning)', fontWeight: 700 }}>Instructions: </strong>
         <span>{clean}</span>
       </div>
     </div>
@@ -441,10 +441,10 @@ export const ConsoleHomeCockpitView = memo(function ConsoleHomeCockpitView({
         {activeFieldVisit ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
             <div>
-              <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: '#0284c7', fontWeight: 700 }}>
+              <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--spc-view-info)', fontWeight: 700 }}>
                 Active Visit in Progress
               </span>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{activeFieldVisit.partyName}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--spc-view-text)' }}>{activeFieldVisit.partyName}</div>
             </div>
             <button type="button" className={styles.checkInGreenBtn} onClick={onResumeActiveVisit}>
               <Compass size={14} aria-hidden="true" />
@@ -469,12 +469,12 @@ export const ConsoleHomeCockpitView = memo(function ConsoleHomeCockpitView({
         </div>
         <div className={styles.performanceProgressBox}>
           <div>
-            <div style={{ fontSize: 11.5, color: '#64748b' }}>Task Completed</div>
+            <div style={{ fontSize: 11.5, color: 'var(--spc-view-muted)' }}>Task Completed</div>
             <div className={styles.performanceLabel}>
               <strong>{todayCompletedCount}</strong> of <strong>{totalTasks}</strong>
             </div>
           </div>
-          <div className={styles.performanceBadge} style={{ borderColor: completionPct > 0 ? '#16a34a' : '#cbd5e1' }}>
+          <div className={styles.performanceBadge} style={{ borderColor: completionPct > 0 ? 'var(--spc-view-success-border)' : 'var(--spc-view-border)' }}>
             {completionPct}%
           </div>
         </div>
@@ -486,7 +486,7 @@ export const ConsoleHomeCockpitView = memo(function ConsoleHomeCockpitView({
           <span className={styles.sectionTitle}>Task Overview</span>
           <button
             type="button"
-            style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+            style={{ background: 'none', border: 'none', color: 'var(--spc-view-info)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
             onClick={() => onNavigateToView('ASSIGNED_TASKS')}
           >
             View All →
@@ -536,7 +536,7 @@ export const ConsoleHomeCockpitView = memo(function ConsoleHomeCockpitView({
           <select
             value={expensePeriod}
             onChange={(e) => setExpensePeriod(e.target.value)}
-            style={{ fontSize: 11.5, border: '1px solid #cbd5e1', borderRadius: 6, padding: '2px 6px', background: '#ffffff', color: '#475569' }}
+            style={{ fontSize: 11.5, border: '1px solid var(--spc-view-border)', borderRadius: 6, padding: '2px 6px', background: 'var(--spc-view-surface)', color: 'var(--spc-view-muted)' }}
           >
             <option value="Today">Today ▾</option>
             <option value="Month">This Month ▾</option>
@@ -545,15 +545,15 @@ export const ConsoleHomeCockpitView = memo(function ConsoleHomeCockpitView({
         <div className={styles.kpiGrid3}>
           <div className={styles.kpiTile}>
             <div className={styles.kpiLabel}>Create</div>
-            <div className={styles.kpiValue}>0.0 <small style={{ fontSize: 10, color: '#64748b' }}>INR</small></div>
+            <div className={styles.kpiValue}>0.0 <small style={{ fontSize: 10, color: 'var(--spc-view-muted)' }}>INR</small></div>
           </div>
           <div className={styles.kpiTile}>
             <div className={styles.kpiLabel}>Approved</div>
-            <div className={`${styles.kpiValue} ${styles.kpiValueGreen}`}>0.0 <small style={{ fontSize: 10, color: '#16a34a' }}>INR</small></div>
+            <div className={`${styles.kpiValue} ${styles.kpiValueGreen}`}>0.0 <small style={{ fontSize: 10, color: 'var(--spc-view-success)' }}>INR</small></div>
           </div>
           <div className={styles.kpiTile}>
             <div className={styles.kpiLabel}>Rejected</div>
-            <div className={`${styles.kpiValue} ${styles.kpiValueRed}`}>0.0 <small style={{ fontSize: 10, color: '#dc2626' }}>INR</small></div>
+            <div className={`${styles.kpiValue} ${styles.kpiValueRed}`}>0.0 <small style={{ fontSize: 10, color: 'var(--spc-view-danger)' }}>INR</small></div>
           </div>
         </div>
       </section>
@@ -606,7 +606,7 @@ export const InstantCheckInModal = memo(function InstantCheckInModal({
           {!isManualEntry ? (
             <>
               <div>
-                <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 6 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--spc-view-text)', display: 'block', marginBottom: 6 }}>
                   Select Existing Customer
                 </label>
                 <div style={{ position: 'relative' }}>
@@ -619,23 +619,23 @@ export const InstantCheckInModal = memo(function InstantCheckInModal({
                     autoFocus
                   />
                   {loadingEntities && (
-                    <RefreshCw size={14} className={styles.spinning} style={{ position: 'absolute', right: 10, top: 11, color: '#94a3b8' }} />
+                    <RefreshCw size={14} className={styles.spinning} style={{ position: 'absolute', right: 10, top: 11, color: 'var(--spc-view-muted)' }} />
                   )}
                 </div>
 
                 {/* Dropdown list of results */}
                 {searchQuery && moduleEntities.length > 0 && (
-                  <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: 8, marginTop: 4, background: '#ffffff' }}>
+                  <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid var(--spc-view-border)', borderRadius: 8, marginTop: 4, background: 'var(--spc-view-surface)' }}>
                     {moduleEntities.map((ent) => (
                       <div
                         key={ent.id}
                         onClick={() => {
                           onSelectEntity(ent);
                         }}
-                        style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', fontSize: 12.5 }}
+                        style={{ padding: '8px 12px', borderBottom: '1px solid var(--spc-view-border)', cursor: 'pointer', fontSize: 12.5 }}
                       >
-                        <strong style={{ color: '#0f172a' }}>{ent.displayName || ent.party_name}</strong>
-                        {ent.phone && <span style={{ color: '#64748b', marginLeft: 6 }}>({ent.phone})</span>}
+                        <strong style={{ color: 'var(--spc-view-text)' }}>{ent.displayName || ent.party_name}</strong>
+                        {ent.phone && <span style={{ color: 'var(--spc-view-muted)', marginLeft: 6 }}>({ent.phone})</span>}
                       </div>
                     ))}
                   </div>
@@ -643,8 +643,8 @@ export const InstantCheckInModal = memo(function InstantCheckInModal({
               </div>
 
               {partyName && (
-                <div style={{ padding: 10, borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: 12.5 }}>
-                  <strong style={{ color: '#166534' }}>Selected: </strong>
+                <div style={{ padding: 10, borderRadius: 8, background: 'var(--spc-view-success-bg)', border: '1px solid var(--spc-view-success-border)', fontSize: 12.5 }}>
+                  <strong style={{ color: 'var(--spc-view-success)' }}>Selected: </strong>
                   <span>{partyName}</span> {partyPhone && <span>· {partyPhone}</span>}
                 </div>
               )}
@@ -653,7 +653,7 @@ export const InstantCheckInModal = memo(function InstantCheckInModal({
 
               {/* 3 Registration Types Selector */}
               <div>
-                <div style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--spc-view-text)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <UserPlus size={14} color="#0284c7" aria-hidden="true" />
                   <span>Register New Customer (Choose Type):</span>
                 </div>
@@ -665,12 +665,12 @@ export const InstantCheckInModal = memo(function InstantCheckInModal({
                     className={styles.registrationOptionCard}
                     onClick={onOpenLeadRegistration}
                   >
-                    <div className={styles.registrationOptionIcon} style={{ background: '#eff6ff', color: '#2563eb' }}>
+                    <div className={styles.registrationOptionIcon} style={{ background: 'var(--spc-view-info-bg)', color: 'var(--spc-view-info)' }}>
                       <Zap size={16} aria-hidden="true" />
                     </div>
                     <div style={{ textAlign: 'left', flex: 1 }}>
-                      <strong style={{ fontSize: 13, color: '#1e293b', display: 'block' }}>⚡ Instant Lead Registration</strong>
-                      <small style={{ fontSize: 11, color: '#64748b' }}>Register prospect in CRM Leads pipeline</small>
+                      <strong style={{ fontSize: 13, color: 'var(--spc-view-text)', display: 'block' }}>⚡ Instant Lead Registration</strong>
+                      <small style={{ fontSize: 11, color: 'var(--spc-view-muted)' }}>Register prospect in CRM Leads pipeline</small>
                     </div>
                     <ChevronRight size={15} color="#94a3b8" />
                   </button>
@@ -681,12 +681,12 @@ export const InstantCheckInModal = memo(function InstantCheckInModal({
                     className={styles.registrationOptionCard}
                     onClick={onOpenPartyRegistration}
                   >
-                    <div className={styles.registrationOptionIcon} style={{ background: '#f0fdf4', color: '#16a34a' }}>
+                    <div className={styles.registrationOptionIcon} style={{ background: 'var(--spc-view-success-bg)', color: 'var(--spc-view-success)' }}>
                       <Building2 size={16} aria-hidden="true" />
                     </div>
                     <div style={{ textAlign: 'left', flex: 1 }}>
-                      <strong style={{ fontSize: 13, color: '#1e293b', display: 'block' }}>🏢 Party Registration</strong>
-                      <small style={{ fontSize: 11, color: '#64748b' }}>Onboard new Dealer / Distributor into Master</small>
+                      <strong style={{ fontSize: 13, color: 'var(--spc-view-text)', display: 'block' }}>🏢 Party Registration</strong>
+                      <small style={{ fontSize: 11, color: 'var(--spc-view-muted)' }}>Onboard new Dealer / Distributor into Master</small>
                     </div>
                     <ChevronRight size={15} color="#94a3b8" />
                   </button>
@@ -697,12 +697,12 @@ export const InstantCheckInModal = memo(function InstantCheckInModal({
                     className={styles.registrationOptionCard}
                     onClick={onOpenEndCustomerRegistration}
                   >
-                    <div className={styles.registrationOptionIcon} style={{ background: '#fef3c7', color: '#d97706' }}>
+                    <div className={styles.registrationOptionIcon} style={{ background: 'var(--spc-view-warning-bg)', color: 'var(--spc-view-warning)' }}>
                       <User size={16} aria-hidden="true" />
                     </div>
                     <div style={{ textAlign: 'left', flex: 1 }}>
-                      <strong style={{ fontSize: 13, color: '#1e293b', display: 'block' }}>🚜 Register End Customer</strong>
-                      <small style={{ fontSize: 11, color: '#64748b' }}>Register farmer / machine owner & warranty</small>
+                      <strong style={{ fontSize: 13, color: 'var(--spc-view-text)', display: 'block' }}>🚜 Register End Customer</strong>
+                      <small style={{ fontSize: 11, color: 'var(--spc-view-muted)' }}>Register farmer / machine owner & warranty</small>
                     </div>
                     <ChevronRight size={15} color="#94a3b8" />
                   </button>
@@ -711,7 +711,7 @@ export const InstantCheckInModal = memo(function InstantCheckInModal({
                 <div style={{ textAlign: 'center', marginTop: 10 }}>
                   <button
                     type="button"
-                    style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }}
+                    style={{ background: 'none', border: 'none', color: 'var(--spc-view-muted)', fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }}
                     onClick={() => onSetManualEntry(true)}
                   >
                     Or enter quick walk-in details manually
@@ -723,12 +723,12 @@ export const InstantCheckInModal = memo(function InstantCheckInModal({
             <>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>
+                  <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--spc-view-text)' }}>
                     Quick Spot Walk-In Details
                   </label>
                   <button
                     type="button"
-                    style={{ background: 'none', border: 'none', color: '#0284c7', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                    style={{ background: 'none', border: 'none', color: 'var(--spc-view-info)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
                     onClick={() => onSetManualEntry(false)}
                   >
                     ← Select Existing / Choose Type
@@ -762,7 +762,7 @@ export const InstantCheckInModal = memo(function InstantCheckInModal({
           )}
 
           {/* GPS Info Stamp */}
-          <div style={{ fontSize: 11, color: '#64748b', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div style={{ fontSize: 11, color: 'var(--spc-view-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
             <MapPin size={12} color="#0284c7" aria-hidden="true" />
             <span>
               {gpsLoading ? 'Fetching GPS coordinates...' : userLat ? `GPS Stamped (${userLat.toFixed(4)}, ${userLng.toFixed(4)})` : 'GPS will be fetched on check-in'}
@@ -825,7 +825,7 @@ export const QuickPartyRegistrationModal = memo(function QuickPartyRegistrationM
   return (
     <div className={styles.modalOverlay} role="dialog" aria-modal="true" aria-labelledby="party-reg-title">
       <div className={styles.modalBox} style={{ maxWidth: 460 }}>
-        <div className={styles.modalHeader} style={{ background: '#16a34a' }}>
+        <div className={styles.modalHeader} style={{ background: 'var(--spc-view-success-fill)' }}>
           <button type="button" className={styles.modalBackBtn} onClick={onClose} aria-label="Close modal">
             <ArrowLeft size={18} aria-hidden="true" />
           </button>
@@ -834,7 +834,7 @@ export const QuickPartyRegistrationModal = memo(function QuickPartyRegistrationM
 
         <form onSubmit={handleSubmit} className={styles.modalBody}>
           <div>
-            <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--spc-view-text)', display: 'block', marginBottom: 4 }}>
               Firm / Dealership Name *
             </label>
             <input
@@ -849,7 +849,7 @@ export const QuickPartyRegistrationModal = memo(function QuickPartyRegistrationM
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--spc-view-text)', display: 'block', marginBottom: 4 }}>
                 Party Type
               </label>
               <select
@@ -864,7 +864,7 @@ export const QuickPartyRegistrationModal = memo(function QuickPartyRegistrationM
               </select>
             </div>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--spc-view-text)', display: 'block', marginBottom: 4 }}>
                 Primary Mobile *
               </label>
               <input
@@ -881,7 +881,7 @@ export const QuickPartyRegistrationModal = memo(function QuickPartyRegistrationM
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--spc-view-text)', display: 'block', marginBottom: 4 }}>
                 State / UT
               </label>
               <input
@@ -892,7 +892,7 @@ export const QuickPartyRegistrationModal = memo(function QuickPartyRegistrationM
               />
             </div>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--spc-view-text)', display: 'block', marginBottom: 4 }}>
                 District
               </label>
               <input
@@ -906,7 +906,7 @@ export const QuickPartyRegistrationModal = memo(function QuickPartyRegistrationM
           </div>
 
           <div>
-            <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--spc-view-text)', display: 'block', marginBottom: 4 }}>
               Business Address
             </label>
             <input
@@ -919,7 +919,7 @@ export const QuickPartyRegistrationModal = memo(function QuickPartyRegistrationM
           </div>
 
           <div>
-            <label style={{ fontSize: 12, fontWeight: 700, color: '#334155', display: 'block', marginBottom: 4 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--spc-view-text)', display: 'block', marginBottom: 4 }}>
               GSTIN (Optional)
             </label>
             <input
@@ -1032,7 +1032,7 @@ export const ConsoleAssignedTasksView = memo(function ConsoleAssignedTasksView({
                     {task.party_phone && (
                       <span>
                         <Phone size={12} color="#2563eb" aria-hidden="true" />
-                        <a href={`tel:${task.party_phone}`} style={{ color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}>
+                        <a href={`tel:${task.party_phone}`} style={{ color: 'var(--spc-view-info)', fontWeight: 600, textDecoration: 'none' }}>
                           {task.party_phone}
                         </a>
                       </span>
@@ -1308,7 +1308,7 @@ export const ConsoleCheckInWorkspace = memo(function ConsoleCheckInWorkspace({
             <button
               type="button"
               className={styles.clearBtn}
-              style={{ alignSelf: 'flex-start', color: '#2563eb' }}
+              style={{ alignSelf: 'flex-start', color: 'var(--spc-view-info)' }}
               onClick={() => onSetManualEntry(false)}
             >
               Back to CRM client list
@@ -1367,13 +1367,13 @@ export const ConsoleCheckInWorkspace = memo(function ConsoleCheckInWorkspace({
           ) : gpsError ? (
             <div className={styles.gpsError}>{gpsError}</div>
           ) : (
-            <div className={styles.gpsCoords} style={{ color: '#64748b' }}>
+            <div className={styles.gpsCoords} style={{ color: 'var(--spc-view-muted)' }}>
               Acquiring live GPS coordinates...
             </div>
           )}
 
           {connectivityMode === 'PHYSICAL_VISIT' && geofenceDistance !== null && (
-            <div className={styles.geofenceReadout} style={{ color: geofenceStatus === 'MISMATCH' ? '#b91c1c' : '#15803d' }}>
+            <div className={styles.geofenceReadout} style={{ color: geofenceStatus === 'MISMATCH' ? 'var(--spc-view-danger)' : 'var(--spc-view-success)' }}>
               {geofenceStatus === 'MISMATCH'
                 ? `Flagged: ${geofenceDistance}m outside client geofence`
                 : `Verified on-site (${geofenceDistance}m)`}
@@ -1409,7 +1409,7 @@ export const ConsoleCompletedVisitsView = memo(function ConsoleCompletedVisitsVi
 }) {
   return (
     <section className={styles.card} aria-label="Today's completed visits">
-      <div className={styles.cardHeader} style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: 12 }}>
+      <div className={styles.cardHeader} style={{ borderBottom: '1px solid var(--spc-view-border)', paddingBottom: 12 }}>
         <div>
           <h2>
             <CheckCircle2 size={18} color="#16a34a" aria-hidden="true" />
@@ -1483,19 +1483,19 @@ export const ConsoleCompletedVisitsView = memo(function ConsoleCompletedVisitsVi
                     </div>
                   )}
                   {visit.discussion_notes && (
-                    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', color: '#475569' }}>
-                      <strong style={{ color: '#0f172a' }}>Notes: </strong>{visit.discussion_notes}
+                    <div style={{ background: 'var(--spc-view-surface)', border: '1px solid var(--spc-view-border)', borderRadius: 7, padding: '8px 10px', color: 'var(--spc-view-muted)' }}>
+                      <strong style={{ color: 'var(--spc-view-text)' }}>Notes: </strong>{visit.discussion_notes}
                     </div>
                   )}
                   <div className={styles.entityMeta}>
                     {visit.photo_watermark_urls?.length > 0 && (
-                      <span style={{ color: '#0284c7', fontWeight: 600 }}>
+                      <span style={{ color: 'var(--spc-view-info)', fontWeight: 600 }}>
                         <Camera size={12} aria-hidden="true" />
                         {visit.photo_watermark_urls.length} Watermarked Photo(s)
                       </span>
                     )}
                     {visit.customer_signature_url && (
-                      <span style={{ color: '#15803d', fontWeight: 600 }}>
+                      <span style={{ color: 'var(--spc-view-success)', fontWeight: 600 }}>
                         <PenTool size={12} aria-hidden="true" />
                         Customer E-Signature Verified
                       </span>
@@ -1645,7 +1645,7 @@ export const ConsoleActiveVisitView = memo(function ConsoleActiveVisitView({
       {/* 2. Customer Sub-bar */}
       <div className={styles.checkoutCustomerBar}>
         <span>Customer : <strong>{partyName || 'Customer Visit'}</strong></span>
-        {taskCode && <span style={{ marginLeft: 8, fontSize: 11.5, color: '#64748b' }}>({taskCode})</span>}
+        {taskCode && <span style={{ marginLeft: 8, fontSize: 11.5, color: 'var(--spc-view-muted)' }}>({taskCode})</span>}
       </div>
 
       <div className={styles.checkoutStack} id="checkout-output-section" style={{ background: '#ffffff', padding: '16px 14px' }}>

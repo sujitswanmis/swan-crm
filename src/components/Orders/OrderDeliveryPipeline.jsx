@@ -519,7 +519,7 @@ export default function OrderDeliveryPipeline({
             style={{
               padding: '0.5rem 0.85rem',
               borderRadius: '8px',
-              background: stageFilter === 'ALL' ? 'var(--accent-color, #2563eb)' : 'var(--bg-primary)',
+              background: stageFilter === 'ALL' ? 'var(--channel-action-fill)' : 'var(--bg-primary)',
               color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-primary)',
               border: '1px solid var(--border-light)',
               cursor: 'pointer',
@@ -537,8 +537,8 @@ export default function OrderDeliveryPipeline({
               fontSize: '0.72rem',
               padding: '0.1rem 0.4rem',
               borderRadius: '10px',
-              background: stageFilter === 'ALL' ? 'rgba(255,255,255,0.25)' : 'var(--border-light)',
-              color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-secondary)'
+              background: stageFilter === 'ALL' ? 'rgba(255,255,255,0.1)' : 'var(--spc-view-raised)',
+              color: stageFilter === 'ALL' ? '#ffffff' : 'var(--text-primary)'
             }}>
               {stageCounts.ALL}
             </span>
@@ -555,7 +555,7 @@ export default function OrderDeliveryPipeline({
               style={{
                 padding: '0.45rem 0.75rem',
                 borderRadius: '8px',
-                background: isSelected ? `${st.color}20` : 'var(--bg-primary)',
+                background: isSelected ? `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 13%, var(--spc-view-surface))` : 'var(--bg-primary)',
                 border: isSelected ? `2px solid ${st.color}` : '1px solid var(--border-light)',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
@@ -568,8 +568,8 @@ export default function OrderDeliveryPipeline({
               <span style={{
                 fontSize: '0.7rem',
                 fontWeight: 800,
-                color: st.color,
-                background: `${st.color}20`,
+                color: `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 30%, var(--spc-view-text))`,
+                background: `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 13%, var(--spc-view-surface))`,
                 padding: '0.1rem 0.35rem',
                 borderRadius: '4px'
               }}>
@@ -578,7 +578,7 @@ export default function OrderDeliveryPipeline({
               <span style={{
                 fontSize: '0.76rem',
                 fontWeight: isSelected ? 800 : 600,
-                color: isSelected ? st.color : 'var(--text-primary)'
+                color: isSelected ? `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 30%, var(--spc-view-text))` : 'var(--text-primary)'
               }}>
                 {st.name}
               </span>
@@ -587,8 +587,8 @@ export default function OrderDeliveryPipeline({
                 fontWeight: 800,
                 padding: '0.1rem 0.4rem',
                 borderRadius: '10px',
-                background: isSelected ? st.color : 'var(--border-light)',
-                color: isSelected ? '#ffffff' : 'var(--text-secondary)'
+                background: isSelected ? `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 18%, var(--spc-view-surface))` : 'var(--spc-view-raised)',
+                color: isSelected ? `color-mix(in srgb, ${st.color || 'var(--spc-view-info)'} 30%, var(--spc-view-text))` : 'var(--text-primary)'
               }}>
                 {count}
               </span>
@@ -602,8 +602,8 @@ export default function OrderDeliveryPipeline({
             style={{
               padding: '0.45rem 0.75rem',
               borderRadius: '8px',
-              background: stageFilter === 'CANCELLED' ? 'rgba(239,68,68,0.2)' : 'var(--bg-primary)',
-              border: stageFilter === 'CANCELLED' ? '2px solid #ef4444' : '1px solid var(--border-light)',
+              background: stageFilter === 'CANCELLED' ? 'var(--spc-view-danger-bg)' : 'var(--bg-primary)',
+              border: stageFilter === 'CANCELLED' ? '2px solid var(--spc-view-danger-border)' : '1px solid var(--border-light)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
               display: 'flex',
@@ -611,7 +611,7 @@ export default function OrderDeliveryPipeline({
               gap: '0.45rem'
             }}
           >
-            <span style={{ fontSize: '0.76rem', fontWeight: 800, color: '#ef4444' }}>
+            <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--spc-view-danger)' }}>
               Cancelled
             </span>
             <span style={{
@@ -619,7 +619,7 @@ export default function OrderDeliveryPipeline({
               fontWeight: 800,
               padding: '0.1rem 0.4rem',
               borderRadius: '10px',
-              background: '#ef4444',
+              background: 'var(--spc-view-danger-fill)',
               color: '#ffffff'
             }}>
               {stageCounts.CANCELLED}
@@ -780,7 +780,7 @@ export default function OrderDeliveryPipeline({
                     <tr key={order.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
                       {/* Order # */}
                       <td style={{ padding: '0.85rem 1rem' }}>
-                        <div style={{ fontWeight: 800, color: '#38bdf8', fontSize: '0.9rem' }}>
+                        <div style={{ fontWeight: 800, color: 'var(--spc-view-info)', fontSize: '0.9rem' }}>
                           {order.order_number}
                         </div>
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
@@ -788,20 +788,20 @@ export default function OrderDeliveryPipeline({
                         </div>
                         {order.order_number?.endsWith('-B') ? (
                           <div style={{ marginTop: '0.2rem' }}>
-                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '1px 5px', borderRadius: '4px', background: 'rgba(245,158,11,0.15)', color: '#d97706', border: '1px solid rgba(245,158,11,0.3)' }}>
+                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '1px 5px', borderRadius: '4px', background: 'var(--spc-view-warning-bg)', color: 'var(--spc-view-warning)', border: '1px solid var(--spc-view-warning-border)' }}>
                               LOT-B (IN ASSEMBLY)
                             </span>
                           </div>
                         ) : (Array.isArray(order.stage_history) && order.stage_history.some(h => h.stage_id === 'PARTIAL_LOT_DISPATCH')) ? (
                           <div style={{ marginTop: '0.2rem' }}>
-                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '1px 5px', borderRadius: '4px', background: 'rgba(37,99,235,0.12)', color: '#2563eb', border: '1px solid rgba(37,99,235,0.25)' }}>
+                            <span style={{ fontSize: '0.66rem', fontWeight: 800, padding: '1px 5px', borderRadius: '4px', background: 'var(--spc-view-info-bg)', color: 'var(--spc-view-info)', border: '1px solid var(--spc-view-info-border)' }}>
                               LOT-A DISPATCH
                             </span>
                           </div>
                         ) : null}
                         {isFullPaidOrder && (
                           <div style={{ marginTop: '0.25rem' }}>
-                            <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'rgba(16,185,129,0.15)', color: '#10b981' }}>
+                            <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.15rem 0.4rem', borderRadius: '4px', background: 'var(--spc-view-success-bg)', color: 'var(--spc-view-success)' }}>
                               100% ADVANCE
                             </span>
                           </div>
@@ -816,9 +816,9 @@ export default function OrderDeliveryPipeline({
                               gap: '0.3rem',
                               padding: '2px 8px',
                               borderRadius: '5px',
-                              background: 'rgba(56, 189, 248, 0.12)',
-                              border: '1px solid rgba(56, 189, 248, 0.3)',
-                              color: '#0284c7',
+                              background: 'var(--spc-view-info-bg)',
+                              border: '1px solid var(--spc-view-info-border)',
+                              color: 'var(--spc-view-info)',
                               fontSize: '0.71rem',
                               fontWeight: 700,
                               cursor: 'pointer'
@@ -849,7 +849,7 @@ export default function OrderDeliveryPipeline({
                                     padding: '0.12rem 0.45rem',
                                     borderRadius: '4px',
                                     background: tierInfo.bg,
-                                    color: tierInfo.text,
+                                    color: `color-mix(in srgb, ${tierInfo.text} 30%, var(--spc-view-text))`,
                                     border: `1px solid ${tierInfo.border}`,
                                     letterSpacing: '0.02em',
                                     display: 'inline-block'
@@ -882,7 +882,7 @@ export default function OrderDeliveryPipeline({
 
                       {/* Products & Amount */}
                       <td style={{ padding: '0.85rem 1rem' }}>
-                        <div style={{ fontWeight: 800, color: '#10b981', fontSize: '0.88rem' }}>
+                        <div style={{ fontWeight: 800, color: 'var(--spc-view-success)', fontSize: '0.88rem' }}>
                           ₹{Number(order.total_amount || 0).toLocaleString('en-IN')}
                         </div>
                         <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
@@ -905,14 +905,14 @@ export default function OrderDeliveryPipeline({
                           fontWeight: 800,
                           padding: '0.25rem 0.6rem',
                           borderRadius: '6px',
-                          background: `${currentStage.color || '#3b82f6'}20`,
-                          color: currentStage.color || '#3b82f6',
-                          border: `1px solid ${currentStage.color || '#3b82f6'}40`
+                          background: `color-mix(in srgb, ${currentStage.color || 'var(--spc-view-info)'} 13%, var(--spc-view-surface))`,
+                          color: `color-mix(in srgb, ${currentStage.color || 'var(--spc-view-info)'} 30%, var(--spc-view-text))`,
+                          border: '1px solid var(--spc-view-border)'
                         }}>
                           {currentStage.id} — {currentStage.name}
                         </span>
                         {currentStage.assigned_emp_name ? (
-                          <div style={{ fontSize: '0.71rem', color: '#10b981', marginTop: '0.25rem', fontWeight: 600 }}>
+                          <div style={{ fontSize: '0.71rem', color: 'var(--spc-view-success)', marginTop: '0.25rem', fontWeight: 600 }}>
                             👤 {currentStage.assigned_emp_name}
                           </div>
                         ) : (Array.isArray(currentStage.authorized_roles) && currentStage.authorized_roles.length > 0) ? (
@@ -935,7 +935,7 @@ export default function OrderDeliveryPipeline({
                           padding: '0.2rem 0.5rem',
                           borderRadius: '6px',
                           background: sla.bg,
-                          color: sla.color
+                          color: `color-mix(in srgb, ${sla.color} 30%, var(--spc-view-text))`
                         }}>
                           {sla.badge}
                         </span>
@@ -954,7 +954,7 @@ export default function OrderDeliveryPipeline({
                               🚛 {order.transporter_name || 'Transporter'}
                             </div>
                             <div style={{ color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                              LR: <span style={{ color: '#38bdf8', fontWeight: 600 }}>{order.lr_number || '-'}</span>
+                              LR: <span style={{ color: 'var(--spc-view-info)', fontWeight: 600 }}>{order.lr_number || '-'}</span>
                             </div>
                             {order.vehicle_number && (
                               <div style={{ color: 'var(--text-secondary)' }}>
@@ -974,7 +974,7 @@ export default function OrderDeliveryPipeline({
                         {(() => {
                           if (currentStage.is_cancelled) {
                             return (
-                              <span style={{ fontSize: '0.76rem', color: '#ef4444', fontWeight: 800 }}>
+                              <span style={{ fontSize: '0.76rem', color: 'var(--spc-view-danger)', fontWeight: 800 }}>
                                 Cancelled
                               </span>
                             );
@@ -997,9 +997,9 @@ export default function OrderDeliveryPipeline({
                                     title={currentAuth.allowed ? 'Modify Line Items / Quantities / Rates' : `Locked: ${currentAuth.reason}`}
                                     style={{
                                       padding: '0.3rem 0.55rem',
-                                      background: currentAuth.allowed ? 'rgba(56, 189, 248, 0.15)' : 'var(--bg-primary)',
-                                      border: currentAuth.allowed ? '1px solid #38bdf8' : '1px solid var(--border-light)',
-                                      color: currentAuth.allowed ? '#0284c7' : 'var(--text-secondary)',
+                                      background: currentAuth.allowed ? 'var(--spc-view-info-bg)' : 'var(--bg-primary)',
+                                      border: currentAuth.allowed ? '1px solid var(--spc-view-info-border)' : '1px solid var(--border-light)',
+                                      color: currentAuth.allowed ? 'var(--spc-view-info)' : 'var(--text-secondary)',
                                       borderRadius: '6px',
                                       fontSize: '0.72rem',
                                       fontWeight: 700,
@@ -1021,9 +1021,9 @@ export default function OrderDeliveryPipeline({
                                     title={currentAuth.allowed ? 'Cancel Sales Order' : `Locked: ${currentAuth.reason}`}
                                     style={{
                                       padding: '0.3rem 0.55rem',
-                                      background: currentAuth.allowed ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-primary)',
-                                      border: currentAuth.allowed ? '1px solid #ef4444' : '1px solid var(--border-light)',
-                                      color: currentAuth.allowed ? '#ef4444' : 'var(--text-secondary)',
+                                      background: currentAuth.allowed ? 'var(--spc-view-danger-bg)' : 'var(--bg-primary)',
+                                      border: currentAuth.allowed ? '1px solid var(--spc-view-danger-border)' : '1px solid var(--border-light)',
+                                      color: currentAuth.allowed ? 'var(--spc-view-danger)' : 'var(--text-secondary)',
                                       borderRadius: '6px',
                                       fontSize: '0.72rem',
                                       fontWeight: 700,
@@ -1048,14 +1048,13 @@ export default function OrderDeliveryPipeline({
                                     style={{
                                       width: '100%',
                                       padding: '0.35rem 0.65rem',
-                                      background: canAdvance ? '#2563eb' : '#64748b',
+                                      background: canAdvance ? 'var(--channel-action-fill)' : 'var(--spc-view-raised)',
                                       border: 'none',
-                                      color: '#ffffff',
+                                      color: canAdvance ? '#ffffff' : 'var(--spc-view-muted)',
                                       borderRadius: '6px',
                                       fontSize: '0.75rem',
                                       fontWeight: 700,
                                       cursor: canAdvance ? 'pointer' : 'not-allowed',
-                                      opacity: canAdvance ? 1 : 0.65,
                                       display: 'inline-flex',
                                       alignItems: 'center',
                                       justifyContent: 'center',
@@ -1079,14 +1078,13 @@ export default function OrderDeliveryPipeline({
                                 title={canAdvance ? `Confirm & Move to ${nextStage.name} (${nextStage.id})` : `Locked: ${nextAuth.reason || currentAuth.reason}`}
                                 style={{
                                   padding: '0.4rem 0.75rem',
-                                  background: canAdvance ? (nextStage.color || '#2563eb') : '#64748b',
+                                  background: canAdvance ? 'var(--channel-action-fill)' : 'var(--spc-view-raised)',
                                   border: 'none',
-                                  color: '#ffffff',
+                                  color: canAdvance ? '#ffffff' : 'var(--spc-view-muted)',
                                   borderRadius: '6px',
                                   fontSize: '0.76rem',
                                   fontWeight: 700,
                                   cursor: canAdvance ? 'pointer' : 'not-allowed',
-                                  opacity: canAdvance ? 1 : 0.65,
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: '0.3rem',
@@ -1101,7 +1099,7 @@ export default function OrderDeliveryPipeline({
 
                           if (currentStage.id === 'S13') {
                             return (
-                              <span style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 800 }}>
+                              <span style={{ fontSize: '0.78rem', color: 'var(--spc-view-success)', fontWeight: 800 }}>
                                 ✓ Complete
                               </span>
                             );
@@ -1120,6 +1118,7 @@ export default function OrderDeliveryPipeline({
 
         {/* Standard Table Pagination Footer */}
         <StandardTablePagination
+          style={{ '--accent-color': 'var(--channel-action-fill)' }}
           currentPage={currentPage}
           totalRecords={filteredOrders.length}
           pageSize={pageSize}

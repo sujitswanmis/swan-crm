@@ -1,21 +1,57 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AlertTriangle, X, ArrowRight, ShieldAlert, UserPlus } from 'lucide-react';
 
 /**
  * SubscriptionExpiryBanner
  * Renders a sticky warning banner at top of workspace when subscription has <= 7 days remaining
  */
-export default function SubscriptionExpiryBanner({ subscription }) {
+export default function SubscriptionExpiryBanner({ subscription, isMasterAdmin = false }) {
   const [dismissed, setDismissed] = useState(false);
+  const [nowMs, setNowMs] = useState(null);
 
-  if (!subscription || !subscription.is_expiring_soon || subscription.is_expired || dismissed) {
+  useEffect(() => {
+    const initialTimer = setTimeout(() => setNowMs(Date.now()), 0);
+    const interval = setInterval(() => setNowMs(Date.now()), 30000);
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, []);
+
+  if (
+    isMasterAdmin ||
+    !subscription ||
+    subscription.is_master_hq ||
+    subscription.never_expires ||
+    !subscription.is_expiring_soon ||
+    subscription.is_expired ||
+    dismissed
+  ) {
     return null;
   }
 
-  const daysRemaining = subscription.days_remaining || 1;
-  const isUrgent = daysRemaining <= 3;
+  const daysRemaining = subscription.days_remaining ?? 1;
+  const expiryMs = subscription.valid_until ? new Date(subscription.valid_until).getTime() : NaN;
+  const hasLiveDiff = nowMs !== null && !Number.isNaN(expiryMs) && expiryMs > nowMs;
+
+  let countdownText = `${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`;
+  let isUrgent = daysRemaining <= 3;
+
+  if (hasLiveDiff) {
+    const totalMinutes = Math.max(1, Math.floor((expiryMs - nowMs) / 60000));
+    const days = Math.floor(totalMinutes / (24 * 60));
+    const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+    const minutes = totalMinutes % 60;
+    isUrgent = days <= 3;
+
+    const parts = [];
+    if (days > 0) parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
+    if (days > 0 || hours > 0) parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
+    parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
+    countdownText = parts.join(' ');
+  }
 
   return (
     <div
@@ -25,9 +61,13 @@ export default function SubscriptionExpiryBanner({ subscription }) {
         color: isUrgent ? '#991b1b' : '#92400e',
         padding: '0.65rem 1.25rem',
         fontSize: '0.85rem',
+        width: '100%',
+        flexShrink: 0,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '0.75rem',
         zIndex: 50,
         position: 'relative',
         boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
@@ -41,7 +81,7 @@ export default function SubscriptionExpiryBanner({ subscription }) {
         )}
         <span>
           <strong>Subscription Alert:</strong> Your plan expires in{' '}
-          <strong style={{ textDecoration: 'underline' }}>{daysRemaining} day{daysRemaining > 1 ? 's' : ''}</strong>. Please renew in advance to ensure uninterrupted calling, leads, and services.
+          <strong style={{ textDecoration: 'underline' }}>{countdownText}</strong>. Please renew in advance to ensure uninterrupted calling, leads, and services.
         </span>
       </div>
 

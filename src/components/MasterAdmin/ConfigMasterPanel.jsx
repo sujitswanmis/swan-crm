@@ -83,7 +83,7 @@ export default function ConfigMasterPanel({
   const currentTabObj = CONFIG_TABS.find(t => t.id === activeTab) || CONFIG_TABS[0];
 
   return (
-    <div style={{ padding: '1.25rem', maxWidth: '1600px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <div style={{ width: '100%', boxSizing: 'border-box' }}>
       {/* Top Header Banner */}
       <div style={{
         background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)',

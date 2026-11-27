@@ -89,12 +89,97 @@
       "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
       "email": "admin@newswangroup.com",
       "empName": "New Swan Admin",
-      "activeSeconds": 7585,
-      "idleSeconds": 14277,
+      "activeSeconds": 12684,
+      "idleSeconds": 28322,
       "firstSeen": "2026-11-22T18:43:10.180306+00:00",
-      "lastSeen": "2026-11-23T11:20:17.519Z",
+      "lastSeen": "2026-11-23T18:28:27.484Z",
       "status": "away",
       "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36"
+    },
+    "15e6a4bb-ca0c-4743-bf79-494ae64074ee": {
+      "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
+      "email": "supujacreations@gmail.com",
+      "empName": "SuPuja Creations",
+      "activeSeconds": 925,
+      "idleSeconds": 979,
+      "firstSeen": "2026-11-22T21:01:45.997169+00:00",
+      "lastSeen": "2026-11-23T17:52:46.032Z",
+      "status": "working",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36"
+    }
+  },
+  "2026-11-24": {
+    "07fa35d3-f50a-4e41-ae15-b2692e393ea0": {
+      "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
+      "email": "admin@newswangroup.com",
+      "empName": "New Swan Admin",
+      "activeSeconds": 10349,
+      "idleSeconds": 26810,
+      "firstSeen": "2026-11-23T18:35:58.236617+00:00",
+      "lastSeen": "2026-11-24T18:29:19.679Z",
+      "status": "away",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36"
+    }
+  },
+  "2026-11-25": {
+    "07fa35d3-f50a-4e41-ae15-b2692e393ea0": {
+      "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
+      "email": "admin@newswangroup.com",
+      "empName": "New Swan Admin",
+      "activeSeconds": 20915,
+      "idleSeconds": 64353,
+      "firstSeen": "2026-11-24T18:30:19.92101+00:00",
+      "lastSeen": "2026-11-25T12:45:31.033Z",
+      "status": "away",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36"
+    }
+  },
+  "2026-11-26": {
+    "07fa35d3-f50a-4e41-ae15-b2692e393ea0": {
+      "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
+      "email": "admin@newswangroup.com",
+      "empName": "New Swan Admin",
+      "activeSeconds": 6741,
+      "idleSeconds": 18271,
+      "firstSeen": "2026-11-26T05:59:22.685308+00:00",
+      "lastSeen": "2026-11-26T18:29:20.960Z",
+      "status": "away",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36 [SID:D9C091]"
+    },
+    "15e6a4bb-ca0c-4743-bf79-494ae64074ee": {
+      "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
+      "email": "supujacreations@gmail.com",
+      "empName": "SuPuja Creations",
+      "activeSeconds": 5861,
+      "idleSeconds": 14701,
+      "firstSeen": "2026-11-26T06:36:48.903088+00:00",
+      "lastSeen": "2026-11-26T18:00:22.298Z",
+      "status": "away",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36 [SID:D9C091]"
+    }
+  },
+  "2026-11-27": {
+    "07fa35d3-f50a-4e41-ae15-b2692e393ea0": {
+      "userId": "07fa35d3-f50a-4e41-ae15-b2692e393ea0",
+      "email": "admin@newswangroup.com",
+      "empName": "New Swan Admin",
+      "activeSeconds": 858,
+      "idleSeconds": 7254,
+      "firstSeen": "2026-11-26T18:30:22.021104+00:00",
+      "lastSeen": "2026-11-27T03:39:48.981Z",
+      "status": "away",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36 [SID:D9C091]"
+    },
+    "15e6a4bb-ca0c-4743-bf79-494ae64074ee": {
+      "userId": "15e6a4bb-ca0c-4743-bf79-494ae64074ee",
+      "email": "supujacreations@gmail.com",
+      "empName": "SuPuja Creations",
+      "activeSeconds": 264,
+      "idleSeconds": 468,
+      "firstSeen": "2026-11-26T20:34:16.279251+00:00",
+      "lastSeen": "2026-11-27T03:49:15.728Z",
+      "status": "away",
+      "device": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36 [SID:D9C091]"
     }
   }
 }

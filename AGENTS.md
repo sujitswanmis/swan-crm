@@ -260,6 +260,23 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - **Admin-Only Initial Access**: All newly introduced modules and supervisory/tracking pages MUST be configured as **Admin-Only** (`master_admin` and `admin`) by default.
 - **Explicit Opt-In via Permission Matrix**: Regular employees may ONLY receive access if and when an Admin explicitly checks their permission checkbox in the Role & Permission Matrix. Never hardcode automatic inheritance that exposes internal tracking, supervisor tools, or unassigned modules to normal staff.
 
+# Mandatory Zero Unauthorized Access Grant Rule (Strict AI Agent Restriction)
+- **Absolute Ban on Unapproved Access Grants**: Every AI agent, assistant, or automated coding tool is **STRICTLY PROHIBITED** from granting, enabling, expanding, inheriting, seeding, migrating, or modifying **ANY** access or permission for **ANY** user, role, custom role, designation, preset, branch, company/tenant, platform, API route, or database table/RLS policy **WITHOUT explicit, itemized approval from the user**.
+- **Covered Access Surfaces (Zero Touch Without Explicit User Approval)**:
+  - **User & Role Permissions**: `module_access`, `sub_items`, `view`, `read`, `write`, `add`, `edit`, `delete`, `is_manager`, `is_master_admin`, `can_import_data`, `can_export_data`, `can_self_reset_password`, `can_manage_integrations`, `role_templates`, and `ROLE_PRESETS` (`src/components/UserManagement/utils/rolePresets.js`).
+  - **Scope, Branch & Platform Access**: `assigned_branch_codes`, `branch_access`, `allowed_platforms`, `tenant_entitlements`, `tracking_policy`, and cross-tenant/cross-branch visibility rules.
+  - **UI & Gate Checks**: `isTabPermitted` (`src/components/CRMContainer.jsx`), `permissionUtils.js`, sidebar/nav visibility checks, API route role guards, server actions, and Supabase RLS policies.
+- **Strict Prohibition of `!== false` Default-Allow & Silent Inheritance**:
+  - AI agents MUST NEVER write default-allow checks like `moduleAccess[x]?.view !== false` or `sub?.view !== false` for modules, pages, or tabs, nor add fallback cross-module inheritance (e.g., `|| moduleAccess['team']?.view === true`, `|| moduleAccess['party']?.view === true`, or parent-to-child auto-grants) without explicit user approval.
+  - Every permission check for any new or modified module/sub-tab MUST use strict explicit opt-in (`=== true`), defaulting to **DENIED (`false`)** when unset.
+- **Strict Prohibition of Bulk Grants & Silent Role/DB Seeds**:
+  - AI agents MUST NEVER create, run, or trigger bulk-access scripts, helper actions (e.g., `grant...ToAll...`), SQL migrations/seeds, or preset loops that automatically assign `true` permissions to existing users or roles (such as `telecaller`, `sales_executive`, `hr`, `manager`, `hod`, `admin`, etc.) unless the user explicitly requested and approved that exact bulk grant.
+- **Mandatory Explicit Access Disclosure in Every Approval Plan**:
+  - Whenever any requested task touches permissions, roles, visibility, or access control, the AI agent's pre-implementation plan MUST include a dedicated **Access Impact Matrix** stating: (1) exact user(s)/role(s) affected, (2) exact module/sub-tab/branch/API/DB resource, and (3) exact permission flags changing — defaulting every unmentioned non-admin role to `false` (no access).
+- **Mandatory Pre-Commit Access Diff Audit**:
+  - Before reporting completion, the AI MUST inspect `git diff` across all modified files to verify zero unintended `view: true`, `!== false`, inheritance fallbacks, or role preset expansions were introduced.
+- **Documentation-Only Rule Note**: Adding or updating this restriction rule alone does not change runtime code and must not increment `package.json` or `SOFTPHONE_VERSION`.
+
 # Protected Live GPS & Playback Baseline (Zero-Touch During Other Upgrades)
 - **Explicit Authorization Only**: Whenever upgrading, fixing, or adding ANY other CRM module or sub-tab (including other tabs under `Field Force & Forms` such as `Field Executive App`, `Field Tasks Manager`, `Custom Form Studio`, `App & Permission Health`, as well as `Smart Attendance`, `Lead Data`, `Party Master`, etc.), every AI agent and developer MUST NEVER modify, refactor, optimize, re-style, rename, or "clean up" the **Live GPS & Playback** (`live_radar`) page, its map/playback engine, route-snapping utilities, server actions, or styling — UNLESS the user **explicitly requests a change to Live GPS & Playback itself** AND approves an exact implementation plan and file whitelist for it.
 - **Protected Live GPS & Playback Source Files (Zero Touch Unless Explicitly Unlocked)**:

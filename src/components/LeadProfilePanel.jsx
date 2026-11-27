@@ -1163,7 +1163,7 @@ export default function LeadProfilePanel({
     } catch (err) {
       console.error(`${fieldKey} update failed, enqueueing offline fallback:`, err?.message || err?.details || JSON.stringify(err));
       try {
-        const check = canPerformOfflineAction('leadAttributeUpdate');
+        const check = canPerformOfflineAction('profileEdit');
         if (check.allowed) {
           await enqueueOfflineAction('update', 'lead', {
             id: lead.id,
@@ -1708,6 +1708,7 @@ export default function LeadProfilePanel({
         const check = canPerformOfflineAction('leadFollowUp');
         if (check.allowed) {
           await enqueueOfflineAction('update', 'lead', { id: currentLead.id || lead.id, follow_up_date: null });
+          await enqueueOfflineAction('create', 'lead_note', { lead_id: currentLead.id || lead.id, note_text: noteText, created_by: actor });
           showSyncToast('⚠️ Cloud save failed. Follow-up clear saved in Offline Sync Center & auto-syncing!', 'warning', 6000);
         } else {
           showSyncToast(check.reason, 'error', 6000);
@@ -1743,6 +1744,7 @@ export default function LeadProfilePanel({
       const check = canPerformOfflineAction('leadFollowUp');
       if (check.allowed) {
         await enqueueOfflineAction('update', 'lead', { id: currentLead.id || lead.id, follow_up_date: isoDateStr });
+        await enqueueOfflineAction('create', 'lead_note', { lead_id: currentLead.id || lead.id, note_text: noteText, created_by: actor });
         showSyncToast(`⚠️ Cloud save failed. Follow-up scheduled for ${formattedDate} saved in Offline Sync Center & auto-syncing!`, 'warning', 6000);
       } else {
         showSyncToast(check.reason, 'error', 6000);

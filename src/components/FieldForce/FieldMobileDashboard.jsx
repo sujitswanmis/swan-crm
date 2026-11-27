@@ -1265,7 +1265,7 @@ export default function FieldMobileDashboard({
   }, [loadCompletedVisits, loadTodayTasks, loadModuleEntities, selectedModule, searchQuery, loadAttendanceStatus]);
 
   return (
-    <div className={styles.console}>
+    <div data-spc-module-theme className={styles.console}>
       {incomingTaskAlert && (
         <div
           role="alert"
@@ -1306,7 +1306,7 @@ export default function FieldMobileDashboard({
             style={{
               background: 'transparent',
               border: 'none',
-              color: '#94a3b8',
+              color: 'var(--spc-view-muted)',
               cursor: 'pointer',
               fontSize: '1.1rem',
               padding: '4px'

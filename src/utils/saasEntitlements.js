@@ -5,9 +5,13 @@
  */
 
 export const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000001';
+const MASTER_HQ_TENANT_IDS = new Set([
+  '0a37b8e8-1c28-4e19-8891-951fc3f8f8af',
+  'e7d483b2-3fcb-4eb2-9d39-e932b7bb5ff4'
+]);
 
 /**
- * Master catalog of all 8 decoupled business processes
+ * Master catalog of decoupled business processes
  */
 export const DEFAULT_PROCESS_CATALOG = [
   {
@@ -100,6 +104,60 @@ export const DEFAULT_PROCESS_CATALOG = [
     description: 'Official WhatsApp Suite (1+ API Accounts: Meta Cloud, AiSensy, Interakt, Wati, Nextel) with hybrid routing & stage automations',
     is_active: true,
     sort_order: 10
+  },
+  {
+    process_code: 'FIELD_FORCE',
+    display_name: 'Field Force System',
+    category: 'HR',
+    monthly_rate_per_user: 149.00,
+    description: 'Field Executive App, Field Tasks Manager, Custom Form Studio, Live GPS & Playback, Device Health',
+    is_active: true,
+    sort_order: 11
+  },
+  {
+    process_code: 'TASK_PLANNER',
+    display_name: 'Task Planner',
+    category: 'OPERATIONS',
+    monthly_rate_per_user: 99.00,
+    description: 'Daily Time-Block Planner, Week Matrix, Kanban Board & Personal/Team Task Scheduling',
+    is_active: true,
+    sort_order: 12
+  },
+  {
+    process_code: 'DAILY_ORDER_FOLLOWUP',
+    display_name: 'Daily Order Follow-up & Pipeline',
+    category: 'SALES',
+    monthly_rate_per_user: 149.00,
+    description: 'Order Frequency Master, Order Desk Calling, Order to Delivery Pipeline (S01-S13) & Post-Delivery Feedback',
+    is_active: true,
+    sort_order: 13
+  },
+  {
+    process_code: 'COMPLAINT_MANAGEMENT',
+    display_name: 'Complaint Management',
+    category: 'OPERATIONS',
+    monthly_rate_per_user: 99.00,
+    description: 'Ticket triage, internal RCA, field engineer dispatch, job card, customer OTP closure (C01-C06)',
+    is_active: true,
+    sort_order: 14
+  },
+  {
+    process_code: 'MONTHLY_PARTY_FEEDBACK',
+    display_name: 'Monthly Party Feedback & Health Checks',
+    category: 'OPERATIONS',
+    monthly_rate_per_user: 79.00,
+    description: 'Recurring monthly dealer/partner satisfaction surveys, health scoring & follow-up calls',
+    is_active: true,
+    sort_order: 15
+  },
+  {
+    process_code: 'END_CUSTOMER_MASTER',
+    display_name: 'End Customer Master',
+    category: 'OPERATIONS',
+    monthly_rate_per_user: 79.00,
+    description: 'End customer registry, machine/product ownership tracking, service & warranty history',
+    is_active: true,
+    sort_order: 16
   }
 ];
 
@@ -114,16 +172,22 @@ export const DEFAULT_CYCLE_DISCOUNTS = [
  * Mapping between SaaS business processes and UI tab identifiers
  */
 export const PROCESS_TO_TABS_MAP = {
-  LEADS_ONLY: ['leads', 'registration', 'report', 'orders'],
+  LEADS_ONLY: ['leads', 'registration', 'report'],
   CALLING_STANDALONE: ['callcenter', 'calladmin', 'aicallcenter'],
-  LEADS_WITH_CALLING: ['leads', 'registration', 'report', 'orders', 'callcenter', 'calladmin', 'aicallcenter'],
+  LEADS_WITH_CALLING: ['leads', 'registration', 'report', 'callcenter', 'calladmin', 'aicallcenter'],
   TASK_DELEGATION: ['delegation'],
   SMART_CHECKLIST: ['checklist'],
   ATTENDANCE: ['attendance', 'joining'],
   RECRUITER: ['recruiter'],
   PARTY_MASTER: ['party', 'location_master', 'location_territory'],
   AI_SUITE: ['ai', 'aiadmin', 'aiknowledgebase'],
-  WHATSAPP_OFFICIAL: ['whatsapp_official']
+  WHATSAPP_OFFICIAL: ['whatsapp_official'],
+  FIELD_FORCE: ['field_force', 'field-force'],
+  TASK_PLANNER: ['task_planner'],
+  DAILY_ORDER_FOLLOWUP: ['orders', 'frequency_rules', 'order_followup', 'order_pipeline', 'order_feedback'],
+  COMPLAINT_MANAGEMENT: ['complaints'],
+  MONTHLY_PARTY_FEEDBACK: ['monthly_feedback'],
+  END_CUSTOMER_MASTER: ['end_customers']
 };
 
 /**
@@ -133,7 +197,16 @@ export const TAB_TO_ALLOWED_PROCESSES = {
   leads: ['LEADS_ONLY', 'LEADS_WITH_CALLING'],
   registration: ['LEADS_ONLY', 'LEADS_WITH_CALLING'],
   report: ['LEADS_ONLY', 'LEADS_WITH_CALLING'],
-  orders: ['LEADS_ONLY', 'LEADS_WITH_CALLING'],
+  orders: ['DAILY_ORDER_FOLLOWUP'],
+  channel_ops: ['DAILY_ORDER_FOLLOWUP', 'COMPLAINT_MANAGEMENT', 'MONTHLY_PARTY_FEEDBACK', 'END_CUSTOMER_MASTER'],
+  'channel-operations': ['DAILY_ORDER_FOLLOWUP', 'COMPLAINT_MANAGEMENT', 'MONTHLY_PARTY_FEEDBACK', 'END_CUSTOMER_MASTER'],
+  frequency_rules: ['DAILY_ORDER_FOLLOWUP'],
+  order_followup: ['DAILY_ORDER_FOLLOWUP'],
+  order_pipeline: ['DAILY_ORDER_FOLLOWUP'],
+  order_feedback: ['DAILY_ORDER_FOLLOWUP'],
+  complaints: ['COMPLAINT_MANAGEMENT'],
+  monthly_feedback: ['MONTHLY_PARTY_FEEDBACK'],
+  end_customers: ['END_CUSTOMER_MASTER'],
   callcenter: ['CALLING_STANDALONE', 'LEADS_WITH_CALLING'],
   calladmin: ['CALLING_STANDALONE', 'LEADS_WITH_CALLING'],
   aicallcenter: ['CALLING_STANDALONE', 'LEADS_WITH_CALLING'],
@@ -148,7 +221,10 @@ export const TAB_TO_ALLOWED_PROCESSES = {
   ai: ['AI_SUITE'],
   aiadmin: ['AI_SUITE'],
   aiknowledgebase: ['AI_SUITE'],
-  whatsapp_official: ['WHATSAPP_OFFICIAL']
+  whatsapp_official: ['WHATSAPP_OFFICIAL'],
+  field_force: ['FIELD_FORCE'],
+  'field-force': ['FIELD_FORCE'],
+  task_planner: ['TASK_PLANNER']
 };
 
 /**
@@ -176,8 +252,8 @@ export const UNIVERSAL_TABS = [
  * @returns {boolean}
  */
 export function isFeatureEntitled(tabId, tenantEntitlements = null, tenantId = DEFAULT_TENANT_ID) {
-  // 0. Primary HQ / Default tenant has unconditional full access to all features
-  if (!tenantId || tenantId === DEFAULT_TENANT_ID) {
+  // 0. Primary HQ / Default tenant & Master HQ have unconditional full access to all features
+  if (!tenantId || tenantId === DEFAULT_TENANT_ID || MASTER_HQ_TENANT_IDS.has(String(tenantId).trim().toLowerCase())) {
     return true;
   }
 

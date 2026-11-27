@@ -50,6 +50,8 @@ export const DEFAULT_OFFLINE_RULES = {
     clientReport: false,
 
     // 📊 General & Analytics
+    homeWorkspace: true,
+    taskPlanner: false,
     analytics: false,
 
     // 📦 Purchase & Production
@@ -61,6 +63,7 @@ export const DEFAULT_OFFLINE_RULES = {
     joining: false,
 
     // 🏢 System & Workplace WMS
+    userManagement: false,
     teamManagement: false,
     workplaceWms: false,
     publicUsers: false,
@@ -1099,15 +1102,29 @@ export async function enqueueOfflineAction(actionType, entityType, payload) {
   }
 
   try {
+    const rules = getOfflineRules();
+    const maxItems = Number(rules.maxQueueItemsPerDevice) || 500;
+    const existingQueue = await getPendingQueue();
+    if (existingQueue.length >= maxItems) {
+      showSyncToast(`Offline queue limit (${maxItems} items) reached. Please connect to internet to sync pending changes.`, 'error', 6000);
+      return null;
+    }
+
     const db = await openOfflineDB();
     if (!db) return null;
+
+    const resolvedTitle = payload.name || payload.company || payload.title || (
+      entityType === 'attendance'
+        ? `${payload.out_time ? 'Punch-Out' : 'Punch-In'}: ${payload.empName || payload.emp_name || payload.email || 'Employee'}`
+        : `${actionType.toUpperCase()} ${entityType}`
+    );
 
     const queueItem = {
       queueId: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
       actionType, // 'create' | 'update' | 'delete'
       entityType, // 'lead' | 'note' | 'attendance'
       payload,
-      title: payload.name || payload.company || payload.title || `${actionType.toUpperCase()} ${entityType}`,
+      title: resolvedTitle,
       timestamp: Date.now(),
       status: 'pending',
       retryCount: 0
@@ -1262,21 +1279,27 @@ export async function removeQueueItem(queueId, syncedData = null) {
     const db = await openOfflineDB();
     if (!db) return;
 
-    const tx = db.transaction([STORES.SYNC_QUEUE, STORES.SYNC_HISTORY], 'readwrite');
-    const queueStore = tx.objectStore(STORES.SYNC_QUEUE);
-    const historyStore = tx.objectStore(STORES.SYNC_HISTORY);
+    await new Promise((resolve) => {
+      const tx = db.transaction([STORES.SYNC_QUEUE, STORES.SYNC_HISTORY], 'readwrite');
+      const queueStore = tx.objectStore(STORES.SYNC_QUEUE);
+      const historyStore = tx.objectStore(STORES.SYNC_HISTORY);
 
-    queueStore.delete(queueId);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
 
-    if (syncedData) {
-      historyStore.put({
-        id: `hist_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        title: syncedData.title || syncedData.name || 'Synced Item',
-        entityType: syncedData.entityType || 'lead',
-        actionType: syncedData.actionType || 'create',
-        syncedAt: Date.now()
-      });
-    }
+      queueStore.delete(queueId);
+
+      if (syncedData) {
+        historyStore.put({
+          id: `hist_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          title: syncedData.title || syncedData.name || 'Synced Item',
+          entityType: syncedData.entityType || 'lead',
+          actionType: syncedData.actionType || 'create',
+          syncedAt: Date.now()
+        });
+      }
+    });
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('supuja_offline_queue_changed'));
@@ -1495,6 +1518,7 @@ export async function syncPendingQueue(supabaseClient, onProgress = null, option
         }
       } else if (item.entityType === 'attendance') {
         const payload = toAttendanceDbPayload(item.payload);
+        const empDisplay = payload.emp_name || item.payload?.empName || item.payload?.emp_name || payload.email || 'Employee';
         if (payload.out_time) {
           const { data, error } = await supabaseClient
             .from('attendance_records')
@@ -1511,7 +1535,7 @@ export async function syncPendingQueue(supabaseClient, onProgress = null, option
 
           if (error) throw error;
           if (!data?.length) throw new Error('Matching attendance punch-in was not found for punch-out');
-          await removeQueueItem(item.queueId, { ...item, title: `Punch-Out: ${payload.empName}` });
+          await removeQueueItem(item.queueId, { ...item, title: `Punch-Out: ${empDisplay}` });
           successCount++;
         } else {
           const { error } = await supabaseClient
@@ -1519,7 +1543,7 @@ export async function syncPendingQueue(supabaseClient, onProgress = null, option
             .upsert([payload], { onConflict: 'email,attendance_date' });
 
           if (error) throw error;
-          await removeQueueItem(item.queueId, { ...item, title: `Punch-In: ${payload.empName}` });
+          await removeQueueItem(item.queueId, { ...item, title: `Punch-In: ${empDisplay}` });
           successCount++;
         }
       } else if (item.entityType === 'lead_note') {
@@ -1657,9 +1681,9 @@ export async function syncPendingQueue(supabaseClient, onProgress = null, option
         const result = item.actionType === 'archive'
           ? await actions.deleteClientRegistrationDraft(payload.id, payload.reason)
           : item.actionType === 'save'
-            ? await actions.saveClientRegistrationDraft(payload, payload.userCompany || '')
+            ? await actions.saveClientRegistrationDraft(payload, payload.userCompany || '', payload.actor || '')
             : item.actionType === 'submit'
-              ? await actions.submitClientRegistrationAndSync(payload, payload.userCompany || '')
+              ? await actions.submitClientRegistrationAndSync(payload, payload.userCompany || '', payload.actor || '')
               : { success: false, error: 'Unsupported registration operation.' };
         if (!result?.success) throw new Error(result?.error || 'Registration sync was not confirmed.');
         if (result.lead) {
@@ -1678,6 +1702,60 @@ export async function syncPendingQueue(supabaseClient, onProgress = null, option
           throw new Error(res?.error || 'Attendance request sync was not confirmed');
         }
         await removeQueueItem(item.queueId, { ...item, title: `Regularize: ${payload.attendanceDate}` });
+        successCount++;
+      } else if (item.entityType === 'task_planner_create') {
+        const payload = item.payload;
+        const { id: tempId, __offline_pending, __scopeKey, ...createPayload } = payload || {};
+        const { createTaskPlannerItem } = await import('@/app/actions/taskPlanner');
+        const res = await createTaskPlannerItem(createPayload, createPayload.tenant_id || createPayload.tenantId);
+        if (!res?.success) throw new Error(res?.error || 'Task planner create sync failed');
+        if (res.data) {
+          const { replaceLocalTaskId } = await import('./taskPlannerLocalDb');
+          await replaceLocalTaskId(tempId, res.data, __scopeKey || '');
+        }
+        await removeQueueItem(item.queueId, { ...item, title: `Task: ${payload.title}` });
+        successCount++;
+      } else if (item.entityType === 'task_planner_update') {
+        const payload = item.payload;
+        const { updateTaskPlannerItem } = await import('@/app/actions/taskPlanner');
+        const res = await updateTaskPlannerItem(payload.id, payload.updates, payload.tenant_id || payload.tenantId);
+        if (!res?.success) throw new Error(res?.error || 'Task planner update sync failed');
+        await removeQueueItem(item.queueId, { ...item, title: `Update: ${payload.updates?.title || payload.id}` });
+        successCount++;
+      } else if (item.entityType === 'task_planner_status') {
+        const payload = item.payload;
+        const { updateTaskPlannerStatus } = await import('@/app/actions/taskPlanner');
+        const res = await updateTaskPlannerStatus(payload.id, payload.status, payload.notes || '', payload.actualMinutes ?? null, payload.tenant_id || payload.tenantId);
+        if (!res?.success) throw new Error(res?.error || 'Task planner status sync failed');
+        await removeQueueItem(item.queueId, { ...item, title: `Status: ${payload.status}` });
+        successCount++;
+      } else if (item.entityType === 'task_planner_carry') {
+        const payload = item.payload;
+        const { carryForwardTask } = await import('@/app/actions/taskPlanner');
+        const res = await carryForwardTask(payload.id, payload.targetDate, payload.tenant_id || payload.tenantId);
+        if (!res?.success) throw new Error(res?.error || 'Task planner carry forward sync failed');
+        await removeQueueItem(item.queueId, { ...item, title: `Carry: ${payload.targetDate}` });
+        successCount++;
+      } else if (item.entityType === 'task_planner_delete') {
+        const payload = item.payload;
+        const { deleteTaskPlannerItem } = await import('@/app/actions/taskPlanner');
+        const res = await deleteTaskPlannerItem(payload.id, payload.tenant_id || payload.tenantId);
+        if (!res?.success) throw new Error(res?.error || 'Task planner delete sync failed');
+        await removeQueueItem(item.queueId, { ...item, title: `Trash: ${payload.id}` });
+        successCount++;
+      } else if (item.entityType === 'task_planner_restore') {
+        const payload = item.payload;
+        const { restoreTaskPlannerItem } = await import('@/app/actions/taskPlanner');
+        const res = await restoreTaskPlannerItem(payload.id, payload.tenant_id || payload.tenantId);
+        if (!res?.success) throw new Error(res?.error || 'Task planner restore sync failed');
+        await removeQueueItem(item.queueId, { ...item, title: `Restore: ${payload.id}` });
+        successCount++;
+      } else if (item.entityType === 'task_planner_permanent_delete') {
+        const payload = item.payload;
+        const { permanentDeleteTaskPlannerItem } = await import('@/app/actions/taskPlanner');
+        const res = await permanentDeleteTaskPlannerItem(payload.id, payload.tenant_id || payload.tenantId);
+        if (!res?.success) throw new Error(res?.error || 'Task planner permanent delete sync failed');
+        await removeQueueItem(item.queueId, { ...item, title: `Purge: ${payload.id}` });
         successCount++;
       }
     } catch (itemErr) {
@@ -1708,12 +1786,17 @@ export async function syncPendingQueue(supabaseClient, onProgress = null, option
       try {
         const db = await openOfflineDB();
         if (db) {
-          const tx = db.transaction(STORES.SYNC_QUEUE, 'readwrite');
-          // ZERO DATA LOSS GUARANTEE: Never delete user actions on error. Always keep full payload preserved in IndexedDB.
-          tx.objectStore(STORES.SYNC_QUEUE).put({ 
-            ...item, 
-            retryCount: currentRetries,
-            lastError: errMsg 
+          await new Promise((resolve) => {
+            const tx = db.transaction(STORES.SYNC_QUEUE, 'readwrite');
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => resolve(false);
+            tx.onabort = () => resolve(false);
+            // ZERO DATA LOSS GUARANTEE: Never delete user actions on error. Always keep full payload preserved in IndexedDB.
+            tx.objectStore(STORES.SYNC_QUEUE).put({
+              ...item,
+              retryCount: currentRetries,
+              lastError: errMsg
+            });
           });
         }
       } catch (e) {}
@@ -1748,6 +1831,12 @@ export function isModuleAllowedOffline(tabId = '') {
   const features = rules.features || {};
 
   switch (tabId) {
+    case 'home':
+      return features.homeWorkspace !== false;
+
+    case 'task_planner':
+      return !!features.taskPlanner;
+
     case 'leads':
       return !!(features.leadStatusUpdate || features.leadNotes || features.profileEdit || features.leadFollowUp);
 
@@ -1803,6 +1892,9 @@ export function isModuleAllowedOffline(tabId = '') {
 
     case 'team':
       return !!features.teamManagement;
+
+    case 'user_management_new':
+      return !!features.userManagement;
 
     case 'workplace':
       return !!features.workplaceWms;

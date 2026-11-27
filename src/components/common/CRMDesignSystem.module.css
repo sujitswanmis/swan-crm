@@ -121,3 +121,97 @@
 @media (prefers-reduced-motion: reduce) {
   .tab, .interactiveCard, .field, .button, .table tbody tr, .viewToggle button, .tiles article { transition: none; }
 }
+
+/* WhatsApp Official opts in at its page root. Other CRMPage callers retain their palette. */
+.page[data-spc-theme="whatsapp-official"] {
+  --bg-surface: var(--spc-view-surface);
+  --bg-primary: var(--spc-view-canvas);
+  --bg-secondary: var(--spc-view-raised);
+  --text-primary: var(--spc-view-text);
+  --text-secondary: var(--spc-view-muted);
+  --border-light: var(--spc-view-border);
+  --accent-color: var(--spc-view-action);
+  --accent-subtle: var(--spc-view-info-bg);
+  --th-bg: var(--spc-view-raised);
+  --th-hover-bg: var(--spc-view-info-bg);
+  color-scheme: var(--spc-view-color-scheme);
+  color: var(--spc-view-text);
+  background: var(--spc-view-canvas);
+  border-color: var(--spc-view-border);
+}
+
+.page[data-spc-theme="whatsapp-official"] :is(.title, .tab, .viewToggle button, .table, .tiles [data-tile-field] > div) {
+  color: var(--spc-view-text);
+}
+
+.page[data-spc-theme="whatsapp-official"] :is(.description, .badge, .empty, .field, .pagination, .tiles [data-tile-field] > span) {
+  color: var(--spc-view-muted) !important;
+}
+
+.page[data-spc-theme="whatsapp-official"] :is(.tabs, .tabCount, .viewToggle, .badge, .empty) {
+  background: var(--spc-view-raised);
+  border-color: var(--spc-view-border) !important;
+}
+
+.page[data-spc-theme="whatsapp-official"] :is(.card, .toolbar, .field, .tableScroll, .tiles article, .pagination) {
+  background: var(--spc-view-surface) !important;
+  border-color: var(--spc-view-border) !important;
+}
+
+.page[data-spc-theme="whatsapp-official"] .field::placeholder {
+  color: var(--spc-view-muted);
+}
+
+.page[data-spc-theme="whatsapp-official"] :is(.headingIcon, .tab[aria-selected='true'], .tab[aria-selected='true'] .tabCount, .viewToggle button[aria-pressed='true']) {
+  background: var(--spc-view-info-bg);
+  color: var(--spc-view-accent);
+  border-color: var(--spc-view-info-border);
+}
+
+.page[data-spc-theme="whatsapp-official"] :is(.tab, .viewToggle button):hover:not(:disabled) {
+  background: var(--spc-view-info-bg);
+  color: var(--spc-view-text);
+}
+
+.page[data-spc-theme="whatsapp-official"] .primaryButton {
+  background: var(--spc-view-action) !important;
+  border-color: var(--spc-view-action) !important;
+}
+
+.page[data-spc-theme="whatsapp-official"] .table :is(thead, th) {
+  background: var(--spc-view-raised) !important;
+  color: var(--spc-view-text) !important;
+  box-shadow: inset 0 -1px 0 var(--spc-view-border);
+}
+
+.page[data-spc-theme="whatsapp-official"] .table td {
+  border-bottom-color: var(--spc-view-border) !important;
+}
+
+.page[data-spc-theme="whatsapp-official"] .table tbody tr {
+  background: var(--spc-view-surface) !important;
+}
+
+.page[data-spc-theme="whatsapp-official"] :is(.table tbody tr:hover, .table tbody tr[data-selected='true'], .tiles article[data-selected='true']) {
+  background: var(--spc-view-info-bg) !important;
+}
+
+.page[data-spc-theme="whatsapp-official"] .badge[data-tone='info'] {
+  color: var(--spc-view-info) !important;
+  background: var(--spc-view-info-bg);
+}
+
+.page[data-spc-theme="whatsapp-official"] .badge[data-tone='success'] {
+  color: var(--spc-view-success) !important;
+  background: var(--spc-view-success-bg);
+}
+
+.page[data-spc-theme="whatsapp-official"] .badge[data-tone='warning'] {
+  color: var(--spc-view-warning) !important;
+  background: var(--spc-view-warning-bg);
+}
+
+.page[data-spc-theme="whatsapp-official"] .badge[data-tone='danger'] {
+  color: var(--spc-view-danger) !important;
+  background: var(--spc-view-danger-bg);
+}

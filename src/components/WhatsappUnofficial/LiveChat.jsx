@@ -713,8 +713,8 @@ export default function LiveChat({ userId, isAdmin }) {
                     padding: '0.6rem 1.1rem',
                     borderRadius: '8px',
                     border: '1px solid var(--border-light)',
-                    background: '#f8fafc',
-                    color: 'var(--text-secondary)',
+                    background: 'var(--bg-primary, #f8fafc)',
+                    color: 'var(--text-primary, #1e293b)',
                     fontWeight: 600,
                     fontSize: '0.85rem',
                     cursor: 'pointer'
@@ -883,8 +883,8 @@ export default function LiveChat({ userId, isAdmin }) {
                     padding: '0.6rem 1.1rem',
                     borderRadius: '8px',
                     border: '1px solid var(--border-light)',
-                    background: '#f8fafc',
-                    color: 'var(--text-secondary)',
+                    background: 'var(--bg-primary, #f8fafc)',
+                    color: 'var(--text-primary, #1e293b)',
                     fontWeight: 600,
                     fontSize: '0.85rem',
                     cursor: 'pointer'

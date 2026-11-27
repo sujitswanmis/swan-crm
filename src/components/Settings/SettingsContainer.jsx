@@ -2,10 +2,11 @@ import React, { useState, useEffect, startTransition } from 'react';
 import dynamic from 'next/dynamic';
 import { INTEGRATION_PAGE, INTEGRATION_PAGE_IDS } from '@/config/integrationsConfig';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import { Building2, Settings2, Bell, Database, Target, FileType, Monitor, Package, Truck, AlertTriangle, Calendar, UserCheck } from 'lucide-react';
+import { Building2, Settings2, Bell, Database, Target, FileType, Monitor, Package, Truck, AlertTriangle, Calendar, UserCheck, Users, CreditCard } from 'lucide-react';
 
 // Subcomponents
 import BusinessProfile from './BusinessProfile';
+import TenantBillingConfig from './TenantBillingConfig';
 import CRMConfig from './CRMConfig';
 import NotificationsConfig from './NotificationsConfig';
 import DataManagement from './DataManagement';
@@ -14,6 +15,7 @@ import FileMedia from './FileMedia';
 import ManageDepartments from './ManageDepartments';
 import ActiveSessionsConfig from './ActiveSessionsConfig';
 import ProductListConfig from './ProductListConfig';
+import PartyMasterConfig from './PartyMasterConfig';
 import OrderPipelineConfig from './OrderPipelineConfig';
 import ComplaintPipelineConfig from './ComplaintPipelineConfig';
 import RecruiterPipelineConfig from './RecruiterPipelineConfig';
@@ -26,7 +28,9 @@ const IntegrationsContainer = dynamic(() => import('./Integrations/IntegrationsC
 
 const SETTINGS_TABS = [
   { id: 'business', label: 'Business Profile & Branches', icon: <Building2 size={18} /> },
+  { id: 'subscription_billing', label: 'Plan & Billing History', icon: <CreditCard size={18} /> },
   { id: 'products', label: 'Product List & Branches', icon: <Package size={18} /> },
+  { id: 'party_config', label: 'Party Master Config', icon: <Users size={18} /> },
   { id: 'order_pipeline', label: 'Order to Delivery Config', icon: <Truck size={18} /> },
   { id: 'complaints_config', label: 'Complaint Management Config', icon: <AlertTriangle size={18} /> },
   { id: 'crm', label: 'CRM & Lead Config', icon: <Settings2 size={18} /> },
@@ -46,6 +50,7 @@ export default function SettingsContainer({
   moduleAccess = {}, 
   userRole = '', 
   userCompany = '',
+  tenantId = null,
   isMasterAdmin = false,
   currentSubTab = 'business'
 }) {
@@ -59,12 +64,14 @@ export default function SettingsContainer({
         const sub = path.split('/')[1];
         if (INTEGRATION_PAGE_IDS.includes(sub)) return INTEGRATION_PAGE.id;
         if (['products', 'product-list', 'products-list'].includes(sub)) return 'products';
+        if (['party-config', 'party_config', 'party-master-config', 'party_master_config', 'party'].includes(sub)) return 'party_config';
         if (['order-pipeline', 'order_pipeline', 'order-config', 'order_config'].includes(sub)) return 'order_pipeline';
         if (['complaints', 'complaint-config', 'complaint_config', 'complaints_config', 'complaint-pipeline'].includes(sub)) return 'complaints_config';
         if (['crm-config', 'crm_config'].includes(sub)) return 'crm';
         if (['recruiter-workload', 'recruiter_workload', 'workload-limits', 'workload'].includes(sub)) return 'recruiter_workload';
         if (['recruiter-config', 'recruiter_config', 'recruiter-pipeline', 'recruitment-config'].includes(sub)) return 'recruiter_config';
         if (['business', 'business-profile', 'branches', 'branch', 'headoffice', 'head-office'].includes(sub)) return 'business';
+        if (['subscription_billing', 'subscription-billing', 'billing', 'plan', 'invoices', 'saas_master'].includes(sub)) return 'subscription_billing';
         if (['alerts', 'notification'].includes(sub)) return 'notifications';
         if (['manage-departments', 'dept'].includes(sub)) return 'departments';
         if (['performance', 'target'].includes(sub)) return 'targets';
@@ -132,7 +139,15 @@ export default function SettingsContainer({
       {/* Settings Content Area (Full Clean Width) */}
       <div className="card" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', width: '100%', borderRadius: 0, border: 'none', boxShadow: 'none' }}>
         {activeTab === 'business' && <BusinessProfile userCompany={userCompany} />}
+        {activeTab === 'subscription_billing' && (
+          <TenantBillingConfig
+            tenantId={tenantId}
+            userCompany={userCompany}
+            isMasterAdmin={isMasterAdmin}
+          />
+        )}
         {activeTab === 'products' && <ProductListConfig userCompany={userCompany} />}
+        {activeTab === 'party_config' && <PartyMasterConfig userCompany={userCompany} isMasterAdmin={isMasterAdmin} userRole={userRole} />}
         {activeTab === 'order_pipeline' && <OrderPipelineConfig userCompany={userCompany} isMasterAdmin={isMasterAdmin} userRole={userRole} />}
         {activeTab === 'complaints_config' && <ComplaintPipelineConfig userCompany={userCompany} isMasterAdmin={isMasterAdmin} userRole={userRole} />}
         {activeTab === 'crm' && <CRMConfig userCompany={userCompany} />}

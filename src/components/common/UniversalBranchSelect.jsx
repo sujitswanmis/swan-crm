@@ -31,6 +31,7 @@ export default function UniversalBranchSelect({
   title = 'BRANCH / PLANT',
   allValue = 'All',
   allLabel = 'All Branches',
+  allowAll = false,
   disabled = false,
   required = false,
   name = '',
@@ -53,7 +54,7 @@ export default function UniversalBranchSelect({
   const allOptions = useMemo(() => {
     const list = [];
 
-    if (mode === 'filter') {
+    if (mode === 'filter' || allowAll) {
       list.push({
         value: allValue,
         code: allLabel,
@@ -88,7 +89,7 @@ export default function UniversalBranchSelect({
 
   // Resolve selected option matching current value
   const selectedOption = useMemo(() => {
-    if (mode === 'filter') {
+    if (mode === 'filter' || allowAll) {
       if (!value || value === allValue || value === 'All' || value.toLowerCase?.() === 'all companies') {
         return allOptions[0];
       }
@@ -431,7 +432,7 @@ export default function UniversalBranchSelect({
 
               return (
                 <div
-                  key={opt.value}
+                  key={opt.code ? `${opt.code}_${opt.value}` : `${opt.value}_${index}`}
                   role="option"
                   aria-selected={isSelected}
                   data-active={isActive ? 'true' : undefined}

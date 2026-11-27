@@ -2139,15 +2139,54 @@ export async function applyMissingAttendance({
 
   const adminClient = getAdminClient();
   const nowIso = new Date().toISOString();
+  const cleanEmail = email.trim().toLowerCase();
 
   const local = await getFallbackData();
-  const existingPending = local.requests.find(r => r.email === email && r.attendance_date === attendanceDate && r.status === 'PENDING');
+  const existingPending = local.requests.find(r => (r.email || '').trim().toLowerCase() === cleanEmail && r.attendance_date === attendanceDate && r.status === 'PENDING');
   if (existingPending) {
     return {
       success: false,
       error: `You already have a pending regularization request for ${attendanceDate}. Please wait for HOD approval.`
     };
   }
+
+  try {
+    const { data: dbPending } = await adminClient
+      .from('attendance_regularization_requests')
+      .select('id')
+      .ilike('email', cleanEmail)
+      .eq('attendance_date', attendanceDate)
+      .eq('status', 'PENDING')
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+    if (dbPending) {
+      return {
+        success: false,
+        error: `You already have a pending regularization request for ${attendanceDate}. Please wait for HOD approval.`
+      };
+    }
+  } catch {}
+
+  let currentInTime = null;
+  let currentOutTime = null;
+  try {
+    const { data: existingAtt } = await adminClient
+      .from('attendance_records')
+      .select('in_time, out_time')
+      .ilike('email', cleanEmail)
+      .eq('attendance_date', attendanceDate)
+      .maybeSingle();
+    if (existingAtt) {
+      currentInTime = existingAtt.in_time || null;
+      currentOutTime = existingAtt.out_time || null;
+    } else {
+      const localAtt = (local.records || []).find(r => (r.email || '').trim().toLowerCase() === cleanEmail && r.attendance_date === attendanceDate);
+      if (localAtt) {
+        currentInTime = localAtt.in_time || null;
+        currentOutTime = localAtt.out_time || null;
+      }
+    }
+  } catch {}
 
   let finalInIso = null;
   let finalOutIso = null;
@@ -2172,12 +2211,12 @@ export async function applyMissingAttendance({
     user_id: userId && isValidUuid(userId) ? userId : null,
     emp_code: empCode || '',
     emp_name: empName || email.split('@')[0],
-    email: email.trim().toLowerCase(),
+    email: cleanEmail,
     department: department || '',
     attendance_date: attendanceDate,
     request_type: requestType,
-    current_in_time: null,
-    current_out_time: null,
+    current_in_time: currentInTime,
+    current_out_time: currentOutTime,
     requested_in_time: finalInIso,
     requested_out_time: finalOutIso,
     reason_type: reasonType,
@@ -2435,11 +2474,39 @@ export async function approveRegularizationRequest({
     local.requests.unshift(request);
   }
 
-  // CRITICAL: Update attendance record for that date in local + Supabase
-  let attIdx = local.records.findIndex(r => (r.email || '').toLowerCase() === (request.email || '').toLowerCase() && r.attendance_date === request.attendance_date);
-  const finalInTime = request.requested_in_time || (attIdx >= 0 ? local.records[attIdx].in_time : null);
-  const finalOutTime = request.requested_out_time || (attIdx >= 0 ? local.records[attIdx].out_time : null);
+  // CRITICAL: Fetch existing attendance record from local + Supabase so existing In/Out punch is NEVER lost on partial regularization (e.g. MISSED_IN preserves existing out_time)
+  const cleanEmail = (request.email || '').trim().toLowerCase();
+  let attIdx = local.records.findIndex(r => (r.email || '').trim().toLowerCase() === cleanEmail && r.attendance_date === request.attendance_date);
+  let dbExistingAtt = null;
+  try {
+    const { data: dbAtt } = await adminClient
+      .from('attendance_records')
+      .select('*')
+      .ilike('email', cleanEmail)
+      .eq('attendance_date', request.attendance_date)
+      .maybeSingle();
+    if (dbAtt) dbExistingAtt = dbAtt;
+  } catch (e) {
+    console.warn('Supabase lookup in approveRegularizationRequest warning:', e);
+  }
+
+  const existingAtt = dbExistingAtt || (attIdx >= 0 ? local.records[attIdx] : null);
+  const reqType = String(request.request_type || '').toUpperCase();
+  const hasNewIn = (reqType === 'MISSED_IN' || reqType === 'BOTH' || !reqType) && Boolean(request.requested_in_time);
+  const hasNewOut = (reqType === 'MISSED_OUT' || reqType === 'BOTH' || !reqType) && Boolean(request.requested_out_time);
+
+  const finalInTime = hasNewIn
+    ? request.requested_in_time
+    : (existingAtt?.in_time || request.current_in_time || request.requested_in_time || null);
+  const finalOutTime = hasNewOut
+    ? request.requested_out_time
+    : (existingAtt?.out_time || request.current_out_time || request.requested_out_time || null);
   const totalMinutes = calculateMinutesBetween(finalInTime, finalOutTime);
+
+  const preservedInLocation = hasNewIn ? 'Regularized' : (existingAtt?.in_location || (finalInTime ? 'Regularized' : null));
+  const preservedOutLocation = hasNewOut ? 'Regularized' : (existingAtt?.out_location || (finalOutTime ? 'Regularized' : null));
+  const preservedInMethod = hasNewIn ? 'REGULARIZED' : (existingAtt?.in_method || (finalInTime ? 'REGULARIZED' : null));
+  const preservedOutMethod = hasNewOut ? 'REGULARIZED' : (existingAtt?.out_method || (finalOutTime ? 'REGULARIZED' : null));
 
   let finalStatus = 'REGULARIZED';
   if (totalMinutes > 0 && totalMinutes < 240) {
@@ -2448,19 +2515,37 @@ export async function approveRegularizationRequest({
 
   let updatedAtt = null;
 
-  if (attIdx >= 0) {
-    local.records[attIdx] = {
-      ...local.records[attIdx],
+  if (existingAtt || attIdx >= 0) {
+    const baseRec = existingAtt || local.records[attIdx];
+    updatedAtt = {
+      ...baseRec,
+      id: baseRec.id || ensureUuid(),
+      tenant_id: baseRec.tenant_id || tenantId,
+      user_id: (baseRec.user_id && isValidUuid(baseRec.user_id)) ? baseRec.user_id : (request.user_id && isValidUuid(request.user_id) ? request.user_id : null),
+      emp_code: baseRec.emp_code || request.emp_code || '',
+      emp_name: baseRec.emp_name || request.emp_name,
+      email: cleanEmail,
+      department: baseRec.department || request.department || '',
+      attendance_date: request.attendance_date,
       in_time: finalInTime,
       out_time: finalOutTime,
+      in_location: preservedInLocation,
+      out_location: preservedOutLocation,
+      in_method: preservedInMethod,
+      out_method: preservedOutMethod,
       total_working_minutes: totalMinutes,
       status: finalStatus,
       is_regularized: true,
       regularization_id: isValidUuid(requestId) ? requestId : null,
       remarks: `Regularized & Approved by HOD: ${request.reason_details}`,
+      created_at: baseRec.created_at || nowIso,
       updated_at: nowIso
     };
-    updatedAtt = local.records[attIdx];
+    if (attIdx >= 0) {
+      local.records[attIdx] = updatedAtt;
+    } else {
+      local.records.unshift(updatedAtt);
+    }
   } else {
     updatedAtt = {
       id: ensureUuid(),
@@ -2468,15 +2553,15 @@ export async function approveRegularizationRequest({
       user_id: request.user_id && isValidUuid(request.user_id) ? request.user_id : null,
       emp_code: request.emp_code || '',
       emp_name: request.emp_name,
-      email: (request.email || '').trim().toLowerCase(),
+      email: cleanEmail,
       department: request.department || '',
       attendance_date: request.attendance_date,
       in_time: finalInTime,
       out_time: finalOutTime,
-      in_location: 'Regularized',
-      out_location: 'Regularized',
-      in_method: 'REGULARIZED',
-      out_method: 'REGULARIZED',
+      in_location: preservedInLocation,
+      out_location: preservedOutLocation,
+      in_method: preservedInMethod,
+      out_method: preservedOutMethod,
       total_working_minutes: totalMinutes,
       status: finalStatus,
       is_regularized: true,
@@ -2509,32 +2594,38 @@ export async function approveRegularizationRequest({
 
     const dbAttPayload = cleanAttendanceRecordForDb({
       id: updatedAtt?.id,
-      tenant_id: tenantId,
-      user_id: request.user_id,
-      emp_code: request.emp_code || '',
-      emp_name: request.emp_name,
-      email: request.email,
-      department: request.department || '',
+      tenant_id: updatedAtt?.tenant_id || tenantId,
+      user_id: updatedAtt?.user_id || request.user_id,
+      emp_code: updatedAtt?.emp_code || request.emp_code || '',
+      emp_name: updatedAtt?.emp_name || request.emp_name,
+      email: cleanEmail,
+      department: updatedAtt?.department || request.department || '',
       attendance_date: request.attendance_date,
       in_time: finalInTime,
       out_time: finalOutTime,
-      in_location: 'Regularized',
-      out_location: 'Regularized',
-      in_method: 'REGULARIZED',
-      out_method: 'REGULARIZED',
+      in_location: preservedInLocation,
+      out_location: preservedOutLocation,
+      in_method: preservedInMethod,
+      out_method: preservedOutMethod,
       total_working_minutes: totalMinutes,
       status: finalStatus,
       is_regularized: true,
       regularization_id: isValidUuid(requestId) ? requestId : null,
-      remarks: `Regularized by HOD: ${request.reason_details}`,
+      remarks: updatedAtt?.remarks || `Regularized by HOD: ${request.reason_details}`,
       updated_at: nowIso
-    }, tenantId);
+    }, updatedAtt?.tenant_id || tenantId);
 
     const { error: attErr } = await adminClient
       .from('attendance_records')
       .upsert(dbAttPayload, { onConflict: 'email,attendance_date' });
 
-    if (attErr) console.error('Supabase approve attendance upsert error:', attErr);
+    if (attErr) {
+      console.warn('Supabase approve attendance upsert by email,date warning, retrying by id:', attErr);
+      const { error: idErr } = await adminClient
+        .from('attendance_records')
+        .upsert(dbAttPayload, { onConflict: 'id' });
+      if (idErr) console.error('Supabase approve attendance upsert error:', idErr);
+    }
   } catch (dbErr) {
     console.error('Supabase approve exception:', dbErr);
   }
@@ -2641,6 +2732,98 @@ export async function rejectRegularizationRequest({
   return {
     success: true,
     message: `Regularization request for ${request.emp_name} rejected.`,
+    request
+  };
+}
+
+/**
+ * 9.0. Employee Cancel Own Pending Regularization Request
+ */
+export async function cancelRegularizationRequest({
+  requestId,
+  email,
+  tenantId = DEFAULT_TENANT_ID
+}) {
+  if (!requestId) return { success: false, error: 'Request ID is required.' };
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanEmail) return { success: false, error: 'Employee email is required.' };
+
+  tenantId = resolveTenantId(tenantId);
+  const adminClient = getAdminClient();
+  const nowIso = new Date().toISOString();
+
+  const local = await getFallbackData();
+  const reqIdx = (local.requests || []).findIndex(r => r.id === requestId);
+  let request = reqIdx >= 0 ? local.requests[reqIdx] : null;
+
+  if (!request) {
+    try {
+      const { data: dbReq } = await adminClient
+        .from('attendance_regularization_requests')
+        .select('*')
+        .eq('id', requestId)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      if (dbReq) request = dbReq;
+    } catch {}
+  }
+
+  if (!request) {
+    return { success: false, error: 'Missing punch application not found.' };
+  }
+
+  if ((request.email || '').trim().toLowerCase() !== cleanEmail) {
+    return { success: false, error: 'You can only cancel your own missing punch application.' };
+  }
+
+  if (request.status !== 'PENDING') {
+    return {
+      success: false,
+      error: `Cannot cancel because this request is already ${String(request.status || '').toLowerCase()}.`
+    };
+  }
+
+  request.status = 'CANCELLED';
+  request.action_remarks = 'Cancelled by employee';
+  request.action_at = nowIso;
+  request.updated_at = nowIso;
+
+  if (reqIdx >= 0) {
+    local.requests[reqIdx] = request;
+  } else {
+    local.requests.unshift(request);
+  }
+  await saveFallbackData(local);
+
+  try {
+    await adminClient
+      .from('attendance_regularization_requests')
+      .update({
+        status: 'CANCELLED',
+        action_remarks: 'Cancelled by employee',
+        action_at: nowIso,
+        updated_at: nowIso
+      })
+      .eq('id', ensureUuid(requestId))
+      .eq('tenant_id', tenantId)
+      .eq('status', 'PENDING');
+  } catch (err) {
+    console.error('Supabase cancel regularization request error:', err);
+  }
+
+  try {
+    await logAuditAction({
+      module: 'attendance',
+      action: 'REGULARIZATION_CANCELLED',
+      details: `Employee (${request.emp_name || cleanEmail}) cancelled pending missing attendance request for date ${request.attendance_date}.`,
+      userEmail: cleanEmail,
+      userName: request.emp_name || cleanEmail
+    });
+  } catch {}
+
+  return {
+    success: true,
+    message: `Missing punch application for ${request.attendance_date} cancelled.`,
     request
   };
 }
@@ -4502,6 +4685,106 @@ export async function approveLeaveRequest(options) { return processLeaveDecision
 export async function rejectLeaveRequest(options) { return processLeaveDecision(options, 'REJECTED'); }
 
 /**
+ * 18.1. Employee Cancel Own Pending Leave Application
+ */
+export async function cancelEmployeeLeave({ requestId, email, tenantId = null, userCompany = '' }) {
+  try {
+    if (!requestId) throw new Error('Leave request ID is required.');
+    const context = await getLeaveContext({ tenantId, userCompany });
+    if (email && leaveEmail(email) !== context.email) {
+      throw new Error('You may cancel only your own leave applications.');
+    }
+
+    const current = await context.db
+      .from('employee_leaves')
+      .select('*')
+      .eq('tenant_id', context.tenantId)
+      .eq('id', requestId)
+      .maybeSingle();
+
+    if (current.error) throw current.error;
+    const row = current.data;
+    if (!row) throw new Error('Leave application not found.');
+    if (leaveEmail(row.email) !== context.email) {
+      throw new Error('You may cancel only your own leave applications.');
+    }
+    if (row.status !== 'PENDING') {
+      throw new Error(`Cannot cancel because this leave application is already ${String(row.status || '').toLowerCase()}.`);
+    }
+
+    const nowIso = new Date().toISOString();
+    let updatedRow = null;
+    const updateRes = await context.db
+      .from('employee_leaves')
+      .update({
+        status: 'CANCELLED',
+        approver_remarks: 'Cancelled by employee',
+        action_at: nowIso,
+        updated_at: nowIso
+      })
+      .eq('tenant_id', context.tenantId)
+      .eq('id', requestId)
+      .eq('email', context.email)
+      .eq('status', 'PENDING')
+      .select('*')
+      .maybeSingle();
+
+    if (updateRes.error) {
+      if (String(updateRes.error.code || '') === '23514') {
+        const delRes = await context.db
+          .from('employee_leaves')
+          .delete()
+          .eq('tenant_id', context.tenantId)
+          .eq('id', requestId)
+          .eq('email', context.email)
+          .eq('status', 'PENDING');
+        if (delRes.error) throw delRes.error;
+      } else {
+        throw updateRes.error;
+      }
+    } else {
+      updatedRow = updateRes.data ? normalizeLeaveRequest(updateRes.data) : null;
+    }
+
+    try {
+      const localLeaves = await getFallbackLeavesData();
+      if (Array.isArray(localLeaves.leaves)) {
+        const idx = localLeaves.leaves.findIndex(l => String(l.id) === String(requestId));
+        if (idx >= 0) {
+          localLeaves.leaves[idx] = {
+            ...localLeaves.leaves[idx],
+            status: 'CANCELLED',
+            approver_remarks: 'Cancelled by employee',
+            action_at: nowIso,
+            updated_at: nowIso
+          };
+          await saveFallbackLeavesData(localLeaves);
+        }
+      }
+    } catch {}
+
+    try {
+      await logAuditAction({
+        module: 'attendance',
+        action: 'CANCEL_LEAVE',
+        details: `${row.emp_name || context.email} cancelled pending ${row.leave_type} leave (${row.from_date} to ${row.to_date}).`,
+        userEmail: context.email,
+        userName: row.emp_name || context.actor?.emp_name
+      });
+    } catch {}
+
+    return {
+      success: true,
+      data: updatedRow,
+      message: 'Pending leave application cancelled successfully.'
+    };
+  } catch (error) {
+    console.error('Cancel leave failed:', error);
+    return { success: false, error: error.code ? leaveServiceError(error) : error.message || 'Could not cancel leave application.' };
+  }
+}
+
+/**
  * 19. Grant Employee CPL (Compensatory Off) Credit (Admin / HOD)
  */
 export async function grantEmployeeCPLCredit({
@@ -4754,5 +5037,130 @@ export async function getTeamLeaveReport({ tenantId = null, userCompany = '', de
   } catch (error) {
     console.error('Error fetching team leave report:', error);
     return { success: false, error: error.message || 'Leave report is unavailable.' };
+  }
+}
+
+/**
+ * 22. Lightweight Delta Sync Digest for Smart Attendance (Conserves Egress & Enables 0ms Refresh)
+ * Checks only updated_at >= sinceIso - 90s across attendance_records, attendance_regularization_requests, and employee_leaves.
+ */
+export async function getAttendanceDeltaDigest({
+  tenantId = DEFAULT_TENANT_ID,
+  userCompany = '',
+  email = '',
+  sinceIso = '',
+  isHodOrManager = false
+} = {}) {
+  const serverNow = new Date().toISOString();
+  const parsedSince = Date.parse(sinceIso);
+  if (!sinceIso || !Number.isFinite(parsedSince)) {
+    return { success: true, requiresFullSync: true, serverNow, hasChanges: true };
+  }
+
+  // 90s safety overlap to avoid clock skew or mid-flight write misses
+  const lookbackIso = new Date(Math.max(0, parsedSince - 90 * 1000)).toISOString();
+  const effectiveTenantId = resolveTenantId(tenantId, userCompany);
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  const adminClient = getAdminClient();
+
+  try {
+    let attQuery = adminClient
+      .from('attendance_records')
+      .select('id, email, attendance_date, updated_at')
+      .gte('updated_at', lookbackIso)
+      .limit(500);
+    if (!isHodOrManager && cleanEmail) {
+      attQuery = attQuery.ilike('email', cleanEmail);
+    } else {
+      attQuery = attQuery.eq('tenant_id', effectiveTenantId);
+    }
+
+    let regQuery = adminClient
+      .from('attendance_regularization_requests')
+      .select('id, email, attendance_date, status, updated_at')
+      .eq('tenant_id', effectiveTenantId)
+      .gte('updated_at', lookbackIso)
+      .limit(500);
+    if (!isHodOrManager && cleanEmail) {
+      regQuery = regQuery.ilike('email', cleanEmail);
+    }
+
+    let leaveQuery = adminClient
+      .from('employee_leaves')
+      .select('id, email, from_date, to_date, status, updated_at')
+      .eq('tenant_id', effectiveTenantId)
+      .gte('updated_at', lookbackIso)
+      .limit(500);
+    if (!isHodOrManager && cleanEmail) {
+      leaveQuery = leaveQuery.ilike('email', cleanEmail);
+    }
+
+    const [attRes, regRes, leaveRes] = await Promise.all([attQuery, regQuery, leaveQuery]);
+
+    if (attRes.error || regRes.error || leaveRes.error) {
+      return {
+        success: false,
+        requiresFullSync: true,
+        serverNow,
+        hasChanges: true,
+        error: attRes.error?.message || regRes.error?.message || leaveRes.error?.message
+      };
+    }
+
+    const attRows = Array.isArray(attRes.data) ? attRes.data : [];
+    const regRows = Array.isArray(regRes.data) ? regRes.data : [];
+    const leaveRows = Array.isArray(leaveRes.data) ? leaveRes.data : [];
+
+    // Also include any recent local fallback mutations (e.g. dev/hybrid JSON records)
+    let localChangedAtt = false;
+    let localChangedReg = false;
+    try {
+      const local = await getFallbackData();
+      const lookbackMs = Date.parse(lookbackIso);
+      localChangedAtt = (local.records || []).some(r => {
+        if ((r.tenant_id || DEFAULT_TENANT_ID) !== effectiveTenantId) return false;
+        if (!isHodOrManager && cleanEmail && (r.email || '').trim().toLowerCase() !== cleanEmail) return false;
+        const ts = Date.parse(r.updated_at || r.created_at || 0);
+        return Number.isFinite(ts) && ts >= lookbackMs;
+      });
+      localChangedReg = (local.requests || []).some(r => {
+        if ((r.tenant_id || DEFAULT_TENANT_ID) !== effectiveTenantId) return false;
+        if (!isHodOrManager && cleanEmail && (r.email || '').trim().toLowerCase() !== cleanEmail) return false;
+        const ts = Date.parse(r.updated_at || r.created_at || 0);
+        return Number.isFinite(ts) && ts >= lookbackMs;
+      });
+    } catch {}
+
+    const hasAttendanceChanges = attRows.length > 0 || localChangedAtt;
+    const hasRegularizationChanges = regRows.length > 0 || localChangedReg;
+    const hasLeaveChanges = leaveRows.length > 0;
+    const hasChanges = hasAttendanceChanges || hasRegularizationChanges || hasLeaveChanges;
+
+    const changedDatesSet = new Set();
+    for (const r of attRows) {
+      if (r?.attendance_date) changedDatesSet.add(r.attendance_date);
+    }
+    for (const r of regRows) {
+      if (r?.attendance_date) changedDatesSet.add(r.attendance_date);
+    }
+
+    return {
+      success: true,
+      requiresFullSync: false,
+      serverNow,
+      hasChanges,
+      hasAttendanceChanges,
+      hasRegularizationChanges,
+      hasLeaveChanges,
+      changedDates: Array.from(changedDatesSet),
+      counts: {
+        attendance: attRows.length,
+        regularizations: regRows.length,
+        leaves: leaveRows.length
+      }
+    };
+  } catch (err) {
+    console.warn('Attendance delta digest fallback:', err);
+    return { success: false, requiresFullSync: true, serverNow, hasChanges: true };
   }
 }
