@@ -1695,23 +1695,30 @@ Thank you for choosing New Swan CRM!`;
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', alignItems: 'center' }}>
                           {(t.entitlement_details && t.entitlement_details.length > 0) ? (
-                            t.entitlement_details.map(det => (
-                              <span
-                                key={det.module_key}
-                                title={det.included_in_combo ? 'Included inside Lead + Direct Calling Combo (not double-billed)' : `Licensed for ${det.licensed_seats} users @ ₹${det.monthly_rate_per_user}/user/mo`}
-                                style={{
-                                  fontSize: '0.71rem',
-                                  background: det.included_in_combo ? '#f8fafc' : det.has_custom_seats ? '#eef2ff' : '#ecfdf5',
-                                  color: det.included_in_combo ? '#64748b' : det.has_custom_seats ? '#3730a3' : '#047857',
-                                  padding: '0.16rem 0.45rem',
-                                  borderRadius: '4px',
-                                  border: `1px solid ${det.included_in_combo ? '#e2e8f0' : det.has_custom_seats ? '#c7d2fe' : '#a7f3d0'}`,
-                                  fontWeight: 600
-                                }}
-                              >
-                                {det.display_name} • {det.included_in_combo ? 'Combo Incl.' : `${det.licensed_seats}u (₹${det.monthly_rate_per_user})`}
-                              </span>
-                            ))
+                            t.entitlement_details.map(det => {
+                              const usedSeats = Number(det.used_seats ?? 0);
+                              const licensedSeats = Number(det.licensed_seats || 0);
+                              const isOverLimit = !det.included_in_combo && licensedSeats > 0 && usedSeats > licensedSeats;
+                              return (
+                                <span
+                                  key={det.module_key}
+                                  title={det.included_in_combo
+                                    ? `Included inside Lead + Direct Calling Combo (${usedSeats} active users)`
+                                    : `Used: ${usedSeats} / Licensed: ${licensedSeats} users (${det.staff_used_seats ?? 0} staff + ${det.admin_used_seats ?? 0} admin) @ ₹${det.monthly_rate_per_user}/user/mo`}
+                                  style={{
+                                    fontSize: '0.71rem',
+                                    background: det.included_in_combo ? '#f8fafc' : isOverLimit ? '#fef2f2' : det.has_custom_seats ? '#eef2ff' : '#ecfdf5',
+                                    color: det.included_in_combo ? '#64748b' : isOverLimit ? '#b91c1c' : det.has_custom_seats ? '#3730a3' : '#047857',
+                                    padding: '0.16rem 0.45rem',
+                                    borderRadius: '4px',
+                                    border: `1px solid ${det.included_in_combo ? '#e2e8f0' : isOverLimit ? '#fecaca' : det.has_custom_seats ? '#c7d2fe' : '#a7f3d0'}`,
+                                    fontWeight: 600
+                                  }}
+                                >
+                                  {det.display_name} • {det.included_in_combo ? `Combo (${usedSeats}u)` : `${usedSeats}/${det.licensed_seats}u (₹${det.monthly_rate_per_user})`}
+                                </span>
+                              );
+                            })
                           ) : (
                             (t.entitlements || []).map(mod => (
                               <span key={mod} style={{ fontSize: '0.72rem', background: 'var(--bg-muted)', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid var(--border-light)' }}>
@@ -3044,19 +3051,30 @@ Thank you for choosing New Swan CRM!`;
                                 const pend = pendMap.get(m.process_code);
                                 return (
                                   <td key={m.process_code} style={{ padding: '0.55rem', textAlign: 'center' }}>
-                                    {det ? (
-                                      <span style={{
-                                        display: 'inline-block',
-                                        padding: '2px 7px',
-                                        borderRadius: '6px',
-                                        fontSize: '0.71rem',
-                                        fontWeight: 700,
-                                        background: det.included_in_combo ? '#f1f5f9' : det.has_custom_seats ? '#eef2ff' : '#dcfce7',
-                                        color: det.included_in_combo ? '#64748b' : det.has_custom_seats ? '#3730a3' : '#15803d'
-                                      }}>
-                                        {det.included_in_combo ? 'Combo' : `${det.licensed_seats}u`}
-                                      </span>
-                                    ) : pend ? (
+                                    {det ? (() => {
+                                      const used = Number(det.used_seats ?? 0);
+                                      const licensed = Number(det.licensed_seats || 0);
+                                      const isOver = !det.included_in_combo && licensed > 0 && used > licensed;
+                                      return (
+                                        <span
+                                          title={det.included_in_combo
+                                            ? `Included in Combo (${used} active users)`
+                                            : `${det.display_name}: ${used} / ${licensed} users used (${det.staff_used_seats ?? 0} staff + ${det.admin_used_seats ?? 0} admin)`}
+                                          style={{
+                                            display: 'inline-block',
+                                            padding: '2px 7px',
+                                            borderRadius: '6px',
+                                            fontSize: '0.71rem',
+                                            fontWeight: 700,
+                                            background: det.included_in_combo ? '#f1f5f9' : isOver ? '#fef2f2' : det.has_custom_seats ? '#eef2ff' : '#dcfce7',
+                                            color: det.included_in_combo ? '#64748b' : isOver ? '#b91c1c' : det.has_custom_seats ? '#3730a3' : '#15803d',
+                                            border: isOver ? '1px solid #fecaca' : 'none'
+                                          }}
+                                        >
+                                          {det.included_in_combo ? `Combo (${used}u)` : `${used}/${det.licensed_seats}u`}
+                                        </span>
+                                      );
+                                    })() : pend ? (
                                       <span style={{
                                         display: 'inline-block',
                                         padding: '2px 7px',
@@ -4570,7 +4588,27 @@ Thank you for choosing New Swan CRM!`;
                 </button>
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => {
+                    const sheet = typeof document !== 'undefined' ? document.getElementById('saas-invoice-sheet') : null;
+                    const printWin = sheet && typeof window !== 'undefined' ? window.open('', '_blank', 'width=920,height=1050') : null;
+                    if (printWin && sheet) {
+                      const clone = sheet.cloneNode(true);
+                      clone.querySelectorAll('select').forEach(sel => {
+                        const span = document.createElement('span');
+                        span.textContent = sel.options[sel.selectedIndex]?.text || sel.value || '';
+                        span.style.fontWeight = '700';
+                        sel.replaceWith(span);
+                      });
+                      const invTitle = activeInvoiceData?.invoice_number || `${invoiceTenant?.tenant_code || 'WS'}-Invoice`;
+                      printWin.document.open();
+                      printWin.document.write(`<!doctype html><html><head><meta charset="utf-8" /><title>${String(invTitle).replace(/</g, '&lt;')}</title><style>@page{size:A4 portrait;margin:12mm;}*{box-sizing:border-box;max-height:none !important;}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#111827;background:#fff;}table{width:100% !important;border-collapse:collapse;}thead{display:table-header-group;}tr{page-break-inside:avoid;break-inside:avoid;}div{overflow:visible !important;}</style></head><body>${clone.outerHTML}</body></html>`);
+                      printWin.document.close();
+                      printWin.focus();
+                      setTimeout(() => { try { printWin.print(); } catch { /* ignore */ } }, 250);
+                    } else {
+                      window.print();
+                    }
+                  }}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',

@@ -214,6 +214,22 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
           border: '#fde68a',
           dot: '#f59e0b'
         };
+      } else if (emp.isViewingToday !== false && (emp.activeSessionCount || 0) > 0) {
+        statusBadge = {
+          label: 'Signed In (Idle)',
+          color: '#475569',
+          bg: '#f1f5f9',
+          border: '#cbd5e1',
+          dot: '#f59e0b'
+        };
+      } else if (emp.isViewingToday !== false && emp.hasStaleSession) {
+        statusBadge = {
+          label: 'App/Tab Closed',
+          color: '#64748b',
+          bg: '#f8fafc',
+          border: '#e2e8f0',
+          dot: '#94a3b8'
+        };
       } else if (emp.hasActivityToday) {
         statusBadge = {
           label: 'Logged Out',
@@ -1007,7 +1023,7 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                               {emp.activeDurationFormatted}
                             </div>
                             <div style={{ fontSize: '0.7rem', color: emp.isTargetMet ? '#16a34a' : 'var(--text-secondary)', marginTop: '0.1rem' }}>
-                              {emp.isTargetMet ? '✓ 9h Target Met' : 'Active working'}
+                              {emp.isTargetMet ? '✓ 9h Target Met' : (emp.isSpanMet ? '9h+ Shift Span' : 'Active working')}
                             </div>
                           </div>
                         ) : (
@@ -1121,57 +1137,60 @@ export default function ActiveSessionsTab({ currentUserCompany = '', tenantId = 
                                         </span>
                                       )}
                                     </div>
-                                    <div style={{ fontSize: '0.69rem', color: 'var(--text-secondary)', marginTop: '0.1rem', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.25 }}>
-                                      {sessItem.ipAddress}
-                                      {sessItem.lastActiveFormatted && sessItem.lastActiveFormatted !== '--:--' ? ` • ${sessItem.lastActiveFormatted}` : ''}
-                                      {!sessItem.isActive ? ' • Out' : ''}
+                                      <div style={{ fontSize: '0.69rem', color: 'var(--text-secondary)', marginTop: '0.1rem', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.25 }}>
+                                        {sessItem.ipAddress}
+                                        {sessItem.lastActiveFormatted && sessItem.lastActiveFormatted !== '--:--' ? ` • ${sessItem.lastActiveFormatted}` : ''}
+                                        {sessItem.isStale ? ' • Closed' : (!sessItem.isRawActive ? ' • Logged Out' : '')}
+                                      </div>
                                     </div>
+                                    {showMultiControls && sessItem.isActive && emp.isViewingToday !== false && (
+                                      <button
+                                        type="button"
+                                        disabled={revokingId === sessItem.id}
+                                        onClick={() => handleForceLogout(emp, sessItem)}
+                                        title={`Logout ${sDev.runtime}${sDev.deviceIdTag ? ` #${sDev.deviceIdTag}` : ''}`}
+                                        style={{
+                                          padding: '0.2rem 0.45rem',
+                                          borderRadius: '5px',
+                                          border: '1px solid #fecaca',
+                                          backgroundColor: '#fef2f2',
+                                          color: '#dc2626',
+                                          fontSize: '0.68rem',
+                                          fontWeight: 600,
+                                          cursor: revokingId === sessItem.id ? 'not-allowed' : 'pointer',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '0.2rem',
+                                          flexShrink: 0,
+                                          whiteSpace: 'nowrap'
+                                        }}
+                                      >
+                                        <LogOut size={11} />
+                                        {revokingId === sessItem.id ? '...' : 'Logout Device'}
+                                      </button>
+                                    )}
                                   </div>
-                                  {showMultiControls && sessItem.isActive && (
-                                    <button
-                                      type="button"
-                                      disabled={revokingId === sessItem.id}
-                                      onClick={() => handleForceLogout(emp, sessItem)}
-                                      title={`Force Logout ${sDev.runtime}${sDev.deviceIdTag ? ` #${sDev.deviceIdTag}` : ''}`}
-                                      style={{
-                                        padding: '0.2rem 0.38rem',
-                                        borderRadius: '5px',
-                                        border: '1px solid #fecaca',
-                                        backgroundColor: '#fef2f2',
-                                        color: '#dc2626',
-                                        fontSize: '0.68rem',
-                                        fontWeight: 600,
-                                        cursor: revokingId === sessItem.id ? 'not-allowed' : 'pointer',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '0.2rem',
-                                        flexShrink: 0
-                                      }}
-                                    >
-                                      <LogOut size={11} />
-                                      {revokingId === sessItem.id ? '...' : 'Out'}
-                                    </button>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
-                              <DevIcon size={15} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
-                              <span style={{ fontSize: '0.78rem' }}>{dev.runtime || `${dev.browser} on ${dev.os}`}</span>
+                                );
+                              })}
                             </div>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3 }}>
-                              {(!emp.ipAddress || emp.ipAddress === 'Logged via Web App' || emp.ipAddress === 'Web App') ? '127.0.0.1 (Local)' : emp.ipAddress}
-                            </div>
-                          </>
-                        )}
-                      </td>
+                          ) : (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                                <DevIcon size={15} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+                                <span style={{ fontSize: '0.78rem' }}>{dev.runtime || `${dev.browser} on ${dev.os}`}</span>
+                              </div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.15rem', whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.3 }}>
+                                {(!emp.ipAddress || emp.ipAddress === 'Logged via Web App' || emp.ipAddress === 'Web App') ? '--' : emp.ipAddress}
+                              </div>
+                            </>
+                          )}
+                        </td>
 
-                      {/* Session Action */}
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
-                        {(emp.activeSessionCount || 0) > 1 ? (
+                        {/* Session Action */}
+                        <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                          {emp.isViewingToday === false ? (
+                            <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>--</span>
+                          ) : (emp.activeSessionCount || 0) > 1 ? (
                           <button
                             type="button"
                             disabled={revokingId === `all_${emp.userId}`}

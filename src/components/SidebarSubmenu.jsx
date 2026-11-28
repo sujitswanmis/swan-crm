@@ -170,7 +170,7 @@ function FloatingSubmenu({ trigger, submenu }) {
 function SidebarSubmenuContent({ collapsed, children }) {
   const desktop = useSyncExternalStore(subscribeDesktop, getDesktopSnapshot, getServerSnapshot);
   const items = React.Children.toArray(children);
-  const trigger = items.find(item => React.isValidElement(item) && item.type === 'button' && item.props.className === 'nav-item');
+  const trigger = items.find(item => React.isValidElement(item) && item.type === 'button' && item.props.className?.split(/\s+/).includes('nav-item'));
   const submenu = items.find(item => React.isValidElement(item) && item.props.className?.split(' ').includes('submenu-list'));
 
   if (collapsed && desktop && trigger && submenu) {

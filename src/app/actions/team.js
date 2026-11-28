@@ -8,6 +8,7 @@ import { saveImpersonateToken } from '@/lib/impersonateStore';
 import { getReportingFields } from '@/utils/reportingHierarchy';
 import { normalizeIndianPhoneNumber } from '@/app/api/plivo/phone-number';
 import { getSubItemPermissions } from '@/utils/permissionUtils';
+import { assertTenantWorkspaceSeatAvailable, assertTenantModuleSeatsAvailable } from '@/lib/saasSeatLimits';
 
 const getAdminClient = () => {
   return createSupabaseClient(
@@ -217,7 +218,10 @@ export async function getTeamMembers(requesterCompany = null, tenantId = null, b
       work_location_name: u.work_location_name || (u.module_access && u.module_access.work_location_name) || '',
       assigned_shift: u.assigned_shift || (u.module_access && u.module_access.assigned_shift) || null,
       salary_amount: (u.salary_amount !== null && u.salary_amount !== undefined) ? u.salary_amount : ((u.module_access && u.module_access.salary_amount !== undefined) ? u.module_access.salary_amount : null),
-      tracking_policy: u.tracking_policy || (u.module_access && u.module_access.tracking_policy) || 'PUNCH_ONLY',
+      tracking_policy:
+        u.module_access?.tracking_policy && (!u.tracking_policy || u.tracking_policy === 'PUNCH_ONLY')
+          ? u.module_access.tracking_policy
+          : (u.tracking_policy || (u.module_access && u.module_access.tracking_policy) || 'PUNCH_ONLY'),
       vehicle_type: resolvedVehicle,
       conveyance_rate_per_km: u.conveyance_rate_per_km ?? u.module_access?.conveyance_rate_per_km ?? (resolvedVehicle === 'NONE' ? 0 : 4.50),
       ...getReportingFields(u),
@@ -272,7 +276,14 @@ export async function getRecruitersList(company = null) {
 
 export async function updateUserRole(userId, newRole) {
   const adminClient = getAdminClient();
-  const { data: userRole } = await adminClient.from('user_roles').select('emp_name, email').eq('user_id', userId).maybeSingle();
+  const { data: userRole } = await adminClient.from('user_roles').select('*').eq('user_id', userId).maybeSingle();
+  if (userRole && String(userRole.role || '').toLowerCase() !== 'customer' && String(newRole || '').toLowerCase() !== 'customer') {
+    await assertTenantModuleSeatsAvailable(
+      adminClient,
+      userRole.tenant_id || userRole.module_access?._tenantId,
+      [{ beforeUser: userRole, afterUser: { ...userRole, role: newRole } }]
+    );
+  }
   const { error } = await adminClient
     .from('user_roles')
     .update({ role: newRole })
@@ -291,6 +302,14 @@ export async function updateUserRole(userId, newRole) {
 
 export async function toggleUserApproval(userId, isApproved) {
   const adminClient = getAdminClient();
+  if (isApproved === true) {
+    const { data: existingRow } = await adminClient.from('user_roles').select('*').eq('user_id', userId).maybeSingle();
+    if (existingRow && String(existingRow.role || '').toLowerCase() !== 'customer') {
+      const tHint = existingRow.tenant_id || existingRow.module_access?._tenantId;
+      await assertTenantWorkspaceSeatAvailable(adminClient, tHint, { activatingUserId: userId, sampleUser: existingRow });
+      await assertTenantModuleSeatsAvailable(adminClient, tHint, [{ beforeUser: existingRow, afterUser: { ...existingRow, is_approved: true } }]);
+    }
+  }
   const { error } = await adminClient
     .from('user_roles')
     .update({ is_approved: isApproved })
@@ -314,9 +333,15 @@ export async function updateUserApprovalStatus(userId, approvalStatus, meta = {}
 
   const { data: user } = await adminClient
     .from('user_roles')
-    .select('module_access, emp_name, email')
+    .select('*')
     .eq('user_id', userId)
     .maybeSingle();
+
+  if (isApproved && user && String(user.role || '').toLowerCase() !== 'customer') {
+    const tHint = user.tenant_id || user.module_access?._tenantId;
+    await assertTenantWorkspaceSeatAvailable(adminClient, tHint, { activatingUserId: userId, sampleUser: user });
+    await assertTenantModuleSeatsAvailable(adminClient, tHint, [{ beforeUser: user, afterUser: { ...user, is_approved: true } }]);
+  }
 
   const currentAccess = user?.module_access || {};
   const updatedModuleAccess = {
@@ -430,46 +455,19 @@ export async function registerEmployeeDetails(userId, email, details) {
   let targetTenantId = await resolveEmployeeTenantId(adminClient, details, existingUser?.tenant_id);
   const { trackingPolicy, vehicleType, conveyanceRate } = resolveFieldTrackingFields(details);
 
-  // SaaS Seat Limit Enforcement (Master Production New Swan Group is always exempt)
-  if (!isCustomer && targetTenantId !== '00000000-0000-0000-0000-000000000001') {
+  // SaaS Workspace Seat Limit Enforcement (Only Master HQ Supuja Creations / TNT00001 exempt)
+  if (!isCustomer) {
     try {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetTenantId);
-      const { data: tenant } = await adminClient
-        .from('tenants')
-        .select('id, name, tenant_code')
-        .eq(isUuid ? 'id' : 'tenant_code', targetTenantId)
-        .maybeSingle();
-      const dbTenantId = tenant?.id || (isUuid ? targetTenantId : null);
-
-      const { data: sub } = dbTenantId ? await adminClient
-        .from('tenant_subscriptions')
-        .select('user_seat_limit')
-        .eq('tenant_id', dbTenantId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle() : { data: null };
-
-      if (sub && typeof sub.user_seat_limit === 'number') {
-        const tenantName = tenant?.name || '';
-
-        let seatQuery = adminClient
-          .from('user_roles')
-          .select('user_id', { count: 'exact', head: true })
-          .neq('role', 'customer');
-        if (tenantName) {
-          seatQuery = seatQuery.ilike('company', tenantName);
-        }
-        const { count: activeCount } = await seatQuery;
-
-        if (activeCount !== null && activeCount >= sub.user_seat_limit) {
-          return {
-            success: false,
-            error: `आपकी सीट सीमा (${sub.user_seat_limit} Users) समाप्त हो चुकी है। अतिरिक्त सदस्य जोड़ने के लिए कृपया सीट्स बढ़ाएं (Add-on Seats)।`
-          };
-        }
-      }
+      await assertTenantWorkspaceSeatAvailable(adminClient, targetTenantId, {
+        incomingCount: 1,
+        activatingUserId: existingUser?.user_id || null,
+        sampleUser: { ...(existingUser || {}), tenant_id: targetTenantId, company: details.company || existingUser?.company || '' }
+      });
     } catch (seatErr) {
-      console.warn('Seat enforcement check notice:', seatErr.message);
+      return {
+        success: false,
+        error: seatErr.message
+      };
     }
   }
 
@@ -837,9 +835,17 @@ export async function updateEmpStatus(userId, empStatus, meta = {}) {
 
   const { data: user } = await adminClient
     .from('user_roles')
-    .select('module_access, emp_name, email')
+    .select('*')
     .eq('user_id', userId)
     .maybeSingle();
+
+  const normalizedNextStatus = String(empStatus || '').trim().toLowerCase();
+  const isActivating = !['inactive', 'trash', 'resigned', 'terminated', 'hold', 'suspended', 'deleted', 'draft'].includes(normalizedNextStatus);
+  if (isActivating && user && String(user.role || '').toLowerCase() !== 'customer') {
+    const tHint = user.tenant_id || user.module_access?._tenantId;
+    await assertTenantWorkspaceSeatAvailable(adminClient, tHint, { activatingUserId: userId, sampleUser: user });
+    await assertTenantModuleSeatsAvailable(adminClient, tHint, [{ beforeUser: user, afterUser: { ...user, emp_status: empStatus } }]);
+  }
 
   const currentAccess = user?.module_access || {};
   const updatedModuleAccess = {
@@ -890,8 +896,10 @@ export async function updateModuleAccess(userId, accessData) {
   const adminClient = getAdminClient();
 
   let mergedAccess = { ...(accessData || {}) };
+  let existingRow = null;
   try {
-    const { data: existingRow } = await adminClient.from('user_roles').select('module_access').eq('user_id', userId).maybeSingle();
+    const { data } = await adminClient.from('user_roles').select('*').eq('user_id', userId).maybeSingle();
+    existingRow = data || null;
     const prevAccess = existingRow?.module_access || {};
     for (const metaKey of PRESERVED_ACCESS_METADATA_KEYS) {
       if (mergedAccess[metaKey] === undefined && prevAccess[metaKey] !== undefined) {
@@ -900,10 +908,27 @@ export async function updateModuleAccess(userId, accessData) {
     }
   } catch (_) {}
 
+  if (existingRow && String(existingRow.role || '').toLowerCase() !== 'customer') {
+    try {
+      await assertTenantModuleSeatsAvailable(
+        adminClient,
+        existingRow.tenant_id || mergedAccess._tenantId || existingRow.module_access?._tenantId,
+        [{ beforeUser: existingRow, afterUser: { ...existingRow, module_access: mergedAccess } }]
+      );
+    } catch (seatErr) {
+      return { success: false, error: seatErr.message };
+    }
+  }
+
   const updatePayload = { 
     module_access: mergedAccess,
     can_self_reset_password: mergedAccess.can_self_reset_password === true,
-    can_import_export: mergedAccess.can_import_export === true
+    can_import_export: mergedAccess.can_import_export === true,
+    ...(mergedAccess.tracking_policy ? { tracking_policy: mergedAccess.tracking_policy } : {}),
+    ...(mergedAccess.vehicle_type ? { vehicle_type: mergedAccess.vehicle_type } : {}),
+    ...(mergedAccess.conveyance_rate_per_km !== undefined && mergedAccess.conveyance_rate_per_km !== '' && mergedAccess.conveyance_rate_per_km !== null
+      ? { conveyance_rate_per_km: Number(mergedAccess.conveyance_rate_per_km) }
+      : {})
   };
 
   let { error } = await adminClient
@@ -948,6 +973,25 @@ export async function createAccountAdmin(emailOrData, maybePassword, maybeDetail
     details = maybeDetails || {};
   }
   const adminClient = getAdminClient();
+  const isCustCreate = String(details?.role || '').toLowerCase() === 'customer';
+  if (!isCustCreate && email) {
+    try {
+      const { data: preExisting } = await adminClient
+        .from('user_roles')
+        .select('user_id, tenant_id, company, role, is_approved, emp_status, module_access')
+        .eq('email', email)
+        .maybeSingle();
+      if (!preExisting) {
+        const targetTenantId = await resolveEmployeeTenantId(adminClient, details, null);
+        await assertTenantWorkspaceSeatAvailable(adminClient, targetTenantId, {
+          incomingCount: 1,
+          sampleUser: { tenant_id: targetTenantId, company: details?.company || '' }
+        });
+      }
+    } catch (seatErr) {
+      return { success: false, error: seatErr.message };
+    }
+  }
   const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
     email,
     password,
@@ -1151,7 +1195,18 @@ export async function bulkImportEmployeesFast(records = []) {
       return { success: true, updated: true, emp_id, emp_name, email, rowIndex };
     }
 
-    // New User -> Create auth user + insert user_roles
+    // New User -> Pre-check workspace seat limit before creating auth user
+    const targetTenantId = await resolveEmployeeTenantId(adminClient, { company }, null);
+    try {
+      await assertTenantWorkspaceSeatAvailable(adminClient, targetTenantId, {
+        incomingCount: 1,
+        sampleUser: { tenant_id: targetTenantId, company }
+      });
+    } catch (seatErr) {
+      return { success: false, error: seatErr.message, emp_id, emp_name, email, rowIndex };
+    }
+
+    // Create auth user + insert user_roles
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
       email,
       password,
@@ -1187,7 +1242,10 @@ export async function bulkImportEmployeesFast(records = []) {
     return { success: true, created: true, emp_id, emp_name, email, rowIndex };
   };
 
-  const outcomes = await Promise.all(records.map(r => processOne(r)));
+  const outcomes = [];
+  for (const r of records) {
+    outcomes.push(await processOne(r));
+  }
 
   outcomes.forEach(o => {
     if (o.success) {

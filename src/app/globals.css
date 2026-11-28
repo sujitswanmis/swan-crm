@@ -64,6 +64,16 @@
   --neumorphic-shadow-hover: var(--shadow-md);
   --neumorphic-shadow-active: inset 0 1px 2px rgba(15, 23, 42, 0.08);
   --neumorphic-border: 1px solid var(--border-light);
+
+  /* Standardized Z-Index Scale */
+  --z-sticky: 30;
+  --z-header: 40;
+  --z-drawer: 50;
+  --z-popover: 1000;
+  --z-floating: 9000;
+  --z-modal: 10000;
+  --z-toast: 11000;
+  --z-critical-modal: 12000;
 }
 
 /* THEMES */
@@ -739,6 +749,11 @@ body {
   letter-spacing: -0.011em;
 }
 
+:where(button, a, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
 /* Premium Form Controls & Interactive Inputs */
 input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   background-color: var(--bg-surface);
@@ -767,19 +782,41 @@ select option {
 }
 
 /* Premium Button Hover Micro-animations */
-button:not(.nav-item):not(.mobile-menu-toggle) {
+button:not(.nav-item):not(.mobile-menu-toggle):not([data-flat="true"]):not(.btn-ghost):not(.btn-icon) {
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
   border-radius: 9px;
   color: var(--text-primary);
 }
 
-button:not(.nav-item):not(.mobile-menu-toggle):hover {
+button:not(.nav-item):not(.mobile-menu-toggle):not([data-flat="true"]):not(.btn-ghost):not(.btn-icon):hover {
   filter: brightness(1.05);
   box-shadow: var(--shadow-sm);
 }
 
-button:not(.nav-item):not(.mobile-menu-toggle):active {
+button:not(.nav-item):not(.mobile-menu-toggle):not([data-flat="true"]):not(.btn-ghost):not(.btn-icon):active {
   transform: scale(0.98) !important;
+}
+
+.header-icon-btn:not([data-open="true"]):hover,
+.global-search-trigger-btn:hover {
+  border-color: var(--accent-color) !important;
+  background-color: var(--nav-active-bg) !important;
+  color: var(--accent-color) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.header-profile-btn:not([data-open="true"]):hover {
+  border-color: var(--accent-color) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.theme-menu-item:hover,
+.profile-menu-item:hover {
+  background-color: var(--nav-active-bg) !important;
+}
+
+.profile-menu-item-danger:hover {
+  background-color: rgba(239, 68, 68, 0.12) !important;
 }
 
 /* Fix sidebar header border and sidebar items contrast */
@@ -933,6 +970,7 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
 .app-layout {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -1729,14 +1767,14 @@ input[type="checkbox"]:hover, input[type="radio"]:hover {
 /* ========================================================================= */
 /* EXECUTIVE PRO SAAS TABLE SYSTEM (High-Contrast Header, Zebra Rows, Glow)   */
 /* ========================================================================= */
-table {
+table:not([data-plain-table="true"]) {
   border-collapse: separate !important;
   border-spacing: 0 !important;
   width: 100%;
 }
 
 /* Sticky Header Freeze with Distinct Elevated SaaS Style */
-table th, .table-header-cell {
+table:not([data-plain-table="true"]) th, .table-header-cell {
   position: sticky !important;
   top: 0 !important;
   z-index: 30 !important;
@@ -1757,12 +1795,12 @@ table th, .table-header-cell {
   vertical-align: middle;
 }
 
-table th:last-child,
+table:not([data-plain-table="true"]) th:last-child,
 .table-header-cell:last-child {
   border-right: none !important;
 }
 
-table th:hover, .table-header-cell:hover {
+table:not([data-plain-table="true"]) th:hover, .table-header-cell:hover {
   background-color: var(--th-hover-bg) !important;
 }
 
@@ -1815,16 +1853,16 @@ td.bulk-preview-sticky-col-2 {
 }
 
 /* Clear Alternating Zebra Row Contrast Across All Tables */
-table tbody tr:nth-child(odd) {
+table:not([data-plain-table="true"]) tbody tr:nth-child(odd) {
   background-color: var(--table-row-odd, var(--bg-surface));
 }
 
-table tbody tr:nth-child(even) {
+table:not([data-plain-table="true"]) tbody tr:nth-child(even) {
   background-color: var(--table-row-even, var(--bg-primary));
 }
 
 /* Cell Borders & Numerical Formatting */
-table tbody td {
+table:not([data-plain-table="true"]) tbody td {
   border-bottom: 1px solid var(--border-light);
   border-right: 1px solid var(--border-light);
   color: var(--text-primary);
@@ -1832,18 +1870,18 @@ table tbody td {
   transition: background-color 0.15s ease;
 }
 
-table tbody tr td:last-child {
+table:not([data-plain-table="true"]) tbody tr td:last-child {
   border-right: none;
 }
 
 /* High-Performance Interactive Row Hover Illumination */
-table tbody tr {
+table:not([data-plain-table="true"]) tbody tr {
   transition: background-color 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease !important;
 }
 
-table tbody tr:hover:not(.active-row):not([data-selected="true"]):not(.is-selected),
-table tbody tr:hover:not(.active-row):not([data-selected="true"]):not(.is-selected) td,
-.table-responsive-wrapper table tbody tr:hover:not(.active-row):not([data-selected="true"]):not(.is-selected) td {
+table:not([data-plain-table="true"]) tbody tr:hover:not(.active-row):not([data-selected="true"]):not(.is-selected),
+table:not([data-plain-table="true"]) tbody tr:hover:not(.active-row):not([data-selected="true"]):not(.is-selected) td,
+.table-responsive-wrapper table:not([data-plain-table="true"]) tbody tr:hover:not(.active-row):not([data-selected="true"]):not(.is-selected) td {
   background-color: var(--table-row-hover, rgba(37, 99, 235, 0.08)) !important;
 }
 

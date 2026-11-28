@@ -156,7 +156,8 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
           type: 'OFFLINE_SESSION_READY',
           userId,
           pageUrl: window.location.href,
-          assetUrls: assetUrls.slice(-100)
+          baseShellUrl: `${window.location.origin}/home`,
+          assetUrls: assetUrls.slice(-120)
         });
         lastPreparedPage = window.location.href;
       } catch (error) {
@@ -165,7 +166,7 @@ export default function OfflineSyncCenter({ onSyncComplete }) {
     };
     const afterNavigation = () => {
       clearTimeout(clickTimer);
-      clickTimer = setTimeout(prepareCurrentPage, 100);
+      clickTimer = setTimeout(prepareCurrentPage, 350);
     };
     const afterReconnect = () => {
       lastPreparedPage = '';

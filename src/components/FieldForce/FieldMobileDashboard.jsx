@@ -13,6 +13,8 @@ import {
   getTodayUserAttendanceStatus,
 } from '@/app/actions/fieldTasks';
 import { getPublishedForms } from '@/app/actions/fieldFormStudio';
+import { punchIn, punchOut } from '@/app/actions/attendance';
+import { canPerformOfflineAction, enqueueOfflineAction, showSyncToast } from '@/utils/offlineSync';
 import { burnWatermarkOnPhoto } from '@/utils/cameraWatermark';
 import { queueOfflineAction, getPendingQueue, syncOfflineQueue, isOnline } from '@/utils/offlineLocationVault';
 import LeadFormModal from '@/components/LeadFormModal';
@@ -406,13 +408,67 @@ export default function FieldMobileDashboard({
   }, [currentUserId, company]);
 
   // 2. Fetch Attendance, Completed Visits, Assigned Tasks & Custom Forms
+  const [isPunchingAttendance, setIsPunchingAttendance] = useState(false);
+  const [punchFeedback, setPunchFeedback] = useState(null);
+
+  const readLocalCachedAttendance = useCallback(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+      const normEmail = String(userEmail || '').trim().toLowerCase();
+      const effTenant = tenantId || '00000000-0000-0000-0000-000000000001';
+      if (normEmail) {
+        const direct = window.localStorage.getItem(`att_today_record_${effTenant}_${normEmail}_${todayIST}`);
+        if (direct) return JSON.parse(direct);
+      }
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (k && k.startsWith('att_today_record_') && k.endsWith(`_${todayIST}`)) {
+          const parsed = JSON.parse(window.localStorage.getItem(k) || 'null');
+          if (parsed && ((currentUserId && String(parsed.user_id) === String(currentUserId)) || (normEmail && String(parsed.email || '').toLowerCase() === normEmail))) {
+            return parsed;
+          }
+        }
+      }
+    } catch {}
+    return null;
+  }, [userEmail, tenantId, currentUserId]);
+
   const loadAttendanceStatus = useCallback(async () => {
     if (!currentUserId && !userEmail) {
       setAttendanceStatus(prev => ({ ...prev, checked: true, loading: false }));
       return;
     }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const cached = readLocalCachedAttendance();
+      if (cached) {
+        setAttendanceStatus({
+          checked: true,
+          loading: false,
+          isPunchedIn: Boolean(cached.in_time && !cached.out_time),
+          isPunchedOut: Boolean(cached.out_time),
+          inTime: cached.in_time || null,
+          outTime: cached.out_time || null,
+          totalWorkingMinutes: cached.total_working_minutes || 0,
+        });
+        return;
+      }
+    }
     try {
       const res = await getTodayUserAttendanceStatus(currentUserId, userEmail);
+      const localPending = readLocalCachedAttendance();
+      if (!res?.isPunchedIn && !res?.isPunchedOut && localPending?._offlinePending) {
+        setAttendanceStatus({
+          checked: true,
+          loading: false,
+          isPunchedIn: Boolean(localPending.in_time && !localPending.out_time),
+          isPunchedOut: Boolean(localPending.out_time),
+          inTime: localPending.in_time || null,
+          outTime: localPending.out_time || null,
+          totalWorkingMinutes: localPending.total_working_minutes || 0,
+        });
+        return;
+      }
       setAttendanceStatus({
         checked: true,
         loading: false,
@@ -424,9 +480,34 @@ export default function FieldMobileDashboard({
       });
     } catch (e) {
       console.warn('Failed to verify attendance status:', e);
-      setAttendanceStatus(prev => ({ ...prev, checked: true, loading: false }));
+      const cached = readLocalCachedAttendance();
+      if (cached) {
+        setAttendanceStatus({
+          checked: true,
+          loading: false,
+          isPunchedIn: Boolean(cached.in_time && !cached.out_time),
+          isPunchedOut: Boolean(cached.out_time),
+          inTime: cached.in_time || null,
+          outTime: cached.out_time || null,
+          totalWorkingMinutes: cached.total_working_minutes || 0,
+        });
+      } else {
+        setAttendanceStatus(prev => ({ ...prev, checked: true, loading: false }));
+      }
     }
-  }, [currentUserId, userEmail]);
+  }, [currentUserId, userEmail, readLocalCachedAttendance]);
+
+  // Keep attendance status synced across tabs / Home Quick Punch / Smart Attendance
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onAttSync = () => { void loadAttendanceStatus(); };
+    window.addEventListener('crm_attendance_changed', onAttSync);
+    window.addEventListener('attendance_updated', onAttSync);
+    return () => {
+      window.removeEventListener('crm_attendance_changed', onAttSync);
+      window.removeEventListener('attendance_updated', onAttSync);
+    };
+  }, [loadAttendanceStatus]);
 
   // Realtime Live Duty Duration Counter (Matching Screen 1)
   useEffect(() => {
@@ -725,14 +806,228 @@ export default function FieldMobileDashboard({
     setMainView('CHECK_IN');
   }, [fetchLiveGPS, applyTaskPipelineDefaults]);
 
-  const handleAttendanceGateClick = useCallback(() => {
-    alert('Attendance Punch-In Required: Please mark today\'s Smart Attendance before starting a field visit.');
-    if (onNavigateToAttendance) {
-      onNavigateToAttendance();
-    } else if (typeof window !== 'undefined') {
-      window.location.href = '/attendance';
+  const handleDirectAttendancePunch = useCallback(async (type = 'IN') => {
+    if (isPunchingAttendance) return;
+    if (!userEmail && !currentUserId) {
+      setPunchFeedback({ type: 'error', message: 'User session missing. Please refresh the page.' });
+      return;
     }
-  }, [onNavigateToAttendance]);
+
+    setIsPunchingAttendance(true);
+    setPunchFeedback(null);
+
+    // 1. Resolve live GPS coordinates quickly (reuse active fix or poll with 6s cap)
+    let resolvedLat = userLat;
+    let resolvedLng = userLng;
+    if ((resolvedLat == null || resolvedLng == null) && typeof navigator !== 'undefined' && navigator.geolocation) {
+      try {
+        const pos = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 6000,
+            maximumAge: 15000
+          });
+        });
+        if (pos?.coords) {
+          resolvedLat = pos.coords.latitude;
+          resolvedLng = pos.coords.longitude;
+          setUserLat(resolvedLat);
+          setUserLng(resolvedLng);
+          if (pos.coords.accuracy != null) setGpsAccuracy(pos.coords.accuracy);
+          setGpsError(null);
+        }
+      } catch {
+        // Fallback gracefully if device GPS unavailable or permission pending
+      }
+    }
+
+    const hasValidGps = resolvedLat != null && resolvedLng != null && Number.isFinite(Number(resolvedLat)) && Number.isFinite(Number(resolvedLng));
+    const locationStr = hasValidGps
+      ? `GPS (${Number(resolvedLat).toFixed(4)}, ${Number(resolvedLng).toFixed(4)})`
+      : 'Field Executive Console';
+    const methodStr = hasValidGps ? 'GPS_PUNCH' : 'WEB_PUNCH';
+    const effTenant = tenantId || '00000000-0000-0000-0000-000000000001';
+    const normEmail = String(userEmail || '').trim().toLowerCase();
+    const isOut = type === 'OUT';
+
+    const saveOfflineFieldPunch = async () => {
+      const check = canPerformOfflineAction('attendancePunch');
+      if (!check.allowed) {
+        setPunchFeedback({ type: 'error', message: check.reason || 'Offline punch is disabled by admin policy.' });
+        return false;
+      }
+
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const todayDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+      const cachedRec = readLocalCachedAttendance();
+      const effectiveInIso = attendanceStatus?.inTime || cachedRec?.in_time || null;
+
+      if (isOut && !effectiveInIso) {
+        setPunchFeedback({ type: 'error', message: 'Punch In record missing for Punch Out.' });
+        return false;
+      }
+
+      const totalMinutes = isOut && effectiveInIso
+        ? Math.max(0, Math.round((now.getTime() - new Date(effectiveInIso).getTime()) / 60000))
+        : 0;
+
+      const offlinePayload = {
+        email: normEmail,
+        userId: currentUserId,
+        empName: userName,
+        tenant_id: effTenant,
+        attendance_date: todayDate,
+        ...(isOut
+          ? {
+              out_time: nowIso,
+              out_location: locationStr,
+              out_method: methodStr,
+              total_working_minutes: totalMinutes
+            }
+          : {
+              in_time: nowIso,
+              in_location: locationStr,
+              in_method: methodStr
+            }),
+        status: 'PRESENT',
+        remarks: `Field Executive Console (${isOut ? 'Out' : 'In'} Offline)`
+      };
+
+      const queued = await enqueueOfflineAction('create', 'attendance', offlinePayload);
+      if (!queued) {
+        setPunchFeedback({ type: 'error', message: 'Offline storage could not save this punch. Please retry.' });
+        return false;
+      }
+
+      const localRecord = {
+        ...(cachedRec || {}),
+        id: cachedRec?.id || `temp-${Date.now()}`,
+        user_id: currentUserId,
+        tenant_id: effTenant,
+        emp_name: userName,
+        email: normEmail,
+        attendance_date: todayDate,
+        in_time: isOut ? effectiveInIso : nowIso,
+        out_time: isOut ? nowIso : null,
+        total_working_minutes: isOut ? totalMinutes : 0,
+        status: 'PRESENT',
+        remarks: offlinePayload.remarks,
+        _offlinePending: type
+      };
+
+      try {
+        if (typeof window !== 'undefined' && normEmail) {
+          window.localStorage.setItem(`att_today_record_${effTenant}_${normEmail}_${todayDate}`, JSON.stringify(localRecord));
+        }
+      } catch {}
+
+      setNowMs(Date.now());
+      setAttendanceStatus({
+        checked: true,
+        loading: false,
+        isPunchedIn: !isOut,
+        isPunchedOut: isOut,
+        inTime: localRecord.in_time,
+        outTime: localRecord.out_time,
+        totalWorkingMinutes: localRecord.total_working_minutes
+      });
+
+      try {
+        window.dispatchEvent(new CustomEvent('attendance_updated'));
+        window.dispatchEvent(new CustomEvent('crm_attendance_changed', { detail: { type, record: localRecord } }));
+      } catch {}
+
+      const timeNow = now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+      setPunchFeedback({
+        type: 'success',
+        message: `⚡ Offline Punch ${isOut ? 'Out' : 'In'} saved at ${timeNow}! Auto-sync queued.`
+      });
+      showSyncToast(`⚡ Offline Punch-${isOut ? 'Out' : 'In'} saved & auto-syncing!`, 'info', 4000);
+      return true;
+    };
+
+    try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await saveOfflineFieldPunch();
+        return;
+      }
+
+      const punchFn = isOut ? punchOut : punchIn;
+      const res = await punchFn({
+        email: userEmail,
+        userId: currentUserId,
+        empName: userName,
+        userCompany: company,
+        location: locationStr,
+        method: methodStr,
+        tenantId: effTenant,
+        branchCode: branchCode || branchAccess?.primaryBranchCode || null,
+        branchName: branchAccess?.primaryBranchName || null
+      });
+
+      if (res?.success) {
+        const rec = res.data || {};
+        const now = new Date();
+        const todayDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+        const timeNow = now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+
+        try {
+          if (typeof window !== 'undefined' && normEmail && res.data) {
+            window.localStorage.setItem(`att_today_record_${effTenant}_${normEmail}_${todayDate}`, JSON.stringify(res.data));
+          }
+        } catch {}
+
+        setNowMs(Date.now());
+        setAttendanceStatus({
+          checked: true,
+          loading: false,
+          isPunchedIn: Boolean((rec.in_time || (!isOut && now)) && !rec.out_time && !isOut),
+          isPunchedOut: Boolean(rec.out_time || isOut),
+          inTime: rec.in_time || attendanceStatus?.inTime || now.toISOString(),
+          outTime: isOut ? (rec.out_time || now.toISOString()) : null,
+          totalWorkingMinutes: rec.total_working_minutes || 0
+        });
+
+        try {
+          window.dispatchEvent(new CustomEvent('attendance_updated'));
+          window.dispatchEvent(new CustomEvent('crm_attendance_changed', { detail: { type, record: res.data || null } }));
+        } catch {}
+
+        setPunchFeedback({
+          type: 'success',
+          message: `✓ Punched ${isOut ? 'out' : 'in'} successfully at ${timeNow}!`
+        });
+        await loadAttendanceStatus();
+      } else {
+        setPunchFeedback({
+          type: 'error',
+          message: res?.error || `Failed to punch ${isOut ? 'out' : 'in'}.`
+        });
+      }
+    } catch (err) {
+      const msg = String(err?.message || '');
+      const isNetworkErr = (typeof navigator !== 'undefined' && !navigator.onLine) || err?.name === 'TypeError' || /failed to fetch|network|load failed/i.test(msg);
+      if (isNetworkErr) {
+        await saveOfflineFieldPunch();
+      } else {
+        setPunchFeedback({
+          type: 'error',
+          message: msg || `Error executing punch ${isOut ? 'out' : 'in'}.`
+        });
+      }
+    } finally {
+      setIsPunchingAttendance(false);
+    }
+  }, [
+    isPunchingAttendance, userEmail, currentUserId, userLat, userLng, tenantId,
+    readLocalCachedAttendance, attendanceStatus, userName, company,
+    branchCode, branchAccess, loadAttendanceStatus
+  ]);
+
+  const handleAttendanceGateClick = useCallback(() => {
+    void handleDirectAttendancePunch('IN');
+  }, [handleDirectAttendancePunch]);
 
   const handleStartCheckIn = useCallback(async (overrides = {}) => {
     if (attendanceStatus.checked && attendanceStatus.isPunchedOut) {
@@ -1339,7 +1634,11 @@ export default function FieldMobileDashboard({
 
       {activeTab !== 'ACTIVE_VISIT' ? (
         <div className={styles.container}>
-          <AttendancePolicyBanner attendanceStatus={attendanceStatus} onPunchInClick={handleAttendanceGateClick} />
+          <AttendancePolicyBanner
+            attendanceStatus={attendanceStatus}
+            onPunchInClick={() => void handleDirectAttendancePunch('IN')}
+            isPunching={isPunchingAttendance}
+          />
 
           {mainView === 'HOME' && (
             <ConsoleHomeCockpitView
@@ -1347,8 +1646,11 @@ export default function FieldMobileDashboard({
               company={company}
               attendanceStatus={attendanceStatus}
               liveDutyDuration={liveDutyDuration}
-              onPunchInClick={handleAttendanceGateClick}
-              onPunchOutClick={handleAttendanceGateClick}
+              onPunchInClick={() => void handleDirectAttendancePunch('IN')}
+              onPunchOutClick={() => void handleDirectAttendancePunch('OUT')}
+              isPunching={isPunchingAttendance}
+              punchFeedback={punchFeedback}
+              onDismissPunchFeedback={() => setPunchFeedback(null)}
               onOpenCheckInModal={() => {
                 setIsCheckInModalOpen(true);
                 void loadModuleEntities(selectedModule, '');

@@ -12,6 +12,7 @@ import {
   DEFAULT_PROCESS_CATALOG,
   DEFAULT_CYCLE_DISCOUNTS
 } from '@/utils/saasEntitlements';
+import { computeTenantModuleUsage } from '@/lib/saasSeatLimits';
 
 const SMTP_LIMITS_FILE_PATH = path.join(process.cwd(), 'src', 'config', 'tenant_smtp_limits.json');
 
@@ -497,7 +498,7 @@ export async function getAllTenantsWithSubscriptions() {
 
     const { data: userCounts, error: userCountError } = await admin
       .from('user_roles')
-      .select('tenant_id, company, user_id, role, emp_official_mail_id, is_approved, emp_status');
+      .select('tenant_id, company, user_id, role, emp_official_mail_id, email, is_approved, emp_status, module_access');
 
     const { data: pendingEvents } = await admin
       .from('saas_billing_events')
@@ -554,7 +555,8 @@ export async function getAllTenantsWithSubscriptions() {
         .filter(e => e.tenant_id === t.id && e.is_enabled && billableKeys.has(e.module_key))
         .map(e => e.module_key);
 
-      const activeUserCount = (userCounts || []).filter(u => userBelongsToSaasTenant(u,t,tenantsList) && isSaasUserActive(u)).length;
+      const activeTenantUsers = (userCounts || []).filter(u => userBelongsToSaasTenant(u, t, tenantsList) && isSaasUserActive(u));
+      const activeUserCount = activeTenantUsers.length;
 
       const isMasterHq = isMasterHqTenant(t);
       let daysRemaining = null;
@@ -627,13 +629,17 @@ export async function getAllTenantsWithSubscriptions() {
           const licensedSeats = customLicensed > 0 ? customLicensed : seatLimitValue;
           const isRedundantCombo = hasComboLeadCalling && (p.process_code === 'LEADS_ONLY' || p.process_code === 'CALLING_STANDALONE');
           const effectiveRate = pricingConfig?.tenant_rates?.[t.id]?.[p.process_code] ?? p.monthly_rate_per_user;
+          const usage = computeTenantModuleUsage(activeTenantUsers, p.process_code, { includeUsersList: false });
           return {
             module_key: p.process_code,
             display_name: p.display_name,
             monthly_rate_per_user: effectiveRate,
             licensed_seats: licensedSeats,
             has_custom_seats: Boolean(customLicensed > 0),
-            included_in_combo: isRedundantCombo
+            included_in_combo: isRedundantCombo,
+            used_seats: usage.used_seats,
+            staff_used_seats: usage.staff_used_seats,
+            admin_used_seats: usage.admin_used_seats
           };
         });
       const pendingRequests = (pendingEvents || [])
@@ -2967,7 +2973,7 @@ export async function getOwnTenantBillingSummary(tenantId = DEFAULT_TENANT_ID) {
       admin.from('tenants').select('id,tenant_code,name'),
       admin.from('tenant_subscriptions').select('*').eq('tenant_id', target).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       admin.from('tenant_entitlements').select('module_key,is_enabled,config_json').eq('tenant_id', target),
-      admin.from('user_roles').select('tenant_id,company,role,is_approved,emp_status'),
+      admin.from('user_roles').select('user_id,tenant_id,company,emp_id,emp_name,emp_official_mail_id,email,role,is_approved,emp_status,module_access'),
       getProcessCatalog(target),
       readLocalSmtpLimits()
     ]);
@@ -2986,24 +2992,29 @@ export async function getOwnTenantBillingSummary(tenantId = DEFAULT_TENANT_ID) {
     );
     const grantAll = isMasterHq || (!(entRows || []).length && target === DEFAULT_TENANT_ID);
     const seatLimit = subRow?.user_seat_limit || (target === DEFAULT_TENANT_ID ? 200 : 5);
+    const activeTenantUsers = (usersList || []).filter(u =>
+      userBelongsToSaasTenant(u, tenantRow, allTenants || []) && isSaasUserActive(u)
+    );
+    const activeUsersCount = activeTenantUsers.length;
     const enabledModules = catalogList
       .filter(p => grantAll || enabledKeys.has(p.process_code))
       .map(p => {
         const entRow = (entRows || []).find(r => r.module_key === p.process_code);
         const customSeats = Number(entRow?.config_json?.licensed_seats);
+        const usage = computeTenantModuleUsage(activeTenantUsers, p.process_code, { includeUsersList: true });
         return {
           process_code: p.process_code,
           display_name: p.display_name,
           category: p.category,
           monthly_rate_per_user: Number(p.monthly_rate_per_user || 0),
           licensed_seats: customSeats > 0 ? customSeats : seatLimit,
-          has_custom_seats: Boolean(customSeats > 0)
+          has_custom_seats: Boolean(customSeats > 0),
+          used_seats: usage.used_seats,
+          staff_used_seats: usage.staff_used_seats,
+          admin_used_seats: usage.admin_used_seats,
+          assigned_users: usage.assigned_users
         };
       });
-
-    const activeUsersCount = (usersList || []).filter(u =>
-      userBelongsToSaasTenant(u, tenantRow, allTenants || []) && isSaasUserActive(u)
-    ).length;
 
     const telEnt = (entRows || []).find(r => r.module_key === 'TELEPHONY_CONFIG');
     const telConfig = telEnt?.config_json || {};

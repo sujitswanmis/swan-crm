@@ -271,7 +271,7 @@ export const ConsoleHeader = memo(function ConsoleHeader({
   );
 });
 
-export const AttendancePolicyBanner = memo(function AttendancePolicyBanner({ attendanceStatus, onPunchInClick }) {
+export const AttendancePolicyBanner = memo(function AttendancePolicyBanner({ attendanceStatus, onPunchInClick, isPunching = false }) {
   if (!attendanceStatus?.checked) return null;
 
   if (attendanceStatus.isPunchedOut) {
@@ -302,9 +302,9 @@ export const AttendancePolicyBanner = memo(function AttendancePolicyBanner({ att
             <p>Mark today&apos;s Smart Attendance punch-in to unlock client visit check-ins and GPS reporting.</p>
           </div>
         </div>
-        <button type="button" className={styles.noticeCta} onClick={onPunchInClick}>
-          <Clock size={14} aria-hidden="true" />
-          Punch In Attendance
+        <button type="button" className={styles.noticeCta} onClick={onPunchInClick} disabled={isPunching}>
+          {isPunching ? <RefreshCw size={14} className={styles.spinning} aria-hidden="true" /> : <Clock size={14} aria-hidden="true" />}
+          {isPunching ? 'Punching In...' : 'Punch In Attendance'}
         </button>
       </section>
     );
@@ -331,6 +331,9 @@ export const ConsoleHomeCockpitView = memo(function ConsoleHomeCockpitView({
   liveDutyDuration = '00 s',
   onPunchInClick,
   onPunchOutClick,
+  isPunching = false,
+  punchFeedback = null,
+  onDismissPunchFeedback = null,
   onOpenCheckInModal,
   activeFieldVisit,
   onResumeActiveVisit,
@@ -418,9 +421,11 @@ export const ConsoleHomeCockpitView = memo(function ConsoleHomeCockpitView({
               className={styles.punchActionBtn}
               data-type="out"
               onClick={onPunchOutClick}
+              disabled={isPunching}
               title="Punch Out"
             >
-              Punch Out
+              {isPunching && <RefreshCw size={13} className={styles.spinning} aria-hidden="true" />}
+              {isPunching ? 'Punching Out...' : 'Punch Out'}
             </button>
           ) : (
             <button
@@ -428,12 +433,46 @@ export const ConsoleHomeCockpitView = memo(function ConsoleHomeCockpitView({
               className={styles.punchActionBtn}
               data-type="in"
               onClick={onPunchInClick}
+              disabled={isPunching}
               title={isPunchedOut ? 'Resume Duty (Punch In Again)' : 'Punch In'}
             >
-              Punch In
+              {isPunching && <RefreshCw size={13} className={styles.spinning} aria-hidden="true" />}
+              {isPunching ? 'Punching In...' : 'Punch In'}
             </button>
           )}
         </div>
+
+        {punchFeedback?.message && (
+          <div
+            role="status"
+            style={{
+              marginTop: 10,
+              padding: '8px 12px',
+              borderRadius: 10,
+              fontSize: 12,
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              background: punchFeedback.type === 'error' ? 'rgba(254, 226, 226, 0.96)' : 'rgba(220, 252, 231, 0.96)',
+              color: punchFeedback.type === 'error' ? '#991b1b' : '#166534',
+              border: `1px solid ${punchFeedback.type === 'error' ? '#fca5a5' : '#86efac'}`
+            }}
+          >
+            <span>{punchFeedback.message}</span>
+            {onDismissPunchFeedback && (
+              <button
+                type="button"
+                onClick={onDismissPunchFeedback}
+                aria-label="Dismiss notice"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', padding: 2, display: 'flex' }}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        )}
       </section>
 
       {/* 2. Customer Check In Action Card */}

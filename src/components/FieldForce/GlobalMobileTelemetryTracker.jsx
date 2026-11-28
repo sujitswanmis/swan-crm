@@ -289,6 +289,65 @@ export default function GlobalMobileTelemetryTracker({
     };
     checkImmediateFieldPermission();
 
+    const tokenStorageKey = `spc_field_telemetry_token_${userId}`;
+    const getTodayISTStr = () => {
+      try {
+        return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+      } catch {
+        return new Date().toISOString().slice(0, 10);
+      }
+    };
+
+    const readCachedTelemetryToken = () => {
+      try {
+        const raw = window.localStorage?.getItem(tokenStorageKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        // Signed token TTL is 7 days; reuse safely up to 5 days when offline or unreachable
+        if (parsed?.token && parsed?.savedAt && (Date.now() - Number(parsed.savedAt)) < 5 * 24 * 3600 * 1000) {
+          return String(parsed.token);
+        }
+      } catch {}
+      return null;
+    };
+
+    const saveCachedTelemetryToken = (tok) => {
+      if (!tok) return;
+      try {
+        window.localStorage?.setItem(
+          tokenStorageKey,
+          JSON.stringify({ token: tok, savedAt: Date.now(), company: company || 'TNT00001', branchCode: branchCode || '' })
+        );
+      } catch {}
+    };
+
+    const readLocalDutyFallback = () => {
+      const todayStr = getTodayISTStr();
+      try {
+        const explicitFlag = window.localStorage?.getItem(`spc_duty_punched_in_${userId}_${todayStr}`);
+        if (explicitFlag === '1') return true;
+        if (explicitFlag === '0') return false;
+
+        for (let i = 0; i < (window.localStorage?.length || 0); i++) {
+          const k = window.localStorage.key(i);
+          if (k && k.startsWith('att_today_record_') && k.endsWith(`_${todayStr}`)) {
+            const rec = JSON.parse(window.localStorage.getItem(k) || 'null');
+            if (rec && (!rec.user_id || String(rec.user_id) === String(userId))) {
+              if (rec.in_time && !rec.out_time) return true;
+              if (rec.out_time) return false;
+            }
+          }
+        }
+      } catch {}
+      return null;
+    };
+
+    const persistLocalDutyFlag = (isOnDuty) => {
+      try {
+        window.localStorage?.setItem(`spc_duty_punched_in_${userId}_${getTodayISTStr()}`, isOnDuty ? '1' : '0');
+      } catch {}
+    };
+
     const startOrRefreshNativeService = async (forceRefresh = false) => {
       const plugin = getNativeTrackerPlugin();
       if (!plugin || disposed || nativeStartInFlight) return nativeServiceActive;
@@ -310,12 +369,24 @@ export default function GlobalMobileTelemetryTracker({
 
       nativeStartInFlight = true;
       try {
-        const tokenRes = await issueFieldTelemetryToken({
-          userId,
-          company: company || 'TNT00001',
-          branchCode: branchCode || null
-        });
-        if (disposed || !tokenRes?.success || !tokenRes?.token) return false;
+        let activeToken = null;
+        if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+          try {
+            const tokenRes = await issueFieldTelemetryToken({
+              userId,
+              company: company || 'TNT00001',
+              branchCode: branchCode || null
+            });
+            if (tokenRes?.success && tokenRes?.token) {
+              activeToken = tokenRes.token;
+              saveCachedTelemetryToken(activeToken);
+            }
+          } catch {}
+        }
+        if (!activeToken) {
+          activeToken = readCachedTelemetryToken();
+        }
+        if (disposed || !activeToken) return false;
 
         lastNativeTokenAt = Date.now();
         const startRes = await plugin.startTracking({
@@ -323,7 +394,7 @@ export default function GlobalMobileTelemetryTracker({
           company: company || 'TNT00001',
           branchCode: branchCode || '',
           endpointUrl: window.location.origin,
-          token: tokenRes.token
+          token: activeToken
         });
         if (startRes?.started || startRes?.running) {
           nativeServiceActive = true;
@@ -621,17 +692,36 @@ export default function GlobalMobileTelemetryTracker({
 
     const refreshDutyAndTracking = async (forceStart = false) => {
       if (disposed) return;
-      try {
-        const attRes = await getTodayUserAttendanceStatus(userId);
-        if (disposed) return;
-        isPunchedInRef.current = Boolean(attRes?.isPunchedIn);
-      } catch (e) {
-        console.warn('[GlobalMobileTelemetryTracker] Attendance status check fallback:', e?.message || e);
+      let resolvedOnline = false;
+      if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+        try {
+          const attRes = await getTodayUserAttendanceStatus(userId);
+          if (disposed) return;
+          isPunchedInRef.current = Boolean(attRes?.isPunchedIn);
+          persistLocalDutyFlag(isPunchedInRef.current);
+          resolvedOnline = true;
+        } catch (e) {
+          console.warn('[GlobalMobileTelemetryTracker] Attendance status check fallback:', e?.message || e);
+        }
+      }
+      if (!resolvedOnline) {
+        const localDuty = readLocalDutyFallback();
+        if (localDuty !== null) {
+          isPunchedInRef.current = localDuty;
+        }
       }
 
       // If employee is OFF DUTY (not punched in, or punched out for the day):
       if (!isPunchedInRef.current) {
         const plugin = getNativeTrackerPlugin();
+        // Flush any buffered offline breadcrumbs BEFORE stopping the native upload executor
+        await syncQueuedPings();
+        if (plugin && nativeServiceActive && typeof plugin.flushNow === 'function') {
+          try {
+            await plugin.flushNow();
+            await new Promise((r) => setTimeout(r, 1200));
+          } catch {}
+        }
         if (plugin && typeof plugin.stopTracking === 'function') {
           try { await plugin.stopTracking(); } catch {}
         }
@@ -659,7 +749,20 @@ export default function GlobalMobileTelemetryTracker({
       }
     };
 
-    // Initial verification of attendance duty & tracking activation
+    // Initial verification of attendance duty & tracking activation (also warm token cache while online)
+    if (typeof navigator === 'undefined' || navigator.onLine !== false) {
+      if (!readCachedTelemetryToken()) {
+        issueFieldTelemetryToken({
+          userId,
+          company: company || 'TNT00001',
+          branchCode: branchCode || null
+        })
+          .then((res) => {
+            if (res?.success && res?.token) saveCachedTelemetryToken(res.token);
+          })
+          .catch(() => {});
+      }
+    }
     void refreshDutyAndTracking(true);
     syncQueuedPings();
 
@@ -679,7 +782,15 @@ export default function GlobalMobileTelemetryTracker({
     } catch { /* Older WebViews still report on resume and the independent timer. */ }
 
     // Listen to real-time punch-in and punch-out events in AttendanceModule & WorkspaceHome Quick Punch
-    const handleAttendanceChange = () => {
+    const handleAttendanceChange = (ev) => {
+      const punchType = ev?.detail?.type;
+      if (punchType === 'IN') {
+        isPunchedInRef.current = true;
+        persistLocalDutyFlag(true);
+      } else if (punchType === 'OUT') {
+        isPunchedInRef.current = false;
+        persistLocalDutyFlag(false);
+      }
       void refreshDutyAndTracking(true);
     };
     window.addEventListener('crm_attendance_changed', handleAttendanceChange);

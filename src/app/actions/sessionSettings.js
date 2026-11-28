@@ -346,6 +346,18 @@ export async function recordUserActivityHeartbeat({
     const newActive = prevActive + Math.max(0, Math.round(activeSecondsIncrement));
     const newIdle = prevIdle + Math.max(0, Math.round(idleSecondsIncrement));
 
+    // Prevent an idle/background second device (e.g. minimized Android App) from
+    // overwriting another actively working device's 'working' status within 90s.
+    let effectiveStatus = status || 'working';
+    if (effectiveStatus === 'away' && activeSecondsIncrement <= 0 && existingDaily?.status === 'working' && existingDaily?.last_active) {
+      const prevLastMs = new Date(existingDaily.last_active).getTime();
+      if (Number.isFinite(prevLastMs) && (Date.now() - prevLastMs) <= 90000) {
+        effectiveStatus = 'working';
+      }
+    }
+
+    const clientIp = await resolveClientIp();
+
     // Upsert into Supabase user_daily_activity
     try {
       await adminClient.from('user_daily_activity').upsert({
@@ -355,7 +367,7 @@ export async function recordUserActivityHeartbeat({
         activity_date: today,
         active_seconds: newActive,
         idle_seconds: newIdle,
-        status: status || 'working',
+        status: effectiveStatus,
         device: device || 'Web Browser',
         last_active: nowIso,
         updated_at: nowIso
@@ -366,7 +378,6 @@ export async function recordUserActivityHeartbeat({
 
     // 3. Update Supabase table `user_sessions` heartbeat
     try {
-      const clientIp = await resolveClientIp();
       if (existingSess) {
         await adminClient.from('user_sessions').update({
           last_active: nowIso,
@@ -411,8 +422,9 @@ export async function recordUserActivityHeartbeat({
         idleSeconds: newIdle,
         firstSeen,
         lastSeen: nowIso,
-        status: status || 'working',
-        device: device || 'Web Browser'
+        status: effectiveStatus,
+        device: device || 'Web Browser',
+        lastIp: clientIp
       };
       await fs.writeFile(ACTIVITY_FILE_PATH, JSON.stringify(activityData, null, 2), 'utf-8');
     } catch (fileErr) { /* ignore */ }
@@ -423,7 +435,7 @@ export async function recordUserActivityHeartbeat({
       todaySummary: {
         activeSeconds: newActive,
         idleSeconds: newIdle,
-        status: status || 'working',
+        status: effectiveStatus,
         firstSeen,
         lastSeen: nowIso
       } 
@@ -734,6 +746,8 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
     const adminClient = getAdminClient();
     const now = Date.now();
     const THREE_MINUTES_MS = 3 * 60 * 1000;
+    const TEN_MINUTES_MS = 10 * 60 * 1000;
+    const includesToday = finalEndDate >= todayStr && startDate <= todayStr;
     
     // Calculate count of calendar days in range
     const daysCount = isSingleDay 
@@ -743,6 +757,8 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
     const TARGET_WORK_SECONDS = daysCount * 9 * 3600; // Scaled by number of days (9h per day)
     const dateStartIso = new Date(`${startDate}T00:00:00+05:30`).toISOString();
     const dateEndIso = new Date(`${finalEndDate}T23:59:59.999+05:30`).toISOString();
+    const dateStartMs = new Date(dateStartIso).getTime();
+    const dateEndMs = new Date(dateEndIso).getTime();
 
     // ⚡ HIGH PERFORMANCE: Fetch all database tables concurrently in parallel
     const [rolesResult, activityFileResult, dbRecordsResult, auditLogsResult, sessionsResult, breakLogsResult] = await Promise.allSettled([
@@ -769,11 +785,11 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       isSingleDay
         ? adminClient
             .from('user_daily_activity')
-            .select('user_id, email, active_seconds, idle_seconds, status, created_at, last_active')
+            .select('user_id, email, active_seconds, idle_seconds, status, device, created_at, last_active')
             .eq('activity_date', startDate)
         : adminClient
             .from('user_daily_activity')
-            .select('user_id, email, active_seconds, idle_seconds, status, created_at, last_active, activity_date')
+            .select('user_id, email, active_seconds, idle_seconds, status, device, created_at, last_active, activity_date')
             .gte('activity_date', startDate)
             .lte('activity_date', finalEndDate),
 
@@ -876,6 +892,8 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
               firstSeen: item.firstSeen,
               lastSeen: item.lastSeen,
               status: item.status,
+              device: item.device || '',
+              lastIp: item.lastIp || '',
               currentBreak: item.currentBreak,
               daysActiveCount: 0
             };
@@ -893,6 +911,8 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
             rec.lastSeen = item.lastSeen;
             rec.status = item.status;
             rec.currentBreak = item.currentBreak;
+            if (item.device) rec.device = item.device;
+            if (item.lastIp) rec.lastIp = item.lastIp;
           }
           if ((item.activeSeconds > 0 || (item.breaks && item.breaks.length > 0))) {
             rec.daysActiveCount += 1;
@@ -909,7 +929,7 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         const k2 = r.email ? r.email.toLowerCase() : null;
         [k1, k2].filter(Boolean).forEach(k => {
           if (!dbMap[k]) {
-            dbMap[k] = { active_seconds: 0, idle_seconds: 0, created_at: r.created_at, last_active: r.last_active, status: r.status };
+            dbMap[k] = { active_seconds: 0, idle_seconds: 0, created_at: r.created_at, last_active: r.last_active, status: r.status, device: r.device || '' };
           }
           dbMap[k].active_seconds += (r.active_seconds || 0);
           dbMap[k].idle_seconds += (r.idle_seconds || 0);
@@ -919,6 +939,7 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
           if (r.last_active && (!dbMap[k].last_active || new Date(r.last_active) > new Date(dbMap[k].last_active))) {
             dbMap[k].last_active = r.last_active;
             dbMap[k].status = r.status;
+            if (r.device) dbMap[k].device = r.device;
           }
         });
       });
@@ -961,16 +982,20 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
     const formatSessionRow = (s) => {
       const lastActiveMs = s?.last_active ? new Date(s.last_active).getTime() : 0;
       const isActiveFlag = s?.is_active === true;
-      const isLiveRow = isActiveFlag && lastActiveMs > 0 && (now - lastActiveMs) <= THREE_MINUTES_MS;
+      const isLiveRow = includesToday && isActiveFlag && lastActiveMs > 0 && (now - lastActiveMs) <= THREE_MINUTES_MS;
+      const isFreshActive = includesToday && isActiveFlag && lastActiveMs > 0 && (now - lastActiveMs) <= TEN_MINUTES_MS;
+      const isStale = isActiveFlag && !isFreshActive;
       return {
         id: s.id,
         device: s.device || 'Web Browser',
-        ipAddress: (!s.ip_address || s.ip_address === 'Logged via Web App' || s.ip_address === 'Web App') ? '127.0.0.1 (Local)' : s.ip_address,
+        ipAddress: (!s.ip_address || s.ip_address === 'Logged via Web App' || s.ip_address === 'Web App') ? '--' : s.ip_address,
         lastActive: s.last_active || null,
         lastActiveFormatted: s.last_active
           ? new Date(s.last_active).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true })
           : '--:--',
-        isActive: isActiveFlag,
+        isActive: isFreshActive,
+        isRawActive: isActiveFlag,
+        isStale,
         isLive: isLiveRow
       };
     };
@@ -1001,7 +1026,8 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       return {
         formatted,
         activeSessionCount: activeList.length,
-        liveSessionCount: activeList.filter((s) => s.isLive).length
+        liveSessionCount: activeList.filter((s) => s.isLive).length,
+        hasStaleSession: formatted.some((s) => s.isStale)
       };
     };
     if (sessionsResult.status === 'fulfilled' && sessionsResult.value?.data) {
@@ -1033,7 +1059,8 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       const {
         formatted: formattedUserSessions,
         activeSessionCount,
-        liveSessionCount
+        liveSessionCount,
+        hasStaleSession
       } = getUserFormattedSessions(userId, emailLower);
       const auditFirst = (userId && firstAuditMap[userId]) || firstAuditMap[emailLower] || null;
       const auditLast = (userId && lastAuditMap[userId]) || lastAuditMap[emailLower] || null;
@@ -1045,8 +1072,16 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       const currentBreak = auditBreakInfo.currentBreak || f.currentBreak || null;
       const breaksList = (auditBreakInfo.breaks && auditBreakInfo.breaks.length > 0) ? auditBreakInfo.breaks : (Array.isArray(f.breaks) ? f.breaks : []);
 
+      // Clamp single-day timestamps within [dateStartMs, dateEndMs] so next-day activity never leaks into yesterday
+      const inRange = (ts) => {
+        if (!ts) return false;
+        const ms = new Date(ts).getTime();
+        if (!Number.isFinite(ms)) return false;
+        return !isSingleDay || (ms >= dateStartMs && ms <= dateEndMs);
+      };
+
       // Calculate earliest firstSeen (In-Time)
-      const allFirstCandidates = [auditFirst, f.firstSeen, d.created_at, sess ? (sess.created_at || sess.last_active) : null].filter(Boolean);
+      const allFirstCandidates = [auditFirst, f.firstSeen, d.created_at, sess ? (sess.created_at || sess.last_active) : null].filter(inRange);
       let firstSeen = null;
       if (allFirstCandidates.length > 0) {
         allFirstCandidates.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
@@ -1054,7 +1089,7 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       }
 
       // Calculate most recent lastSeen
-      const allLastCandidates = [auditLast, d.last_active, f.lastSeen, sess ? sess.last_active : null].filter(Boolean);
+      const allLastCandidates = [auditLast, d.last_active, f.lastSeen, sess ? sess.last_active : null].filter(inRange);
       let lastSeen = null;
       if (allLastCandidates.length > 0) {
         allLastCandidates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
@@ -1065,17 +1100,19 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
       const hasActivityToday = activeSeconds > 0 || idleSeconds > 0 || !!sess || !!auditFirst || breaksList.length > 0 || !!currentBreak;
 
       let liveStatus = 'offline';
-      if (currentBreak) {
-        liveStatus = 'on_break';
-      } else if (liveSessionCount > 0) {
-        liveStatus = status === 'away' ? 'away' : 'working';
-      } else if (hasActivityToday && lastSeen) {
-        const lastSeenTime = new Date(lastSeen).getTime();
-        const diffMs = now - lastSeenTime;
-        if (diffMs <= THREE_MINUTES_MS && (sess?.is_active !== false)) {
+      if (includesToday) {
+        if (currentBreak) {
+          liveStatus = 'on_break';
+        } else if (liveSessionCount > 0) {
           liveStatus = status === 'away' ? 'away' : 'working';
-        } else {
-          liveStatus = 'offline';
+        } else if (hasActivityToday && lastSeen) {
+          const lastSeenTime = new Date(lastSeen).getTime();
+          const diffMs = now - lastSeenTime;
+          if (diffMs <= THREE_MINUTES_MS && (sess?.is_active !== false)) {
+            liveStatus = status === 'away' ? 'away' : 'working';
+          } else {
+            liveStatus = 'offline';
+          }
         }
       }
 
@@ -1119,10 +1156,11 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         spanSeconds = activeScreenSec + idleAwaySec + recordedBreakSec;
       }
 
-      // Calculate Target Work Progress (Target is scaled by daysCount: e.g. 1 day = 9h, 7 days = 63h)
+      // Calculate Target Work Progress (Strict: only active work counts towards 9h Target Met)
       const workProgressPercent = Math.min(100, Math.round((activeScreenSec / TARGET_WORK_SECONDS) * 100));
       const lunchTakenMinutes = Math.round(recordedBreakSec / 60);
-      const isTargetMet = activeScreenSec >= TARGET_WORK_SECONDS || spanSeconds >= TARGET_WORK_SECONDS;
+      const isTargetMet = activeScreenSec >= TARGET_WORK_SECONDS;
+      const isSpanMet = spanSeconds >= TARGET_WORK_SECONDS;
       const isHalfDay = activeScreenSec >= (TARGET_WORK_SECONDS / 2) && activeScreenSec < TARGET_WORK_SECONDS;
 
       // Shift Evaluation Status
@@ -1155,17 +1193,20 @@ export async function getEmployeeDailyActivitySummary(startDateOrTarget = null, 
         shiftStatus,
         hasActivityToday,
         sessionId: sess?.id || null,
-        device: sess?.device || 'Web Browser',
-        ipAddress: (!sess?.ip_address || sess.ip_address === 'Logged via Web App' || sess.ip_address === 'Web App') ? '127.0.0.1 (Local)' : sess.ip_address,
+        device: sess?.device || d.device || f.device || 'Web Browser',
+        ipAddress: (!sess?.ip_address || sess.ip_address === 'Logged via Web App' || sess.ip_address === 'Web App') ? (f.lastIp || '--') : sess.ip_address,
         sessions: formattedUserSessions,
         activeSessionCount,
         liveSessionCount,
+        hasStaleSession,
+        isViewingToday: includesToday,
         currentBreak,
         breaks: breaksList,
         breakCount: breaksList.length,
         workProgressPercent,
         lunchTakenMinutes,
         isTargetMet,
+        isSpanMet,
         daysCount,
         daysActiveCount: f.daysActiveCount || (hasActivityToday ? 1 : 0),
         activeDurationFormatted: formatDuration(activeScreenSec),

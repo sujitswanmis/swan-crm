@@ -35,6 +35,7 @@ import StatusChangeModal from './modals/StatusChangeModal';
 import ApprovalStatusModal from './modals/ApprovalStatusModal';
 
 import { isFeatureEntitled } from '@/utils/saasEntitlements';
+import { getOwnTenantBillingSummary } from '@/app/actions/saasSubscription';
 import { DEFAULT_DEPARTMENTS } from './utils/userManagementUtils';
 import { filterVisibleSubTabs, getSubItemPermissions, enforcePolicyPlatformSafety } from '@/utils/permissionUtils';
 import { MODULES_CONFIG } from '@/config/modulesConfig';
@@ -92,6 +93,7 @@ export default function UserManagementContainer({
     !activeBranchScope ? rawUsers : (rawUsers || []).filter(u => matchesUserBranchMembership(u, activeBranchScope))
   ), [rawUsers, activeBranchScope]);
   const [loading, setLoading] = useState(!initialUsers || initialUsers.length === 0);
+  const [moduleUsage, setModuleUsage] = useState([]);
   const [activeTab, setActiveTab] = useState(() => {
     const nextTab = normalizeSubTab(activeSubTab);
     return visibleSubpages.some(t => t.id === nextTab) ? nextTab : (visibleSubpages[0]?.id || 'user_manage');
@@ -483,10 +485,29 @@ export default function UserManagementContainer({
     }
   }, []);
 
+  const fetchModuleUsage = useCallback(async () => {
+    if (!tenantId || (!isAdmin && !effectiveIsMasterAdmin)) return;
+    try {
+      const res = await getOwnTenantBillingSummary(tenantId);
+      if (res?.success && Array.isArray(res?.subscription?.enabled_modules)) {
+        setModuleUsage(res.subscription.enabled_modules);
+      }
+    } catch {
+      // Non-blocking seat badge metadata
+    }
+  }, [tenantId, isAdmin, effectiveIsMasterAdmin]);
+
   useEffect(() => {
     fetchUsers(!initialUsers || initialUsers.length === 0);
     fetchDepartments();
-  }, [fetchUsers, fetchDepartments, initialUsers]);
+    fetchModuleUsage();
+  }, [fetchUsers, fetchDepartments, fetchModuleUsage, initialUsers]);
+
+  useEffect(() => {
+    const onBillingUpdated = () => fetchModuleUsage();
+    window.addEventListener('saas-billing-updated', onBillingUpdated);
+    return () => window.removeEventListener('saas-billing-updated', onBillingUpdated);
+  }, [fetchModuleUsage]);
 
   // Helper: Resolve current updater name with Emp ID (e.g. "Sujit Kumar Gupta - 50479")
   const resolveCurrentActorName = useCallback(() => {
@@ -620,7 +641,12 @@ export default function UserManagementContainer({
               try { await updateUserRole(newUserId, role); } catch (e) { console.warn('Role update notice:', e); }
             }
             if (role_template_id) {
-              try { await assignRoleTemplate(newUserId, role_template_id); } catch (e) { console.warn('Role template assign notice:', e); }
+              try {
+                const roleRes = await assignRoleTemplate(newUserId, role_template_id);
+                if (roleRes && !roleRes.success) {
+                  showToast(roleRes.error || 'Role template could not be applied due to seat limits.', 'error');
+                }
+              } catch (e) { console.warn('Role template assign notice:', e); }
             } else if (role_preset_key) {
               const preset = ROLE_PRESETS.find(p => p.key === role_preset_key);
               if (preset) {
@@ -652,7 +678,10 @@ export default function UserManagementContainer({
                     role_preset_name: preset.name
                   };
                   const safeAccess = enforcePolicyPlatformSafety(nextAccess, addPayload.tracking_policy);
-                  await updateModuleAccess(newUserId, safeAccess);
+                  const accessRes = await updateModuleAccess(newUserId, safeAccess);
+                  if (accessRes && !accessRes.success) {
+                    showToast(accessRes.error || 'Role permissions could not be applied due to seat limits.', 'error');
+                  }
                 } catch (e) {
                   console.warn('Role preset assign notice:', e);
                 }
@@ -662,6 +691,7 @@ export default function UserManagementContainer({
           showToast(`Account created for ${formData.emp_name}!`, 'success');
           setAddEditModal({ isOpen: false, user: null });
           fetchUsers(false);
+          fetchModuleUsage();
         } else {
           alert(res?.error || 'Failed to create user account');
         }
@@ -703,11 +733,15 @@ export default function UserManagementContainer({
         showToast('Permissions Matrix updated & broadcasted successfully!', 'success');
         setPermissionModal({ isOpen: false, user: null });
         fetchUsers(false);
+        fetchModuleUsage();
       } else {
-        showToast(res?.error || 'Failed to save permissions', 'error');
+        const errMsg = res?.error || 'Failed to save permissions';
+        showToast(errMsg, 'error');
+        throw new Error(errMsg);
       }
     } catch (err) {
-      showToast('Error saving permissions: ' + err.message, 'error');
+      showToast(err.message || 'Error saving permissions', 'error');
+      throw err;
     } finally {
       setSavingPermissions(false);
     }
@@ -1227,6 +1261,7 @@ export default function UserManagementContainer({
         saving={savingPermissions}
         customRoles={roleTemplates}
         isMasterAdmin={effectiveIsMasterAdmin}
+        moduleUsage={moduleUsage}
       />
 
       {roleModalOpen && (

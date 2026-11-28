@@ -308,65 +308,144 @@ export async function getEmployee360Route(userId, dateStr, { rejectUnsupportedDe
     const geoJobs = [];
     let currentStoppage = null;
 
+    // Parse multi-punch sessions from remarks (e.g. [P1 IN: 01:58 am] [P1 OUT: 01:59 am] ... [P3 IN: 11:53 am] [P3 OUT: 07:27 pm])
+    // so accidental micro-punches & off-duty intervals between separate punches are never misreported as GPS signal gaps.
+    const multiPunchSessions = [];
+    if (attRecord?.remarks && typeof attRecord.remarks === 'string') {
+      const tokenRegex = /\[P(\d+)\s+(IN|OUT):\s*(\d{1,2}):(\d{2})\s*(am|pm)/gi;
+      const byIdx = new Map();
+      let m;
+      while ((m = tokenRegex.exec(attRecord.remarks)) !== null) {
+        const idx = Number(m[1]);
+        const kind = m[2].toUpperCase();
+        let hr = Number(m[3]);
+        const mn = Number(m[4]);
+        const ampm = m[5].toLowerCase();
+        if (ampm === 'pm' && hr < 12) hr += 12;
+        if (ampm === 'am' && hr === 12) hr = 0;
+        const tsMs = Date.parse(`${dateStr}T${String(hr).padStart(2, '0')}:${String(mn).padStart(2, '0')}:00+05:30`);
+        if (!Number.isFinite(tsMs)) continue;
+        const entry = byIdx.get(idx) || { idx, inMs: null, outMs: null };
+        if (kind === 'IN') entry.inMs = tsMs;
+        else entry.outMs = tsMs;
+        byIdx.set(idx, entry);
+      }
+      for (const s of [...byIdx.values()].sort((a, b) => a.idx - b.idx)) {
+        if (s.inMs != null) multiPunchSessions.push(s);
+      }
+    }
+
+    // Skip leading accidental micro-punches (<= 5 mins followed by >= 30 mins off-duty gap) when a real duty session follows
+    let effectiveStartSession = null;
+    if (multiPunchSessions.length >= 2) {
+      let startIdx = 0;
+      while (startIdx < multiPunchSessions.length - 1) {
+        const cur = multiPunchSessions[startIdx];
+        const nxt = multiPunchSessions[startIdx + 1];
+        const durMin = cur.outMs != null ? (cur.outMs - cur.inMs) / 60000 : Infinity;
+        const nextHasRealShift = multiPunchSessions.slice(startIdx + 1).some((s, j, arr) => {
+          const gapFromPrevMin = ((s.inMs || 0) - (cur.outMs || cur.inMs)) / 60000;
+          const sDurMin = s.outMs != null ? (s.outMs - s.inMs) / 60000 : 60;
+          return gapFromPrevMin >= 30 && (sDurMin > 5 || j === arr.length - 1);
+        });
+        if (durMin <= 5 && nextHasRealShift) {
+          startIdx++;
+        } else {
+          break;
+        }
+      }
+      if (startIdx > 0) {
+        effectiveStartSession = multiPunchSessions[startIdx];
+      }
+    }
+    const activeMultiSessions = effectiveStartSession
+      ? multiPunchSessions.filter((s) => s.idx >= effectiveStartSession.idx)
+      : multiPunchSessions;
+
+    const effectiveInTimeIso = (() => {
+      if (!effectiveStartSession) return attRecord?.in_time || null;
+      const nearPing = pings.find((p) => {
+        const pt = p?.recorded_at ? Date.parse(p.recorded_at) : NaN;
+        return Number.isFinite(pt) && Math.abs(pt - effectiveStartSession.inMs) <= 120000;
+      });
+      return nearPing?.recorded_at || new Date(effectiveStartSession.inMs).toISOString();
+    })();
+
     // Parse Punch-In coordinates from attendance (geocode deferred into parallel batch)
     let punchInPoint = null;
     let punchOutPoint = null;
-    if (attRecord?.in_location) {
-      const matchIn = attRecord.in_location.match(/GPS\s*\(\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*\)/i);
-      if (matchIn) {
-        const pLat = parseFloat(matchIn[1]);
-        const pLng = parseFloat(matchIn[2]);
-        if (!isNaN(pLat) && !isNaN(pLng)) {
-          punchInPoint = {
-            lat: pLat,
-            lng: pLng,
-            time: attRecord.in_time,
-            speed: 0,
-            accuracy_meters: 25,
-            isOffline: false,
-            label: 'Punch In'
-          };
-          const punchInEntry = {
-            type: 'punch_in',
-            label: `Punch In (${new Date(attRecord.in_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })})`,
-            startTime: attRecord.in_time,
-            lat: pLat,
-            lng: pLng,
-            locationName: attRecord.in_location,
-            shiftName: attRecord.shift_name,
-            status: attRecord.status
-          };
-          timeline.push(punchInEntry);
-          geoJobs.push(
-            resolveLocationName(pLat, pLng).then(name => {
-              if (name) punchInEntry.locationName = name;
-            })
-          );
-        }
-      } else {
+    if (attRecord?.in_location || effectiveStartSession) {
+      const nearStartPing = effectiveStartSession
+        ? pings.find((p) => {
+            const pt = p?.recorded_at ? Date.parse(p.recorded_at) : NaN;
+            return Number.isFinite(pt) && Math.abs(pt - effectiveStartSession.inMs) <= 120000;
+          })
+        : null;
+      const matchIn = !nearStartPing && attRecord?.in_location
+        ? attRecord.in_location.match(/GPS\s*\(\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*\)/i)
+        : null;
+      const pLat = nearStartPing ? Number(nearStartPing.latitude) : (matchIn ? parseFloat(matchIn[1]) : NaN);
+      const pLng = nearStartPing ? Number(nearStartPing.longitude) : (matchIn ? parseFloat(matchIn[2]) : NaN);
+
+      if (!isNaN(pLat) && !isNaN(pLng) && effectiveInTimeIso) {
+        punchInPoint = {
+          lat: pLat,
+          lng: pLng,
+          time: effectiveInTimeIso,
+          speed: 0,
+          accuracy_meters: 25,
+          isOffline: false,
+          label: 'Punch In'
+        };
+        const punchInEntry = {
+          type: 'punch_in',
+          label: `Punch In (${new Date(effectiveInTimeIso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })})`,
+          startTime: effectiveInTimeIso,
+          lat: pLat,
+          lng: pLng,
+          locationName: nearStartPing ? `GPS (${pLat.toFixed(4)}, ${pLng.toFixed(4)})` : attRecord.in_location,
+          shiftName: attRecord?.shift_name,
+          status: attRecord?.status
+        };
+        timeline.push(punchInEntry);
+        geoJobs.push(
+          resolveLocationName(pLat, pLng).then(name => {
+            if (name) punchInEntry.locationName = name;
+          })
+        );
+      } else if (effectiveInTimeIso) {
         timeline.push({
           type: 'punch_in',
-          label: `Punch In (${new Date(attRecord.in_time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })})`,
-          startTime: attRecord.in_time,
+          label: `Punch In (${new Date(effectiveInTimeIso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })})`,
+          startTime: effectiveInTimeIso,
           lat: null,
           lng: null,
-          locationName: attRecord.in_location,
-          shiftName: attRecord.shift_name,
-          status: attRecord.status
+          locationName: attRecord?.in_location || null,
+          shiftName: attRecord?.shift_name,
+          status: attRecord?.status
         });
       }
     }
 
-    const attInMs = attRecord?.in_time ? new Date(attRecord.in_time).getTime() : null;
+    const attInMs = effectiveInTimeIso ? new Date(effectiveInTimeIso).getTime() : null;
     const attOutMs = attRecord?.out_time ? new Date(attRecord.out_time).getTime() : null;
 
-    // Clamp breadcrumbs to duty window when attendance exists so pre-shift / post-shift pings stay excluded
+    // Clamp breadcrumbs to duty window (and exclude off-duty breaks between multi-punches)
     const dutyPings = attRecord
       ? pings.filter((p) => {
           const t = p?.recorded_at ? new Date(p.recorded_at).getTime() : NaN;
           if (isNaN(t)) return false;
           if (attInMs != null && !isNaN(attInMs) && t < attInMs - 60000) return false;
           if (attOutMs != null && !isNaN(attOutMs) && t > attOutMs + 10000) return false;
+          if (activeMultiSessions.length >= 2) {
+            for (let sIdx = 0; sIdx < activeMultiSessions.length - 1; sIdx++) {
+              const prevOut = activeMultiSessions[sIdx].outMs;
+              const nextIn = activeMultiSessions[sIdx + 1].inMs;
+              if (prevOut != null && nextIn != null && nextIn - prevOut > 180000) {
+                if (t > prevOut + 90000 && t < nextIn - 90000) return false;
+              }
+            }
+          }
           return true;
         })
       : pings;

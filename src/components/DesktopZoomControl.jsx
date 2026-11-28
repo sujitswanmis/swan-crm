@@ -71,15 +71,16 @@ export default function DesktopZoomControl() {
   const handleZoomOut = () => applyZoom(zoomPercent - 10);
   const handleReset = () => applyZoom(100);
 
-  if (!isClient) return null;
+  if (!isClient || (screenRes.width > 0 && screenRes.width < 768)) return null;
 
   return (
     <div
+      className="desktop-zoom-control"
       style={{
         position: 'fixed',
         bottom: '16px',
         left: '16px',
-        zIndex: 9998,
+        zIndex: 'var(--z-floating, 9000)',
         display: 'flex',
         alignItems: 'center',
         background: 'rgba(15, 23, 42, 0.88)',
@@ -100,6 +101,7 @@ export default function DesktopZoomControl() {
       {/* Collapsed Pill */}
       {isCollapsed ? (
         <button
+          data-flat="true"
           onClick={() => setIsCollapsed(false)}
           style={{
             background: 'none',
@@ -140,6 +142,7 @@ export default function DesktopZoomControl() {
 
           {/* Zoom Out Button */}
           <button
+            data-flat="true"
             onClick={handleZoomOut}
             disabled={zoomPercent <= 60}
             title="Zoom Out (Ctrl -)"
@@ -164,6 +167,7 @@ export default function DesktopZoomControl() {
 
           {/* Current Zoom Percentage (Click to Reset) */}
           <button
+            data-flat="true"
             onClick={handleReset}
             title="Click to Reset Zoom to 100% (Ctrl 0)"
             style={{
@@ -184,6 +188,7 @@ export default function DesktopZoomControl() {
 
           {/* Zoom In Button */}
           <button
+            data-flat="true"
             onClick={handleZoomIn}
             disabled={zoomPercent >= 160}
             title="Zoom In (Ctrl +)"
@@ -208,6 +213,7 @@ export default function DesktopZoomControl() {
 
           {/* Collapse Button */}
           <button
+            data-flat="true"
             onClick={() => setIsCollapsed(true)}
             title="Minimize Zoom Bar"
             style={{

@@ -17,6 +17,7 @@ import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { ROLE_PRESETS } from '../utils/rolePresets';
 import { INTEGRATION_PAGE_IDS } from '@/config/integrationsConfig';
 import { getSubItemPermissions, enforcePolicyPlatformSafety } from '@/utils/permissionUtils';
+import { TAB_TO_ALLOWED_PROCESSES } from '@/utils/saasEntitlements';
 import { WHATSAPP_LOG_VIEW_IDS } from '@/config/whatsappMessageLogsConfig';
 import {
   AllowedPlatformsBar,
@@ -84,7 +85,8 @@ export default function PermissionMatrixModal({
   onSave,
   saving = false,
   customRoles = [],
-  isMasterAdmin = false
+  isMasterAdmin = false,
+  moduleUsage = []
 }) {
   const [accessForm, setAccessForm] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -135,6 +137,34 @@ export default function PermissionMatrixModal({
       return matchLabel || matchCat || matchSubs || matchGroups;
     });
   }, [assignableModules, query]);
+
+  const moduleUsageMap = useMemo(() => {
+    const map = new Map();
+    (moduleUsage || []).forEach(m => {
+      if (m?.process_code) map.set(m.process_code, m);
+    });
+    return map;
+  }, [moduleUsage]);
+
+  const getRowSeatUsage = (moduleId, subId = null) => {
+    if (!moduleUsageMap.size) return null;
+    const key = subId && moduleId === 'channel_ops' ? subId : moduleId;
+    const candidates = TAB_TO_ALLOWED_PROCESSES[key] || [];
+    if (!candidates.length) return null;
+    const preferred = candidates.includes('LEADS_WITH_CALLING') && moduleUsageMap.has('LEADS_WITH_CALLING')
+      ? moduleUsageMap.get('LEADS_WITH_CALLING')
+      : candidates.map(code => moduleUsageMap.get(code)).find(Boolean);
+    if (!preferred || !preferred.licensed_seats) return null;
+    const used = Number(preferred.used_seats ?? 0);
+    const licensed = Number(preferred.licensed_seats || 0);
+    return {
+      used,
+      licensed,
+      isOver: licensed > 0 && used > licensed,
+      isFull: licensed > 0 && used >= licensed,
+      isWarn: licensed > 0 && used < licensed && (used / licensed) >= 0.8
+    };
+  };
 
   const categories = useMemo(() => {
     const defaultOrder = [
@@ -1267,6 +1297,27 @@ export default function PermissionMatrixModal({
                                       <span style={{ fontWeight: mPerms.view ? 700 : 500, color: 'var(--text-primary)' }}>
                                         {module.label}
                                       </span>
+                                      {(() => {
+                                        if (module.id === 'channel_ops') return null;
+                                        const seatInfo = getRowSeatUsage(module.id);
+                                        if (!seatInfo) return null;
+                                        return (
+                                          <span
+                                            title={`${seatInfo.used} of ${seatInfo.licensed} module seats currently in use`}
+                                            style={{
+                                              fontSize: '0.67rem',
+                                              fontWeight: 700,
+                                              padding: '0.08rem 0.4rem',
+                                              borderRadius: '9999px',
+                                              background: seatInfo.isOver ? '#fee2e2' : seatInfo.isFull ? '#ffedd5' : seatInfo.isWarn ? '#fef3c7' : '#eff6ff',
+                                              color: seatInfo.isOver ? '#b91c1c' : seatInfo.isFull ? '#c2410c' : seatInfo.isWarn ? '#b45309' : '#1d4ed8',
+                                              border: `1px solid ${seatInfo.isOver ? '#fecaca' : seatInfo.isFull ? '#fed7aa' : seatInfo.isWarn ? '#fde68a' : '#bfdbfe'}`
+                                            }}
+                                          >
+                                            {seatInfo.used}/{seatInfo.licensed}u{seatInfo.isOver ? ' OVER' : seatInfo.isFull ? ' FULL' : ''}
+                                          </span>
+                                        );
+                                      })()}
                                       {hasSubs && (
                                         <span
                                           style={{
@@ -1488,7 +1539,29 @@ export default function PermissionMatrixModal({
                                             color: subPerms.view ? 'var(--text-primary)' : 'var(--text-secondary)'
                                           }}
                                         >
-                                          ↳ {group ? sub.tabLabel : sub.label}
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                            <span>↳ {group ? sub.tabLabel : sub.label}</span>
+                                            {(() => {
+                                              if (module.id !== 'channel_ops') return null;
+                                              const subSeat = getRowSeatUsage(module.id, sub.id);
+                                              if (!subSeat) return null;
+                                              return (
+                                                <span
+                                                  title={`${subSeat.used} of ${subSeat.licensed} seats used`}
+                                                  style={{
+                                                    fontSize: '0.64rem',
+                                                    fontWeight: 700,
+                                                    padding: '0.05rem 0.35rem',
+                                                    borderRadius: '9999px',
+                                                    background: subSeat.isOver ? '#fee2e2' : subSeat.isFull ? '#ffedd5' : subSeat.isWarn ? '#fef3c7' : '#eff6ff',
+                                                    color: subSeat.isOver ? '#b91c1c' : subSeat.isFull ? '#c2410c' : subSeat.isWarn ? '#b45309' : '#1d4ed8'
+                                                  }}
+                                                >
+                                                  {subSeat.used}/{subSeat.licensed}u{subSeat.isOver ? ' OVER' : subSeat.isFull ? ' FULL' : ''}
+                                                </span>
+                                              );
+                                            })()}
+                                          </div>
                                         </td>
                                         <td style={{ textAlign: 'center', borderBottom: '1px solid var(--border-light)' }}>
                                           <input

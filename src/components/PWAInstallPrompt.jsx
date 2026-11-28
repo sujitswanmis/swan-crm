@@ -91,10 +91,10 @@ export default function PWAInstallPrompt() {
     <div 
       style={{
         position: 'fixed',
-        bottom: '16px',
+        bottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
         left: '50%',
         transform: 'translateX(-50%)',
-        zIndex: 99999,
+        zIndex: 'var(--z-toast, 11000)',
         width: 'calc(100% - 32px)',
         maxWidth: '420px',
         backgroundColor: '#0f172a',
@@ -157,6 +157,7 @@ export default function PWAInstallPrompt() {
           Install
         </button>
         <button
+          data-flat="true"
           onClick={handleDismiss}
           style={{
             backgroundColor: 'transparent',

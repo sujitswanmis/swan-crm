@@ -343,7 +343,18 @@ export default function SessionExpiryTracker({ userEmail = '', userName = '', us
     };
 
     const interval = setInterval(sendHeartbeat, 60000);
-    return () => clearInterval(interval);
+    const flushOnLeave = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'hidden') {
+        void sendHeartbeat();
+      }
+    };
+    document.addEventListener('visibilitychange', flushOnLeave);
+    window.addEventListener('pagehide', flushOnLeave);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', flushOnLeave);
+      window.removeEventListener('pagehide', flushOnLeave);
+    };
   }, []);
 
   // 5. Break Handlers (with double-click protection & lock)

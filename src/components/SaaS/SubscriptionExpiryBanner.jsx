@@ -21,7 +21,8 @@ export default function SubscriptionExpiryBanner({ subscription, isMasterAdmin =
   }, []);
 
   const expiryMs = subscription?.valid_until ? new Date(subscription.valid_until).getTime() : NaN;
-  const isLiveExpired = nowMs !== null && !Number.isNaN(expiryMs) && expiryMs <= nowMs;
+  const hasValidExpiryTs = !Number.isNaN(expiryMs);
+  const isLiveExpired = nowMs !== null && hasValidExpiryTs && expiryMs <= nowMs;
 
   if (
     isMasterAdmin ||
@@ -30,7 +31,8 @@ export default function SubscriptionExpiryBanner({ subscription, isMasterAdmin =
     subscription.never_expires ||
     !subscription.is_expiring_soon ||
     subscription.is_expired ||
-    isLiveExpired
+    isLiveExpired ||
+    (hasValidExpiryTs && nowMs === null)
   ) {
     return null;
   }

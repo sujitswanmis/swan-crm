@@ -79,10 +79,30 @@ export async function POST(request) {
       return NextResponse.json({ success: true, count: 0, ...(statusAccepted !== undefined ? { statusAccepted } : {}) });
     }
 
-    // Verify whether the employee is on official duty (punched in today without punch-out)
+    // Verify whether the employee is currently on official duty (punched in today without punch-out)
     const isOnDuty = await checkUserOnDuty(claims.uid);
-    if (!isOnDuty) {
-      // User is off-duty (not punched in, or already punched out). Diagnostics accepted, but coordinates ignored.
+    const nowMs = Date.now();
+
+    // Bind every ping strictly to the authenticated token's userId and tenant metadata.
+    // IMPORTANT: Buffered/offline pings (recorded earlier while tracking was active on duty, e.g. synced after Punch-Out
+    // or after reconnecting from offline mode) MUST be preserved and saved, never silently dropped & deleted from SQLite.
+    const sanitizedPings = rawPings
+      .slice(0, 200)
+      .filter((p) => {
+        if (isOnDuty) return true;
+        const isBufferedOffline = Boolean(p?.is_offline_synced);
+        const recMs = p?.recorded_at ? Date.parse(p.recorded_at) : NaN;
+        const isHistoricalFix = Number.isFinite(recMs) && (nowMs - recMs > 45000);
+        return isBufferedOffline || isHistoricalFix;
+      })
+      .map((p) => ({
+        ...p,
+        user_id: claims.uid,
+        company: p?.company || claims.cmp || 'TNT00001',
+        branch_code: p?.branch_code ?? claims.br ?? null
+      }));
+
+    if (sanitizedPings.length === 0) {
       return NextResponse.json({
         success: true,
         count: 0,
@@ -91,14 +111,6 @@ export async function POST(request) {
         ...(statusAccepted !== undefined ? { statusAccepted } : {})
       });
     }
-
-    // Bind every ping strictly to the authenticated token's userId and tenant metadata
-    const sanitizedPings = rawPings.slice(0, 200).map((p) => ({
-      ...p,
-      user_id: claims.uid,
-      company: p?.company || claims.cmp || 'TNT00001',
-      branch_code: p?.branch_code ?? claims.br ?? null
-    }));
 
     const result = await recordLocationPingBatch(sanitizedPings);
     if (!result?.success) {

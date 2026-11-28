@@ -108,9 +108,13 @@ export default async function Home({ params, searchParams }) {
   }
 
   const rawModuleAccess = effectiveRoleData?.module_access || {};
+  const resolvedTrackingPolicy =
+    rawModuleAccess?.tracking_policy && (!effectiveRoleData?.tracking_policy || effectiveRoleData.tracking_policy === 'PUNCH_ONLY')
+      ? rawModuleAccess.tracking_policy
+      : (effectiveRoleData?.tracking_policy || rawModuleAccess?.tracking_policy || 'PUNCH_ONLY');
   const moduleAccess = {
     ...rawModuleAccess,
-    tracking_policy: effectiveRoleData?.tracking_policy || rawModuleAccess?.tracking_policy || 'PUNCH_ONLY',
+    tracking_policy: resolvedTrackingPolicy,
     vehicle_type: effectiveRoleData?.vehicle_type || rawModuleAccess?.vehicle_type || 'BIKE',
     conveyance_rate_per_km: effectiveRoleData?.conveyance_rate_per_km ?? rawModuleAccess?.conveyance_rate_per_km ?? 4.5,
     _tenantEntitlements: tenantEntitlements,
@@ -155,12 +159,12 @@ export default async function Home({ params, searchParams }) {
   const userAvatar = null;
 
   return (
-    <main>
+    <div>
       <Suspense fallback={
-        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc' }}>
+        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-primary, #f8fafc)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-            <div style={{ width: '40px', height: '40px', border: '3px solid #e2e8f0', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-            <span style={{ fontSize: '14px', color: '#64748b', fontWeight: 500 }}>Loading workspace...</span>
+            <div style={{ width: '40px', height: '40px', border: '3px solid var(--border-light, #e2e8f0)', borderTopColor: 'var(--accent-color, #3b82f6)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontSize: '14px', color: 'var(--text-secondary, #64748b)', fontWeight: 500 }}>Loading workspace...</span>
           </div>
         </div>
       }>
@@ -189,6 +193,6 @@ export default async function Home({ params, searchParams }) {
           tenantSubscription={tenantSubscription}
         />
       </Suspense>
-    </main>
+    </div>
   );
 }

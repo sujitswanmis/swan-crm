@@ -97,6 +97,9 @@ export default function TenantBillingConfig({ tenantId = null, userCompany = '',
   const [statusFilter, setStatusFilter] = useState('ACTIVE');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [selectedModuleUsage, setSelectedModuleUsage] = useState(null);
+  const [moduleUserSearch, setModuleUserSearch] = useState('');
+  const [moduleRoleFilter, setModuleRoleFilter] = useState('ALL');
   const [cancellingInv, setCancellingInv] = useState(null);
   const [tableView, setTableView] = useTableViewPreference('settings_tenant_billing_view');
 
@@ -241,6 +244,143 @@ export default function TenantBillingConfig({ tenantId = null, userCompany = '',
       setError(err.message || 'Could not cancel proforma.');
     } finally {
       setCancellingInv(null);
+    }
+  };
+
+  const handlePrintInvoice = (inv) => {
+    if (!inv || typeof window === 'undefined') return;
+    const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const totals = saasInvoiceTotals(inv.amount, inv.gst_type || 'IGST', inv);
+    const items = Array.isArray(inv.line_items) ? inv.line_items : [];
+    const statusUpper = String(inv.status || '').toUpperCase();
+    const isPaid = statusUpper === 'PAID';
+    const docLabel = isPaid ? 'TAX INVOICE / PAYMENT RECEIPT' : 'PROFORMA INVOICE';
+    const rowsHtml = items.length > 0
+      ? items.map((li, idx) => `
+          <tr style="background:${idx % 2 === 1 ? '#f8fafc' : '#ffffff'};">
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">
+              <div style="font-weight:700;color:#0f172a;">${esc(li.display_name || li.module_key)}</div>
+              <div style="font-size:11px;color:#64748b;margin-top:2px;">
+                ${li.days_remaining
+                  ? `${esc(li.days_remaining)}/30 days prorated`
+                  : `${esc(li.months || 12)} mo${li.discount_percent ? ` (-${esc(li.discount_percent)}% disc)` : ''}`}
+              </div>
+            </td>
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:700;color:#2563eb;">${esc(li.seats)}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;">&#8377;${Number(li.rate_per_user || 0).toLocaleString('en-IN')}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;">&#8377;${Number(li.net_amount || 0).toLocaleString('en-IN')}</td>
+          </tr>`).join('')
+      : `<tr>
+          <td colspan="3" style="padding:10px;border-bottom:1px solid #e2e8f0;font-weight:600;">${esc(inv.description || inv.category)}</td>
+          <td style="padding:10px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;">&#8377;${Number(totals.amount ?? inv.amount ?? 0).toLocaleString('en-IN')}</td>
+        </tr>`;
+
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${esc(inv.invoice_number)} — ${esc(docLabel)}</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111827; background: #fff; font-size: 12.5px; line-height: 1.45; }
+    .sheet { width: 100%; max-width: 780px; margin: 0 auto; }
+    .hdr { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 14px; }
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+    .card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; }
+    table { width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; }
+    thead { display: table-header-group; }
+    tr { page-break-inside: avoid; break-inside: avoid; }
+    th { background: #f1f5f9; padding: 8px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: #475569; border-bottom: 1px solid #cbd5e1; }
+    .footer-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 12px; margin-top: 14px; page-break-inside: avoid; break-inside: avoid; }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="hdr">
+      <div>
+        <div style="font-size:18px;font-weight:800;color:#1e1b4b;">NEW SWAN MULTITECH LIMITED</div>
+        <div style="font-size:11px;color:#64748b;">SaaS Cloud Solutions &amp; Enterprise Software Division</div>
+        <div style="font-size:11px;color:#475569;">CIN: L29222PB2014PLC038891 | GSTIN: 03AABCN5123K1Z4</div>
+        <div style="font-size:11px;color:#475569;">C-222, Phase VIII, Focal Point, Ludhiana - 141010, Punjab</div>
+      </div>
+      <div style="text-align:right;">
+        <span style="display:inline-block;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:800;background:${isPaid ? '#d1fae5' : '#fef3c7'};color:${isPaid ? '#065f46' : '#92400e'};border:1px solid ${isPaid ? '#6ee7b7' : '#fde68a'};">${esc(docLabel)}</span>
+        <div style="font-size:14px;font-weight:800;margin-top:6px;">#${esc(inv.invoice_number)}</div>
+        <div style="font-size:11px;color:#64748b;">Issued: ${esc(formatISTDateTime(inv.created_at))} IST</div>
+      </div>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">Billed To</div>
+        <div style="font-weight:700;font-size:13px;">${esc(tenantInfo?.name || userCompany)}</div>
+        <div style="font-family:monospace;color:#3730a3;font-size:11.5px;">Code: ${esc(tenantInfo?.tenant_code)}</div>
+        ${tenantInfo?.gstin ? `<div style="font-size:11.5px;">GSTIN: ${esc(tenantInfo.gstin)}</div>` : ''}
+      </div>
+      <div class="card">
+        <div style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">Subscription &amp; Payment</div>
+        <div>Plan: <strong>${esc(subscription?.plan_name)}</strong></div>
+        <div>Status: <strong>${esc(statusUpper)}</strong> • Mode: <strong>${esc(inv.payment_mode || '—')}</strong></div>
+        ${inv.transaction_id ? `<div>Ref: <strong>${esc(inv.transaction_id)}</strong></div>` : ''}
+      </div>
+    </div>
+
+    <div style="background:#f8fafc;border:1px solid #e5e7eb;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 10px;">
+      <div style="font-weight:700;color:#0f172a;">${esc(inv.description || inv.category)}</div>
+      ${inv.pricing_basis ? `<div style="font-size:11px;font-weight:600;color:#4338ca;margin-top:2px;">Basis: ${esc(inv.pricing_basis)}</div>` : ''}
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="text-align:left;">Module / Item</th>
+          <th style="text-align:center;width:70px;">Users</th>
+          <th style="text-align:right;width:100px;">Rate/u/mo</th>
+          <th style="text-align:right;width:120px;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+
+    <div class="footer-grid">
+      <div class="card" style="font-size:11.5px;">
+        <div style="font-weight:700;color:#374151;margin-bottom:4px;">BANK TRANSFER / UPI DETAILS:</div>
+        <div>Account Name: <strong>New Swan Multitech Limited</strong></div>
+        <div>Bank Name: <strong>HDFC Bank Ltd</strong></div>
+        <div>Account No: <strong>50200039281746</strong> • IFSC: <strong>HDFC0000259</strong></div>
+        <div>UPI VPA: <strong>newswan@okhdfcbank</strong></div>
+      </div>
+      <div class="card" style="background:#fff;">
+        <div style="display:flex;justify-content:space-between;padding:3px 0;">
+          <span>Taxable Base Amount</span>
+          <strong>&#8377;${Number(totals.amount ?? inv.amount ?? 0).toLocaleString('en-IN')}</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:3px 0;color:#64748b;">
+          <span>GST (${esc(inv.gst_type || 'IGST')})</span>
+          <span>&#8377;${Number(totals.tax_amount ?? 0).toLocaleString('en-IN')}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:6px 0 0;margin-top:6px;border-top:2px solid #111827;font-size:14px;font-weight:800;color:#1e3a8a;">
+          <span>Total Payable</span>
+          <span>&#8377;${Number(totals.total_payable ?? inv.amount ?? 0).toLocaleString('en-IN')}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const printWin = window.open('', '_blank', 'width=920,height=1050');
+    if (printWin) {
+      printWin.document.open();
+      printWin.document.write(html);
+      printWin.document.close();
+      printWin.focus();
+      setTimeout(() => {
+        try { printWin.print(); } catch { /* ignore */ }
+      }, 250);
+    } else {
+      window.print();
     }
   };
 
@@ -461,24 +601,81 @@ export default function TenantBillingConfig({ tenantId = null, userCompany = '',
           : rawMods;
         return (
           <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-light)', borderRadius: '10px', padding: '1rem' }}>
-            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-              <Building2 size={15} style={{ color: '#2563eb' }} />
-              Active Business Modules ({billableMods.length})
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <Building2 size={15} style={{ color: '#2563eb' }} />
+                Active Business Modules ({billableMods.length})
+              </div>
+              <span style={{ fontSize: '0.73rem', color: 'var(--text-secondary)' }}>
+                Used / Licensed seats • Click any module to view assigned users
+              </span>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-              {billableMods.map(mod => (
-                <span key={mod.process_code} style={{
-                  fontSize: '0.74rem',
-                  fontWeight: 600,
-                  background: mod.has_custom_seats ? '#eef2ff' : '#f1f5f9',
-                  color: mod.has_custom_seats ? '#3730a3' : '#1e293b',
-                  border: `1px solid ${mod.has_custom_seats ? '#c7d2fe' : '#cbd5e1'}`,
-                  padding: '0.22rem 0.55rem',
-                  borderRadius: '6px'
-                }}>
-                  {mod.display_name || mod.process_code}{mod.licensed_seats ? ` (${mod.licensed_seats}u)` : ''}
-                </span>
-              ))}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(235px, 1fr))', gap: '0.55rem' }}>
+              {billableMods.map(mod => {
+                const used = Number(mod.used_seats ?? 0);
+                const licensed = Number(mod.licensed_seats || 0);
+                const pct = licensed > 0 ? Math.min(100, Math.round((used / licensed) * 100)) : 0;
+                const isOver = licensed > 0 && used > licensed;
+                const isFull = licensed > 0 && used === licensed;
+                const isWarn = !isOver && !isFull && pct >= 80;
+                const tone = isOver
+                  ? { bg: '#fef2f2', border: '#fecaca', badgeBg: '#fee2e2', badgeColor: '#b91c1c', bar: '#dc2626', tag: `Over (+${used - licensed})` }
+                  : isFull
+                    ? { bg: '#fff7ed', border: '#fed7aa', badgeBg: '#ffedd5', badgeColor: '#c2410c', bar: '#ea580c', tag: 'FULL' }
+                    : isWarn
+                      ? { bg: '#fffbeb', border: '#fde68a', badgeBg: '#fef3c7', badgeColor: '#b45309', bar: '#d97706', tag: `${pct}%` }
+                      : { bg: mod.has_custom_seats ? '#f5f7ff' : '#f8fafc', border: mod.has_custom_seats ? '#c7d2fe' : '#e2e8f0', badgeBg: mod.has_custom_seats ? '#e0e7ff' : '#e2e8f0', badgeColor: mod.has_custom_seats ? '#3730a3' : '#1e293b', bar: '#2563eb', tag: `${pct}%` };
+
+                return (
+                  <button
+                    key={mod.process_code}
+                    type="button"
+                    onClick={() => {
+                      setModuleUserSearch('');
+                      setModuleRoleFilter('ALL');
+                      setSelectedModuleUsage(mod);
+                    }}
+                    title={`Click to view ${used} user(s) with ${mod.display_name || mod.process_code} access`}
+                    style={{
+                      textAlign: 'left',
+                      background: tone.bg,
+                      border: `1px solid ${tone.border}`,
+                      borderRadius: '8px',
+                      padding: '0.6rem 0.72rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.35rem',
+                      transition: 'transform 0.12s ease, box-shadow 0.12s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.77rem', fontWeight: 700, color: '#0f172a', lineHeight: 1.25 }}>
+                        {mod.display_name || mod.process_code}
+                      </span>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        fontWeight: 800,
+                        background: tone.badgeBg,
+                        color: tone.badgeColor,
+                        padding: '0.12rem 0.42rem',
+                        borderRadius: '9999px',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0
+                      }}>
+                        {licensed > 0 ? `${used} / ${licensed}u` : `${used}u`}
+                      </span>
+                    </div>
+                    <div style={{ height: '5px', width: '100%', background: 'rgba(148, 163, 184, 0.25)', borderRadius: '9999px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: tone.bar, borderRadius: '9999px' }} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.68rem', color: '#475569' }}>
+                      <span>{mod.staff_used_seats ?? 0} Staff • {mod.admin_used_seats ?? 0} Admin</span>
+                      <span style={{ fontWeight: 700, color: tone.badgeColor }}>{tone.tag}</span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         );
@@ -723,9 +920,232 @@ export default function TenantBillingConfig({ tenantId = null, userCompany = '',
         </div>
       </div>
 
+      {/* Module Users Breakdown Modal */}
+      {selectedModuleUsage && (() => {
+        const allAssigned = Array.isArray(selectedModuleUsage.assigned_users) ? selectedModuleUsage.assigned_users : [];
+        const q = moduleUserSearch.trim().toLowerCase();
+        const filteredAssigned = allAssigned.filter(u => {
+          if (moduleRoleFilter === 'STAFF' && u.is_admin) return false;
+          if (moduleRoleFilter === 'ADMIN' && !u.is_admin) return false;
+          if (!q) return true;
+          return (
+            String(u.emp_name || '').toLowerCase().includes(q) ||
+            String(u.email || '').toLowerCase().includes(q) ||
+            String(u.emp_id || '').toLowerCase().includes(q) ||
+            String(u.role || '').toLowerCase().includes(q)
+          );
+        });
+        const used = Number(selectedModuleUsage.used_seats ?? allAssigned.length);
+        const licensed = Number(selectedModuleUsage.licensed_seats || 0);
+        const isOver = licensed > 0 && used > licensed;
+
+        return (
+          <div
+            onClick={() => setSelectedModuleUsage(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(15, 23, 42, 0.6)',
+              zIndex: 9998,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '1rem'
+            }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '12px',
+                width: '100%',
+                maxWidth: '680px',
+                maxHeight: '88vh',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                color: '#111827'
+              }}
+            >
+              <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Module Seat Usage Breakdown
+                  </div>
+                  <h3 style={{ margin: '0.15rem 0 0 0', fontSize: '1.05rem', fontWeight: 800, color: '#0f172a' }}>
+                    {selectedModuleUsage.display_name || selectedModuleUsage.process_code}
+                  </h3>
+                  <div style={{ marginTop: '0.35rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', fontSize: '0.76rem' }}>
+                    <span style={{
+                      fontWeight: 800,
+                      padding: '0.15rem 0.5rem',
+                      borderRadius: '9999px',
+                      background: isOver ? '#fee2e2' : '#eff6ff',
+                      color: isOver ? '#b91c1c' : '#1d4ed8'
+                    }}>
+                      {used} / {licensed} Users Used
+                    </span>
+                    <span style={{ color: '#475569' }}>
+                      <strong>{selectedModuleUsage.staff_used_seats ?? 0}</strong> Assigned Staff • <strong>{selectedModuleUsage.admin_used_seats ?? 0}</strong> Admin (Auto Access)
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedModuleUsage(null)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', padding: '0.2rem' }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div style={{ padding: '0.75rem 1.25rem', borderBottom: '1px solid #e5e7eb', background: '#f8fafc', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ position: 'relative', flex: '1 1 220px' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '0.6rem', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+                  <input
+                    type="text"
+                    value={moduleUserSearch}
+                    onChange={e => setModuleUserSearch(e.target.value)}
+                    placeholder="Search employee name, ID, email or role..."
+                    style={{
+                      width: '100%',
+                      padding: '0.42rem 0.65rem 0.42rem 1.95rem',
+                      borderRadius: '7px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '0.8rem',
+                      background: '#ffffff',
+                      color: '#0f172a'
+                    }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '0.35rem' }}>
+                  {[
+                    { id: 'ALL', label: `All (${allAssigned.length})` },
+                    { id: 'STAFF', label: `Staff (${selectedModuleUsage.staff_used_seats ?? 0})` },
+                    { id: 'ADMIN', label: `Admins (${selectedModuleUsage.admin_used_seats ?? 0})` }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setModuleRoleFilter(tab.id)}
+                      style={{
+                        padding: '0.35rem 0.65rem',
+                        borderRadius: '7px',
+                        border: moduleRoleFilter === tab.id ? '1px solid #2563eb' : '1px solid #cbd5e1',
+                        background: moduleRoleFilter === tab.id ? '#2563eb' : '#ffffff',
+                        color: moduleRoleFilter === tab.id ? '#ffffff' : '#334155',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ overflowY: 'auto', flex: 1, padding: '0.5rem 1.25rem 1rem' }}>
+                {filteredAssigned.length === 0 ? (
+                  <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b', fontSize: '0.84rem' }}>
+                    No active users match your filter for this module.
+                  </div>
+                ) : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid #e2e8f0', color: '#475569', textAlign: 'left' }}>
+                        <th style={{ padding: '0.55rem 0.4rem', fontWeight: 700 }}>#</th>
+                        <th style={{ padding: '0.55rem 0.4rem', fontWeight: 700 }}>Employee</th>
+                        <th style={{ padding: '0.55rem 0.4rem', fontWeight: 700 }}>Email / ID</th>
+                        <th style={{ padding: '0.55rem 0.4rem', fontWeight: 700 }}>Role</th>
+                        <th style={{ padding: '0.55rem 0.4rem', fontWeight: 700, textAlign: 'right' }}>Access Type</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredAssigned.map((u, idx) => (
+                        <tr key={u.user_id || `${u.email}-${idx}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '0.5rem 0.4rem', color: '#64748b', fontSize: '0.74rem' }}>{idx + 1}</td>
+                          <td style={{ padding: '0.5rem 0.4rem', fontWeight: 700, color: '#0f172a' }}>{u.emp_name}</td>
+                          <td style={{ padding: '0.5rem 0.4rem', color: '#475569', fontSize: '0.75rem' }}>
+                            {u.email || '—'}{u.emp_id ? ` (${u.emp_id})` : ''}
+                          </td>
+                          <td style={{ padding: '0.5rem 0.4rem', textTransform: 'capitalize', color: '#334155', fontSize: '0.76rem' }}>{u.role || 'staff'}</td>
+                          <td style={{ padding: '0.5rem 0.4rem', textAlign: 'right' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '0.12rem 0.45rem',
+                              borderRadius: '9999px',
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              background: u.is_admin ? '#eef2ff' : '#ecfdf5',
+                              color: u.is_admin ? '#3730a3' : '#047857'
+                            }}>
+                              {u.is_admin ? 'Admin (Auto)' : 'Assigned Staff'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div style={{ padding: '0.75rem 1.25rem', borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', background: '#f8fafc' }}>
+                <span style={{ fontSize: '0.73rem', color: '#64748b' }}>
+                  Showing {filteredAssigned.length} of {allAssigned.length} active user(s)
+                </span>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  {!subscription?.never_expires && !isMasterAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedModuleUsage(null);
+                        window.dispatchEvent(new CustomEvent('open-addon-modal'));
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        background: '#2563eb',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '0.45rem 0.85rem',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <UserPlus size={14} /> Add More Seats
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedModuleUsage(null)}
+                    style={{
+                      background: '#ffffff',
+                      color: '#374151',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '8px',
+                      padding: '0.45rem 0.85rem',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Printable Invoice Modal */}
       {selectedInvoice && (
-        <div style={{
+        <div className="tenant-invoice-print-backdrop" style={{
           position: 'fixed',
           inset: 0,
           backgroundColor: 'rgba(15, 23, 42, 0.65)',
@@ -735,11 +1155,23 @@ export default function TenantBillingConfig({ tenantId = null, userCompany = '',
           justifyContent: 'center',
           padding: '1rem'
         }}>
-          <div style={{
+          <style>{`
+            @media print {
+              body * { visibility: hidden !important; }
+              .tenant-invoice-print-backdrop, .tenant-invoice-print-backdrop * { visibility: visible !important; }
+              .tenant-invoice-print-backdrop { position: static !important; background: #fff !important; padding: 0 !important; }
+              .tenant-invoice-print-card { max-width: 100% !important; max-height: none !important; overflow: visible !important; box-shadow: none !important; padding: 0 !important; }
+              .tenant-invoice-print-scroll { max-height: none !important; overflow: visible !important; }
+              .tenant-invoice-no-print { display: none !important; }
+            }
+          `}</style>
+          <div className="tenant-invoice-print-card" style={{
             backgroundColor: '#ffffff',
             borderRadius: '12px',
             width: '100%',
-            maxWidth: '620px',
+            maxWidth: '640px',
+            maxHeight: '92vh',
+            overflowY: 'auto',
             padding: '1.75rem',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
             color: '#111827'
@@ -758,6 +1190,7 @@ export default function TenantBillingConfig({ tenantId = null, userCompany = '',
               </div>
               <button
                 type="button"
+                className="tenant-invoice-no-print"
                 onClick={() => setSelectedInvoice(null)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}
               >
@@ -794,7 +1227,7 @@ export default function TenantBillingConfig({ tenantId = null, userCompany = '',
                     )}
                   </div>
                   {items.length > 0 && (
-                    <div style={{ maxHeight: '220px', overflowY: 'auto', borderBottom: '1px solid #e5e7eb' }}>
+                    <div className="tenant-invoice-print-scroll" style={{ maxHeight: '220px', overflowY: 'auto', borderBottom: '1px solid #e5e7eb' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem' }}>
                         <thead>
                           <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb', color: '#475569' }}>
@@ -842,10 +1275,10 @@ export default function TenantBillingConfig({ tenantId = null, userCompany = '',
               );
             })()}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+            <div className="tenant-invoice-no-print" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={() => handlePrintInvoice(selectedInvoice)}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',

@@ -558,8 +558,9 @@ export default function WorkspaceHome({
             <span>•</span>
             <span className="spc-home-role" style={{
               fontWeight: 650,
-              color: '#4f46e5',
-              background: '#e0e7ff',
+              color: 'var(--spc-home-violet, var(--accent-color, #4f46e5))',
+              background: 'color-mix(in srgb, #4f46e5 14%, var(--bg-surface, #ffffff))',
+              border: '1px solid color-mix(in srgb, #4f46e5 28%, transparent)',
               padding: '2px 8px',
               borderRadius: '999px',
               fontSize: '0.75rem'
@@ -853,7 +854,8 @@ export default function WorkspaceHome({
                 transition: 'all 0.15s ease'
               }}
             >
-              <span>📊 Lead Data</span>
+              <Activity size={13} style={{ flexShrink: 0, color: 'var(--spc-home-violet, #4f46e5)' }} />
+              <span>Lead Data</span>
               <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
@@ -878,7 +880,8 @@ export default function WorkspaceHome({
                 transition: 'all 0.15s ease'
               }}
             >
-              <span>📦 Order Pipeline</span>
+              <Truck size={13} style={{ flexShrink: 0, color: 'var(--spc-home-blue, #2563eb)' }} />
+              <span>Order Pipeline</span>
               <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
@@ -903,7 +906,8 @@ export default function WorkspaceHome({
                 transition: 'all 0.15s ease'
               }}
             >
-              <span>⏰ Punch Station</span>
+              <Clock size={13} style={{ flexShrink: 0, color: 'var(--spc-home-warning, #ea580c)' }} />
+              <span>Punch Station</span>
               <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
@@ -928,7 +932,8 @@ export default function WorkspaceHome({
                 transition: 'all 0.15s ease'
               }}
             >
-              <span>✅ Daily Checklist</span>
+              <CheckSquare size={13} style={{ flexShrink: 0, color: 'var(--spc-home-success, #16a34a)' }} />
+              <span>Daily Checklist</span>
               <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
@@ -953,7 +958,8 @@ export default function WorkspaceHome({
                 transition: 'all 0.15s ease'
               }}
             >
-              <span>🗓️ Task Planner</span>
+              <Calendar size={13} style={{ flexShrink: 0, color: 'var(--spc-home-violet, #6366f1)' }} />
+              <span>Task Planner</span>
               <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
@@ -978,7 +984,8 @@ export default function WorkspaceHome({
                 transition: 'all 0.15s ease'
               }}
             >
-              <span>👥 Delegation Desk</span>
+              <Users size={13} style={{ flexShrink: 0, color: 'var(--spc-home-blue, #0284c7)' }} />
+              <span>Delegation Desk</span>
               <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
@@ -1003,7 +1010,8 @@ export default function WorkspaceHome({
                 transition: 'all 0.15s ease'
               }}
             >
-              <span>📞 Call Center Desk</span>
+              <PhoneCall size={13} style={{ flexShrink: 0, color: 'var(--spc-home-success, #059669)' }} />
+              <span>Call Center Desk</span>
               <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
@@ -1028,7 +1036,8 @@ export default function WorkspaceHome({
                 transition: 'all 0.15s ease'
               }}
             >
-              <span>📍 Field Force</span>
+              <Navigation size={13} style={{ flexShrink: 0, color: 'var(--spc-home-warning, #ea580c)' }} />
+              <span>Field Force</span>
               <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
@@ -1053,7 +1062,8 @@ export default function WorkspaceHome({
                 transition: 'all 0.15s ease'
               }}
             >
-              <span>🤝 Recruiter Hub</span>
+              <UserPlus size={13} style={{ flexShrink: 0, color: 'var(--spc-home-pink, #db2777)' }} />
+              <span>Recruiter Hub</span>
               <ArrowUpRight size={12} color="var(--spc-home-muted)" />
             </button>
           )}
@@ -1063,7 +1073,7 @@ export default function WorkspaceHome({
       {/* 3. Personalized Widget Cards Grid */}
       <div className="spc-home-widgets" style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))',
         gap: '1.25rem'
       }}>
         {/* Attendance Widget with Direct Punch In / Out */}
@@ -1094,8 +1104,10 @@ export default function WorkspaceHome({
                 <span style={{ 
                   fontSize: '0.72rem', 
                   fontWeight: 700, 
-                  color: attOutTime ? (canRePunchIn ? '#7c3aed' : '#475569') : (attInTime ? '#16a34a' : '#ea580c'), 
-                  background: attOutTime ? (canRePunchIn ? '#f5f3ff' : '#f1f5f9') : (attInTime ? '#dcfce7' : '#fff7ed'), 
+                  color: attOutTime ? (canRePunchIn ? 'var(--spc-home-violet, #7c3aed)' : 'var(--text-secondary, #475569)') : (attInTime ? 'var(--spc-home-success, #16a34a)' : 'var(--spc-home-warning, #ea580c)'), 
+                  background: attOutTime
+                    ? (canRePunchIn ? 'color-mix(in srgb, #7c3aed 15%, var(--bg-surface, #ffffff))' : 'var(--bg-primary, #f1f5f9)')
+                    : (attInTime ? 'color-mix(in srgb, #16a34a 15%, var(--bg-surface, #ffffff))' : 'color-mix(in srgb, #f97316 15%, var(--bg-surface, #ffffff))'), 
                   padding: '2px 8px', 
                   borderRadius: '999px' 
                 }}>
@@ -1135,7 +1147,7 @@ export default function WorkspaceHome({
                     )}
                     {canRePunchIn && (
                       <div style={{ marginTop: '3px', fontSize: '0.75rem', color: 'var(--spc-home-violet, #7c3aed)', fontWeight: 600 }}>
-                        ⚡ Multi-punch enabled — aap dobara punch in kar sakte hain
+                        Multi-punch enabled — you can punch in again
                       </div>
                     )}
                   </div>
@@ -1183,7 +1195,7 @@ export default function WorkspaceHome({
                   }}
                 >
                   {punching ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                  <span>⚡ Direct Punch In</span>
+                  <span>Direct Punch In</span>
                 </button>
               ) : !attOutTime ? (
                 /* Punched in, not yet out — show Punch Out */
@@ -1209,7 +1221,7 @@ export default function WorkspaceHome({
                   }}
                 >
                   {punching ? <Loader2 size={14} className="animate-spin" /> : <Clock size={14} />}
-                  <span>🛑 Direct Punch Out</span>
+                  <span>Direct Punch Out</span>
                 </button>
               ) : canRePunchIn ? (
                 /* Punched out + multi-punch allowed — show Re-Punch In (green) */
@@ -1235,7 +1247,7 @@ export default function WorkspaceHome({
                   }}
                 >
                   {punching ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                  <span>🔄 Resume Duty</span>
+                  <span>Resume Duty</span>
                 </button>
               ) : (
                 /* Punched out + single-punch — Shift done, grey */
@@ -1243,8 +1255,9 @@ export default function WorkspaceHome({
                   flex: 1.2,
                   padding: '0.55rem',
                   borderRadius: '8px',
-                  backgroundColor: '#f1f5f9',
-                  color: '#64748b',
+                  backgroundColor: 'var(--bg-primary, #f1f5f9)',
+                  color: 'var(--text-secondary, #64748b)',
+                  border: '1px solid var(--border-light, #e2e8f0)',
                   fontWeight: 650,
                   fontSize: '0.82rem',
                   display: 'flex',
@@ -1288,9 +1301,9 @@ export default function WorkspaceHome({
                   flex: 1,
                   padding: '0.42rem 0.65rem',
                   borderRadius: '8px',
-                  background: '#fff7ed',
-                  border: '1px solid #fed7aa',
-                  color: '#ea580c',
+                  background: 'color-mix(in srgb, #f97316 12%, var(--bg-surface, #ffffff))',
+                  border: '1px solid color-mix(in srgb, #f97316 32%, transparent)',
+                  color: 'var(--spc-home-warning, #ea580c)',
                   fontWeight: 650,
                   fontSize: '0.78rem',
                   cursor: 'pointer',
@@ -1311,9 +1324,9 @@ export default function WorkspaceHome({
                   flex: 1,
                   padding: '0.42rem 0.65rem',
                   borderRadius: '8px',
-                  background: '#ecfdf5',
-                  border: '1px solid #a7f3d0',
-                  color: '#059669',
+                  background: 'color-mix(in srgb, #10b981 12%, var(--bg-surface, #ffffff))',
+                  border: '1px solid color-mix(in srgb, #10b981 32%, transparent)',
+                  color: 'var(--spc-home-success, #059669)',
                   fontWeight: 650,
                   fontSize: '0.78rem',
                   cursor: 'pointer',
@@ -1356,7 +1369,7 @@ export default function WorkspaceHome({
                   </div>
                   <h3 style={{ fontSize: '0.98rem', fontWeight: 700, margin: 0 }}>Delegation Tasks</h3>
                 </div>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#0284c7', background: '#f0f9ff', padding: '2px 8px', borderRadius: '999px' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--spc-home-blue, #0284c7)', background: 'color-mix(in srgb, #0284c7 14%, var(--bg-surface, #ffffff))', padding: '2px 8px', borderRadius: '999px' }}>
                   TASKS
                 </span>
               </div>
@@ -1445,11 +1458,11 @@ export default function WorkspaceHome({
                   style={{
                     fontSize: '0.72rem',
                     fontWeight: 700,
-                    color: '#2563eb',
-                    background: '#eff6ff',
+                    color: 'var(--spc-home-blue, #2563eb)',
+                    background: 'color-mix(in srgb, #2563eb 13%, var(--bg-surface, #ffffff))',
                     padding: '2px 8px',
                     borderRadius: '999px',
-                    border: '1px solid #bfdbfe',
+                    border: '1px solid color-mix(in srgb, #2563eb 30%, transparent)',
                     cursor: 'pointer'
                   }}
                 >
@@ -1463,7 +1476,8 @@ export default function WorkspaceHome({
               {/* Direct Jump Stage Numbering as per access */}
               <div style={{ marginTop: '0.75rem' }}>
                 <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span>⚡ Quick Jump Stage:</span>
+                  <Zap size={11} style={{ color: 'var(--accent-color, #4f46e5)' }} />
+                  <span>Quick Jump Stage:</span>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.28rem', alignItems: 'center' }}>
                   {permittedOrderStages.map(stg => (
@@ -1554,11 +1568,11 @@ export default function WorkspaceHome({
                   style={{
                     fontSize: '0.72rem',
                     fontWeight: 700,
-                    color: '#4f46e5',
-                    background: '#eef2ff',
+                    color: 'var(--spc-home-violet, #4f46e5)',
+                    background: 'color-mix(in srgb, #4f46e5 13%, var(--bg-surface, #ffffff))',
                     padding: '2px 8px',
                     borderRadius: '999px',
-                    border: '1px solid #c7d2fe',
+                    border: '1px solid color-mix(in srgb, #4f46e5 30%, transparent)',
                     cursor: 'pointer'
                   }}
                 >
@@ -1572,7 +1586,8 @@ export default function WorkspaceHome({
               {/* Direct Jump Stage Numbering as per access */}
               <div style={{ marginTop: '0.75rem' }}>
                 <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span>⚡ Quick Jump Stage:</span>
+                  <Zap size={11} style={{ color: 'var(--accent-color, #4f46e5)' }} />
+                  <span>Quick Jump Stage:</span>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.28rem', alignItems: 'center' }}>
                   {permittedLeadStages.map(stg => (
@@ -1665,11 +1680,11 @@ export default function WorkspaceHome({
                   style={{
                     fontSize: '0.72rem',
                     fontWeight: 700,
-                    color: '#dc2626',
-                    background: '#fef2f2',
+                    color: 'var(--spc-home-danger, #dc2626)',
+                    background: 'color-mix(in srgb, #dc2626 13%, var(--bg-surface, #ffffff))',
                     padding: '2px 8px',
                     borderRadius: '999px',
-                    border: '1px solid #fecaca',
+                    border: '1px solid color-mix(in srgb, #dc2626 30%, transparent)',
                     cursor: 'pointer'
                   }}
                 >
@@ -1683,7 +1698,8 @@ export default function WorkspaceHome({
               {/* Direct Jump Stage Numbering as per access */}
               <div style={{ marginTop: '0.75rem' }}>
                 <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span>⚡ Quick Jump Stage:</span>
+                  <Zap size={11} style={{ color: 'var(--accent-color, #4f46e5)' }} />
+                  <span>Quick Jump Stage:</span>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.28rem', alignItems: 'center' }}>
                   {permittedComplaintStages.map(stg => (
@@ -1774,11 +1790,11 @@ export default function WorkspaceHome({
                   style={{
                     fontSize: '0.72rem',
                     fontWeight: 700,
-                    color: '#db2777',
-                    background: '#fdf2f8',
+                    color: 'var(--spc-home-pink, #db2777)',
+                    background: 'color-mix(in srgb, #db2777 13%, var(--bg-surface, #ffffff))',
                     padding: '2px 8px',
                     borderRadius: '999px',
-                    border: '1px solid #fbcfe8',
+                    border: '1px solid color-mix(in srgb, #db2777 30%, transparent)',
                     cursor: 'pointer'
                   }}
                 >
@@ -1792,7 +1808,8 @@ export default function WorkspaceHome({
               {/* Direct Jump Stage Numbering as per access */}
               <div style={{ marginTop: '0.75rem' }}>
                 <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary, #64748b)', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <span>⚡ Quick Jump Stage:</span>
+                  <Zap size={11} style={{ color: 'var(--accent-color, #4f46e5)' }} />
+                  <span>Quick Jump Stage:</span>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.28rem', alignItems: 'center' }}>
                   {permittedRecruiterStages.map(stg => (

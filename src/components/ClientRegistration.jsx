@@ -9,10 +9,12 @@ import useTableColumnResize, { ColumnResizer } from '@/utils/tableColumnResize';
 import { getSubItemPermissions } from '@/utils/permissionUtils';
 import { REGISTRATION_TABS, registrationView, registrationStatus, getRegistrationSnapshot, readRegistrationCache, saveRegistrationCache, mergeRegistrationRows, notifyRegistrationChanged } from '@/utils/clientRegistrationLifecycle';
 import { createClient } from '@/utils/supabase/client';
-import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X, AlertTriangle, AlertCircle, Search, ChevronLeft, ChevronRight, Filter, UserPlus, Edit3, Trash2, Clock } from 'lucide-react';
+import { ChevronDown, ChevronUp, Save, Briefcase, MapPin, User, FileText, CheckCircle2, Upload, Download, X, AlertTriangle, AlertCircle, Search, ChevronLeft, ChevronRight, Filter, UserPlus, Edit3, Trash2, Clock, History } from 'lucide-react';
 import Papa from 'papaparse';
 import { getTeamMembers } from '@/app/actions/team';
 import { logAuditAction } from '@/app/actions/audit';
+import { recordImportBatch, getImportBatches } from '@/app/actions/dataImport';
+import BulkUploadHistoryView, { getBulkUploadSnapshot, mergeAndSaveBulkUploadCache } from '@/components/Registration/BulkUploadHistoryView';
 import { getStatesCentral, getDistrictsCentral, getLocationMasterHierarchyCentral } from '@/app/actions/centralLocationMaster';
 import { INDIAN_STATES, INDIAN_DISTRICTS_MAP, getDistrictsForState } from '@/constants/indianLocations';
 import { normalizeLeadRecord, normalizeEmployeeName, normalizePhoneTo10, resolveTeamMemberId, calculateLeadSimilarityScore, cleanCorporateName } from '@/utils/dataSanitizer';
@@ -829,6 +831,61 @@ export default function ClientRegistration({
   const [currentDraftId, setCurrentDraftId] = useState(null);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [clientFormFields, setClientFormFields] = useState({});
+  const [showUploadHistory, setShowUploadHistory] = useState(false);
+  const [selectedUploadBatchId, setSelectedUploadBatchId] = useState(null);
+  const uploadScopeKey = useMemo(
+    () => `${userCompany || 'default'}:${adminCompanyFilter || 'All'}:${canViewAllDrafts ? 'all' : (userId || currentActor || 'self')}`,
+    [userCompany, adminCompanyFilter, canViewAllDrafts, userId, currentActor]
+  );
+  const [uploadHistoryCount, setUploadHistoryCount] = useState(() => {
+    const snap = typeof getBulkUploadSnapshot === 'function' ? getBulkUploadSnapshot('default:All:self') : null;
+    return snap && typeof snap === 'object' && !Array.isArray(snap) && Array.isArray(snap.rows) ? snap.rows.length : 0;
+  });
+
+  useEffect(() => {
+    if (isEditMode || !canViewTab('form')) return;
+    let active = true;
+    const snap = typeof getBulkUploadSnapshot === 'function' ? getBulkUploadSnapshot(uploadScopeKey) : null;
+    if (snap && typeof snap === 'object' && !Array.isArray(snap) && Array.isArray(snap.rows)) {
+      setUploadHistoryCount(snap.rows.length);
+    }
+
+    async function syncUploadHistoryCount() {
+      try {
+        const res = await getImportBatches({
+          importModule: 'lead_registration',
+          sinceCursor: snap?.cursor || null,
+          userCompany
+        });
+        if (!active || !res || typeof res !== 'object' || Array.isArray(res) || !res.success) return;
+        const incoming = Array.isArray(res.batches) ? res.batches : [];
+        if (incoming.length > 0 && typeof mergeAndSaveBulkUploadCache === 'function') {
+          const merged = await mergeAndSaveBulkUploadCache(uploadScopeKey, incoming);
+          if (active && merged && Array.isArray(merged.rows)) {
+            setUploadHistoryCount(merged.rows.length);
+          }
+        }
+      } catch {
+        // Non-blocking upload history count sync
+      }
+    }
+    syncUploadHistoryCount();
+
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+      return () => { active = false; };
+    }
+    const onRecorded = () => {
+      const latest = typeof getBulkUploadSnapshot === 'function' ? getBulkUploadSnapshot(uploadScopeKey) : null;
+      if (active && latest && typeof latest === 'object' && !Array.isArray(latest) && Array.isArray(latest.rows)) {
+        setUploadHistoryCount(latest.rows.length);
+      }
+    };
+    window.addEventListener('crm_bulk_upload_recorded', onRecorded);
+    return () => {
+      active = false;
+      window.removeEventListener('crm_bulk_upload_recorded', onRecorded);
+    };
+  }, [isEditMode, canViewTab, uploadScopeKey, userCompany]);
 
   // Drafts View Filter & Pagination States
   const [draftSearch, setDraftSearch] = useState('');
@@ -2457,96 +2514,146 @@ export default function ClientRegistration({
   };
 
   const handleConfirmImport = async () => {
-    if (filteredImportData.length === 0) {
+    const totalRowsInFile = csvRows.length || allMappedData.length || (filteredImportData.length + blockedDuplicatesImportData.length);
+    if (filteredImportData.length === 0 && blockedDuplicatesImportData.length === 0) {
       alert("No valid new client rows to import.");
       return;
     }
 
     setIsSubmitting(true);
+    const istDateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date()).replace(/-/g, '');
+    const batchRef = `IMP-${istDateStr}-${Math.random().toString(36).slice(2, 6).toUpperCase().padEnd(4, '0')}`;
+    const fileName = importFile?.name || 'Bulk_Upload.csv';
+    const fileSize = Number(importFile?.size || 0);
+
+    const activeMappingSummary = {};
+    IMPORT_FIELDS.forEach(field => {
+      if (mapping[field.key]) {
+        activeMappingSummary[field.label] = mapping[field.key];
+      }
+    });
+
+    const duplicatesSummary = (blockedDuplicatesImportData || []).slice(0, 250).map(dup => ({
+      row: dup._rowNum || '',
+      company: dup.company || dup.name || '',
+      name: dup.name || '',
+      contact: dup.phone || dup.business_contact_1 || dup.cp1_mobile_2 || dup.business_gst || '',
+      gst: dup.business_gst || '',
+      category: dup._isAlreadyInReport ? 'Already in Report' : 'Duplicate',
+      reason: dup._dupReason || 'Duplicate match found'
+    }));
+
+    let currentActorName = currentActor || userName || 'Admin';
+    let currentActorEmail = '';
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const actor = normalizeEmployeeName(user?.email?.split('@')[0] || 'Admin', teamMembers);
-
-      const draftsToInsert = [];
-      const registeredToInsert = [];
-
-      filteredImportData.forEach(r => {
-        if (r.data_status === 'Saved Drafts' || r.status === 'DRAFT') {
-          draftsToInsert.push(r);
-        } else {
-          registeredToInsert.push(r);
-        }
-      });
-
-      // 1. Fetch current lead count once to generate incremental lead_ref_ids cleanly beforehand
-      const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
-      let currentSeq = count || 0;
+      currentActorEmail = user?.email || '';
+      const actor = normalizeEmployeeName(currentActor || userName || user?.email?.split('@')[0] || 'Admin', teamMembers);
+      currentActorName = actor;
 
       const allInsertedLeads = [];
-      const chunkSize = 200;
-      for (let i = 0; i < filteredImportData.length; i += chunkSize) {
-        const chunk = filteredImportData.slice(i, i + chunkSize);
-        
-        // Strip out internal preview metadata and assign lead_ref_id before inserting
-        const cleanChunk = chunk.map((r) => {
-          const copy = normalizeLeadRecord({ ...r }, teamMembers);
-          delete copy._rowNum;
-          delete copy._isDuplicate;
-          delete copy._dupReason;
-          delete copy._isAlreadyInReport;
-          delete copy._matchScore;
-          delete copy._isPotentialMatch;
-          delete copy._matchedRecord;
-          delete copy._matchReason;
-          delete copy._simDetails;
+      const failedImportRows = [];
 
-          currentSeq++;
-          const d = new Date();
-          const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
-          const seq = String(currentSeq).padStart(7, '0');
-          copy.lead_ref_id = dateStr + seq;
+      if (filteredImportData.length > 0) {
+        // 1. Fetch current lead count once to generate incremental lead_ref_ids cleanly beforehand
+        const { count } = await supabase.from('leads').select('*', { count: 'exact', head: true });
+        let currentSeq = count || 0;
 
-          // Resolve assigned_to to valid UUID or null
-          if (copy.assigned_to) {
-            copy.assigned_to = resolveTeamMemberId(copy.assigned_to, teamMembers);
-          } else {
-            copy.assigned_to = null;
-          }
+        const chunkSize = 200;
+        for (let i = 0; i < filteredImportData.length; i += chunkSize) {
+          const chunk = filteredImportData.slice(i, i + chunkSize);
 
-          if (!copy.entry_by) copy.entry_by = actor;
-          if (!copy.created_by) copy.created_by = actor;
+          // Strip out internal preview metadata and assign lead_ref_id before inserting
+          const preparedChunk = chunk.map((r) => {
+            const copy = normalizeLeadRecord({ ...r }, teamMembers);
+            delete copy._rowNum;
+            delete copy._isDuplicate;
+            delete copy._dupReason;
+            delete copy._isAlreadyInReport;
+            delete copy._matchScore;
+            delete copy._isPotentialMatch;
+            delete copy._matchedRecord;
+            delete copy._matchReason;
+            delete copy._simDetails;
 
-          if (r.data_status === 'Saved Drafts') {
-            copy.status = 'DRAFT';
-          } else {
-            // Preserve user's real Lead Status from Excel; only default if empty/None/DRAFT
-            if (!copy.status || copy.status === 'None' || copy.status === 'DRAFT' || copy.status === 'Verified Data' || copy.status === 'Partial Confirmed') {
-              copy.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
+            currentSeq++;
+            const seq = String(currentSeq).padStart(7, '0');
+            copy.lead_ref_id = istDateStr + seq;
+
+            // Resolve assigned_to to valid UUID or null
+            if (copy.assigned_to) {
+              copy.assigned_to = resolveTeamMemberId(copy.assigned_to, teamMembers);
+            } else {
+              copy.assigned_to = null;
             }
-          }
 
-          // Convert empty string for dates, timestamps, or UUIDs to null to prevent Postgres syntax errors
-          Object.keys(copy).forEach(k => {
-            if (copy[k] === '' && (k.endsWith('_date') || k.endsWith('_at') || k.endsWith('timestamp') || k === 'assigned_to')) {
-              copy[k] = null;
+            if (!copy.entry_by) copy.entry_by = actor;
+            if (!copy.created_by) copy.created_by = actor;
+
+            if (r.data_status === 'Saved Drafts') {
+              copy.status = 'DRAFT';
+            } else {
+              // Preserve user's real Lead Status from Excel; only default if empty/None/DRAFT
+              if (!copy.status || copy.status === 'None' || copy.status === 'DRAFT' || copy.status === 'Verified Data' || copy.status === 'Partial Confirmed') {
+                copy.status = tenantLeadStatuses[0] || '1;01>New Stage>New Lead';
+              }
             }
+
+            // Convert empty string for dates, timestamps, or UUIDs to null to prevent Postgres syntax errors
+            Object.keys(copy).forEach(k => {
+              if (copy[k] === '' && (k.endsWith('_date') || k.endsWith('_at') || k.endsWith('timestamp') || k === 'assigned_to')) {
+                copy[k] = null;
+              }
+            });
+
+            return {
+              rawRow: r,
+              cleanRow: sanitizeLeadPayloadForDb(copy, false)
+            };
           });
 
-          return sanitizeLeadPayloadForDb(copy, false);
-        });
+          const cleanChunk = preparedChunk.map(item => item.cleanRow);
+          const { data: insertedRows, error } = await supabase.from('leads').insert(cleanChunk).select();
+          if (error) {
+            console.warn(`Batch chunk insert failed at row ${i + 1}, falling back to row-by-row for error isolation:`, error);
+            for (let idx = 0; idx < preparedChunk.length; idx++) {
+              const item = preparedChunk[idx];
+              const { data: singleInserted, error: singleErr } = await supabase
+                .from('leads')
+                .insert([item.cleanRow])
+                .select();
+              if (!singleErr && Array.isArray(singleInserted) && singleInserted.length > 0) {
+                allInsertedLeads.push(...singleInserted);
+              } else {
+                failedImportRows.push({
+                  row: item.rawRow?._rowNum || (i + idx + 1),
+                  company: item.rawRow?.company || item.rawRow?.name || '',
+                  name: item.rawRow?.name || '',
+                  phone: item.rawRow?.phone || item.rawRow?.business_contact_1 || '',
+                  error: singleErr?.message || error.message || 'Insert failed'
+                });
+              }
+            }
+          } else if (Array.isArray(insertedRows) && insertedRows.length > 0) {
+            allInsertedLeads.push(...insertedRows);
+          }
 
-        const { data: insertedRows, error } = await supabase.from('leads').insert(cleanChunk).select();
-        if (error) {
-          console.error(`Error inserting chunk ${i} to ${i + chunkSize}:`, error);
-          throw new Error(`Failed to upload chunk starting at row ${i + 1}. Error: ${error.message}`);
+          // Brief yield to avoid blocking the main thread
+          await new Promise(resolve => setTimeout(resolve, 30));
         }
-        if (Array.isArray(insertedRows) && insertedRows.length > 0) {
-          allInsertedLeads.push(...insertedRows);
-        }
-
-        // Brief yield to avoid blocking the main thread
-        await new Promise(resolve => setTimeout(resolve, 30));
       }
+
+      const insertedDraftsCount = allInsertedLeads.filter(l => l.status === 'DRAFT').length;
+      const insertedRegisteredCount = allInsertedLeads.filter(l => l.status !== 'DRAFT').length;
+      const createdRefs = allInsertedLeads.map(l => l.lead_ref_id).filter(Boolean);
+      const firstLeadRef = createdRefs[0] || '';
+      const lastLeadRef = createdRefs[createdRefs.length - 1] || '';
 
       // 2. Immediately upsert all inserted leads to local IndexedDB
       if (allInsertedLeads.length > 0) {
@@ -2556,7 +2663,7 @@ export default function ClientRegistration({
         try {
           const notes = allInsertedLeads.map(l => ({
             lead_id: l.id,
-            note_text: (l.status === 'DRAFT' ? 'Client Draft Saved via Bulk Upload' : 'Client Registered via Bulk Import') + (l.assigned_to ? ` (Assigned to ${normalizeEmployeeName(l.assigned_to, teamMembers)})` : ''),
+            note_text: (l.status === 'DRAFT' ? `Client Draft Saved via Bulk Upload [${batchRef} - ${fileName}]` : `Client Registered via Bulk Import [${batchRef} - ${fileName}]`) + (l.assigned_to ? ` (Assigned to ${normalizeEmployeeName(l.assigned_to, teamMembers)})` : ''),
             created_by: actor
           }));
           for (let j = 0; j < notes.length; j += 200) {
@@ -2567,14 +2674,80 @@ export default function ClientRegistration({
         }
       }
 
+      // 3. Record permanent bulk upload batch log (non-blocking)
+      let recordedBatch = null;
+      try {
+        const ourCompanyVal = allInsertedLeads[0]?.our_company || filteredImportData[0]?.our_company || formData.our_company || userCompany || '';
+        const batchRes = await recordImportBatch({
+          batchRef,
+          importModule: 'lead_registration',
+          userCompany,
+          ourCompany: ourCompanyVal,
+          fileName,
+          fileSize,
+          totalRecords: totalRowsInFile,
+          successfulRecords: allInsertedLeads.length,
+          failedRecords: failedImportRows.length,
+          draftsCount: insertedDraftsCount,
+          registeredCount: insertedRegisteredCount,
+          duplicatesCount: blockedDuplicatesImportData.length,
+          alreadyInReportCount: alreadyInReportImportData.length,
+          potentialMatchesCount: potentialMatchesImportData.length,
+          defaultDataStatus,
+          mapping: activeMappingSummary,
+          duplicatesSummary,
+          errorsSummary: failedImportRows,
+          createdRefsSample: createdRefs.slice(0, 100),
+          firstLeadRef,
+          lastLeadRef
+        });
+        if (batchRes && typeof batchRes === 'object' && !Array.isArray(batchRes) && batchRes.success && batchRes.batch) {
+          recordedBatch = batchRes.batch;
+          if (typeof mergeAndSaveBulkUploadCache === 'function') {
+            const merged = await mergeAndSaveBulkUploadCache(uploadScopeKey, [batchRes.batch]);
+            if (merged && Array.isArray(merged.rows)) {
+              setUploadHistoryCount(merged.rows.length);
+            }
+          }
+        }
+      } catch (batchErr) {
+        console.warn('Non-blocking bulk upload history logging failed:', batchErr);
+      }
+
       setShowImporter(false);
 
-      if (registeredToInsert.length > 0 && onRegistrationSuccess) {
+      const batchSummaryMeta = {
+        fileName,
+        uploaderName: recordedBatch?.uploader_name || currentActorName,
+        batchRef: recordedBatch?.batch_ref_code || batchRef,
+        batchId: recordedBatch?.id || null,
+        totalRows: totalRowsInFile,
+        duplicatesCount: blockedDuplicatesImportData.length,
+        failedCount: failedImportRows.length
+      };
+
+      if (allInsertedLeads.length === 0 && blockedDuplicatesImportData.length > 0 && failedImportRows.length === 0) {
         setUploadModal({
           type: 'success',
-          title: 'Bulk Upload Complete!',
-          draftsCount: draftsToInsert.length,
-          registeredCount: registeredToInsert.length,
+          title: 'Duplicate Check Log Saved',
+          draftsCount: 0,
+          registeredCount: 0,
+          ...batchSummaryMeta,
+          message: `All ${blockedDuplicatesImportData.length} rows in "${fileName}" were already present as duplicates and skipped. Complete audit log saved in Upload History.`,
+          primaryBtnText: 'View in Upload History',
+          onPrimaryClick: () => {
+            setUploadModal(null);
+            setSelectedUploadBatchId(batchSummaryMeta.batchId);
+            setShowUploadHistory(true);
+          }
+        });
+      } else if (insertedRegisteredCount > 0 && onRegistrationSuccess) {
+        setUploadModal({
+          type: failedImportRows.length > 0 ? 'error' : 'success',
+          title: failedImportRows.length > 0 ? 'Bulk Upload Completed with Some Errors' : 'Bulk Upload Complete!',
+          draftsCount: insertedDraftsCount,
+          registeredCount: insertedRegisteredCount,
+          ...batchSummaryMeta,
           message: 'Clients registered successfully in Lead Registered Report and Drafts stored in Saved Drafts.',
           primaryBtnText: 'View Registered Report',
           onPrimaryClick: () => {
@@ -2587,12 +2760,15 @@ export default function ClientRegistration({
         setActiveView('drafts');
         loadDrafts();
         setUploadModal({
-          type: 'success',
-          title: 'Bulk Upload Successful!',
-          draftsCount: draftsToInsert.length,
+          type: failedImportRows.length > 0 && allInsertedLeads.length === 0 ? 'error' : 'success',
+          title: failedImportRows.length > 0 && allInsertedLeads.length === 0 ? 'Upload Failed' : 'Bulk Upload Successful!',
+          draftsCount: insertedDraftsCount,
           registeredCount: 0,
-          message: 'Incomplete records saved as Drafts. They are now ready in "Saved Drafts" tab for data entry completion.',
-          primaryBtnText: `View Saved Drafts (${draftsToInsert.length.toLocaleString()})`,
+          ...batchSummaryMeta,
+          message: allInsertedLeads.length > 0
+            ? 'Incomplete records saved as Drafts. They are now ready in "Saved Drafts" tab for data entry completion.'
+            : 'No records could be inserted. Check Upload History for row-by-row error details.',
+          primaryBtnText: insertedDraftsCount > 0 ? `View Saved Drafts (${insertedDraftsCount.toLocaleString()})` : 'Close',
           onPrimaryClick: () => {
             setUploadModal(null);
             setActiveView('drafts');
@@ -2606,11 +2782,54 @@ export default function ClientRegistration({
       }
     } catch (err) {
       console.error(err);
+      let failedBatch = null;
+      try {
+        const failRes = await recordImportBatch({
+          batchRef,
+          importModule: 'lead_registration',
+          userCompany,
+          ourCompany: formData.our_company || userCompany || '',
+          fileName,
+          fileSize,
+          totalRecords: totalRowsInFile,
+          successfulRecords: 0,
+          failedRecords: filteredImportData.length || totalRowsInFile || 1,
+          draftsCount: 0,
+          registeredCount: 0,
+          duplicatesCount: blockedDuplicatesImportData.length,
+          alreadyInReportCount: alreadyInReportImportData.length,
+          potentialMatchesCount: potentialMatchesImportData.length,
+          defaultDataStatus,
+          status: 'FAILED',
+          mapping: activeMappingSummary,
+          duplicatesSummary,
+          errorsSummary: [{ row: 0, company: fileName, phone: '', error: err?.message || 'Error uploading file' }]
+        });
+        if (failRes && typeof failRes === 'object' && !Array.isArray(failRes) && failRes.success && failRes.batch) {
+          failedBatch = failRes.batch;
+          if (typeof mergeAndSaveBulkUploadCache === 'function') {
+            const merged = await mergeAndSaveBulkUploadCache(uploadScopeKey, [failRes.batch]);
+            if (merged && Array.isArray(merged.rows)) {
+              setUploadHistoryCount(merged.rows.length);
+            }
+          }
+        }
+      } catch {
+        // Non-blocking audit logging
+      }
+
       setUploadModal({
         type: 'error',
         title: 'Upload Failed',
         draftsCount: 0,
         registeredCount: 0,
+        fileName,
+        uploaderName: failedBatch?.uploader_name || currentActorName,
+        batchRef: failedBatch?.batch_ref_code || batchRef,
+        batchId: failedBatch?.id || null,
+        totalRows: totalRowsInFile,
+        duplicatesCount: blockedDuplicatesImportData.length,
+        failedCount: filteredImportData.length || totalRowsInFile || 1,
         message: err.message || 'Error uploading file',
         primaryBtnText: 'Close',
         onPrimaryClick: () => setUploadModal(null)
@@ -2679,6 +2898,27 @@ export default function ClientRegistration({
                   <Upload size={16} /> Bulk Upload CSV
                   <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFileUpload} style={{ display: 'none' }} />
                 </label>
+                {canViewTab('form') && (
+                  <button
+                    type="button"
+                    onClick={() => setShowUploadHistory(prev => !prev)}
+                    style={{
+                      padding: '0.5rem 0.95rem',
+                      background: showUploadHistory ? 'var(--accent-color)' : 'var(--bg-primary)',
+                      border: '1px solid var(--border-light)',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      fontWeight: 600,
+                      color: showUploadHistory ? '#fff' : 'var(--text-primary)'
+                    }}
+                    title="View Bulk Upload History & Audit Logs"
+                  >
+                    <History size={16} /> Upload History ({uploadHistoryCount})
+                  </button>
+                )}
               </>
             )}
             {isEditMode && onClose && (
@@ -2689,9 +2929,36 @@ export default function ClientRegistration({
 
         {/* Registration lifecycle tabs */}
         {!isEditMode && <div role="tablist" aria-label="Lead registration" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-light)', paddingBottom: '0.75rem' }}>
-          {allowedTabs.map(tab => <button key={tab.id} type="button" role="tab" aria-selected={activeView === tab.id} onClick={() => setActiveView(tab.id)} style={{ padding: '0.6rem 1.25rem', borderRadius: 8, border: '1px solid var(--border-light)', background: activeView === tab.id ? 'var(--accent-color)' : 'var(--bg-primary)', color: activeView === tab.id ? '#fff' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer' }}>
-            {tab.label}{tab.id === 'drafts' ? ' (' + draftsList.length + ')' : ''}
-          </button>)}
+          {allowedTabs.map(tab => {
+            const isTabActive = !showUploadHistory && activeView === tab.id;
+            return (
+              <button key={tab.id} type="button" role="tab" aria-selected={isTabActive} onClick={() => { setShowUploadHistory(false); setActiveView(tab.id); }} style={{ padding: '0.6rem 1.25rem', borderRadius: 8, border: '1px solid var(--border-light)', background: isTabActive ? 'var(--accent-color)' : 'var(--bg-primary)', color: isTabActive ? '#fff' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer' }}>
+                {tab.label}{tab.id === 'drafts' ? ' (' + draftsList.length + ')' : ''}
+              </button>
+            );
+          })}
+          {canViewTab('form') && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={showUploadHistory}
+              onClick={() => setShowUploadHistory(true)}
+              style={{
+                padding: '0.6rem 1.25rem',
+                borderRadius: 8,
+                border: '1px solid var(--border-light)',
+                background: showUploadHistory ? 'var(--accent-color)' : 'var(--bg-primary)',
+                color: showUploadHistory ? '#fff' : 'var(--text-secondary)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem'
+              }}
+            >
+              <History size={15} /> Upload History ({uploadHistoryCount})
+            </button>
+          )}
         </div>}
         {deleteDraft && <div role="dialog" aria-modal="true" aria-labelledby="registration-delete-title" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem' }}>
           <div style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', padding: '1.5rem', borderRadius: 12, maxWidth: 500, width: '100%' }}>
@@ -2706,7 +2973,20 @@ export default function ClientRegistration({
           </div>
         </div>}
         {/* Drafts View */}
-        {!isEditMode && ['submitted', 'deleted'].includes(activeView) ? (
+        {!isEditMode && showUploadHistory && canViewTab('form') ? (
+          <BulkUploadHistoryView
+            userCompany={userCompany}
+            adminCompanyFilter={adminCompanyFilter}
+            userId={userId}
+            userName={currentActor || userName}
+            userRole={userRole}
+            canViewAllUploads={canViewAllDrafts}
+            initialSelectedBatchId={selectedUploadBatchId}
+            onClearSelectedBatch={() => setSelectedUploadBatchId(null)}
+            onCountChange={setUploadHistoryCount}
+            onBackToForm={() => { setShowUploadHistory(false); setActiveView('form'); }}
+          />
+        ) : !isEditMode && ['submitted', 'deleted'].includes(activeView) ? (
           <RegistrationHistoryTable key={registrationScope + activeView} view={activeView} rows={canViewTab(activeView) ? viewRows(activeView) : []} loading={isLoadingDrafts} error={registrationErrors[activeView]} onRetry={() => loadRegistrationRecords(activeView)} />
         ) : !isEditMode && activeView === 'denied' ? <p>You do not have access to registration tabs.</p> : activeView === 'drafts' && !isEditMode ? (
           <div>
@@ -4014,9 +4294,31 @@ export default function ClientRegistration({
                   <button onClick={() => setImporterStep('mapping')} style={{ padding: '0.5rem 1.25rem', border: '1px solid var(--border-light)', borderRadius: '6px', cursor: 'pointer', background: 'var(--bg-surface)', fontWeight: 600 }}>
                     ‹ Back to Mapping
                   </button>
-                  <button onClick={handleConfirmImport} disabled={isSubmitting || filteredImportData.length === 0} style={{ padding: '0.5rem 1.5rem', border: 'none', borderRadius: '6px', cursor: (isSubmitting || filteredImportData.length === 0) ? 'not-allowed' : 'pointer', background: filteredImportData.length > 0 ? '#10b981' : '#a7f3d0', color: 'white', fontWeight: 700, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <button
+                    onClick={handleConfirmImport}
+                    disabled={isSubmitting || (filteredImportData.length === 0 && blockedDuplicatesImportData.length === 0)}
+                    style={{
+                      padding: '0.5rem 1.5rem',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: (isSubmitting || (filteredImportData.length === 0 && blockedDuplicatesImportData.length === 0)) ? 'not-allowed' : 'pointer',
+                      background: filteredImportData.length > 0 ? '#10b981' : (blockedDuplicatesImportData.length > 0 ? '#d97706' : '#a7f3d0'),
+                      color: 'white',
+                      fontWeight: 700,
+                      fontSize: '0.92rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem'
+                    }}
+                  >
                     <CheckCircle2 size={18} />
-                    {isSubmitting ? 'Importing...' : `Confirm & Import (${filteredImportData.length} New Clients)`}
+                    {isSubmitting
+                      ? 'Importing...'
+                      : (filteredImportData.length > 0
+                        ? `Confirm & Import (${filteredImportData.length} New Clients)`
+                        : (blockedDuplicatesImportData.length > 0
+                          ? `Save Duplicate Check Log (${blockedDuplicatesImportData.length} Duplicates)`
+                          : 'Confirm & Import (0 New Clients)'))}
                   </button>
                 </>
               )}
@@ -4150,6 +4452,32 @@ export default function ClientRegistration({
                 textAlign: 'left'
               }}
             >
+              {uploadModal.fileName && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.84rem', gap: '0.5rem' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)' }}>📄 File Name:</span>
+                  <strong style={{ color: 'var(--text-primary, #0f172a)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }} title={uploadModal.fileName}>
+                    {uploadModal.fileName}
+                  </strong>
+                </div>
+              )}
+              {uploadModal.uploaderName && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.84rem' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)' }}>👤 Uploaded By:</span>
+                  <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{uploadModal.uploaderName}</strong>
+                </div>
+              )}
+              {uploadModal.batchRef && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.84rem' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)' }}>🏷️ Batch Ref ID:</span>
+                  <strong style={{ fontFamily: 'monospace', color: '#2563eb' }}>{uploadModal.batchRef}</strong>
+                </div>
+              )}
+              {Number(uploadModal.totalRows || 0) > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.84rem' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)' }}>📊 Total Rows in File:</span>
+                  <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{Number(uploadModal.totalRows).toLocaleString()} rows</strong>
+                </div>
+              )}
               {uploadModal.draftsCount > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.9rem' }}>
                   <span style={{ color: 'var(--text-secondary, #64748b)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -4170,37 +4498,79 @@ export default function ClientRegistration({
                   </strong>
                 </div>
               )}
+              {Number(uploadModal.duplicatesCount || 0) > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.84rem' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)' }}>⚠️ Duplicates Skipped:</span>
+                  <strong style={{ color: '#b45309' }}>{Number(uploadModal.duplicatesCount).toLocaleString()} rows</strong>
+                </div>
+              )}
+              {Number(uploadModal.failedCount || 0) > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.84rem' }}>
+                  <span style={{ color: 'var(--text-secondary, #64748b)' }}>❌ Failed Rows:</span>
+                  <strong style={{ color: '#dc2626' }}>{Number(uploadModal.failedCount).toLocaleString()} rows</strong>
+                </div>
+              )}
               <div style={{ fontSize: '0.84rem', color: 'var(--text-secondary, #64748b)', marginTop: '0.2rem', lineHeight: 1.5 }}>
                 {uploadModal.message}
               </div>
             </div>
 
-            {/* Action Button */}
-            <button
-              onClick={() => {
-                if (uploadModal.onPrimaryClick) uploadModal.onPrimaryClick();
-                else setUploadModal(null);
-              }}
-              style={{
-                width: '100%',
-                padding: '0.85rem 1.25rem',
-                borderRadius: '8px',
-                border: 'none',
-                backgroundColor: uploadModal.type === 'error' ? '#ef4444' : '#2563eb',
-                color: '#ffffff',
-                fontSize: '0.95rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.5rem',
-                boxShadow: uploadModal.type === 'error' ? '0 4px 12px rgba(239, 68, 68, 0.25)' : '0 4px 12px rgba(37, 99, 235, 0.25)',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              {uploadModal.primaryBtnText || 'OK'}
-            </button>
+            {/* Action Buttons */}
+            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+              <button
+                onClick={() => {
+                  if (uploadModal.onPrimaryClick) uploadModal.onPrimaryClick();
+                  else setUploadModal(null);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.85rem 1.25rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: uploadModal.type === 'error' ? '#ef4444' : '#2563eb',
+                  color: '#ffffff',
+                  fontSize: '0.95rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  boxShadow: uploadModal.type === 'error' ? '0 4px 12px rgba(239, 68, 68, 0.25)' : '0 4px 12px rgba(37, 99, 235, 0.25)',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {uploadModal.primaryBtnText || 'OK'}
+              </button>
+              {uploadModal.batchRef && uploadModal.primaryBtnText !== 'View in Upload History' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetBatchId = uploadModal.batchId || null;
+                    setUploadModal(null);
+                    setSelectedUploadBatchId(targetBatchId);
+                    setShowUploadHistory(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 1rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-light, #cbd5e1)',
+                    backgroundColor: 'var(--bg-surface, #ffffff)',
+                    color: 'var(--text-primary, #0f172a)',
+                    fontSize: '0.88rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.45rem'
+                  }}
+                >
+                  <History size={16} /> View in Upload History
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

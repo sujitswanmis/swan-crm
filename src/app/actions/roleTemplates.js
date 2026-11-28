@@ -5,6 +5,7 @@ import { getAdminClient } from '@/utils/supabase/adminClient';
 import { MODULES_CONFIG } from '@/config/modulesConfig';
 import { ROLE_PRESETS } from '@/components/UserManagement/utils/rolePresets';
 import { logAuditAction } from './audit';
+import { assertTenantModuleSeatsAvailable } from '@/lib/saasSeatLimits';
 
 const SWAN_COMPANIES = new Set(['nsmlr', 'nstlp', 'nstl', 'new swan group', 'swan agro', 'nse-1', 'nse-2', 'nse-6', 'nscpl', 'nsacpl']);
 const MASTER_EMAILS = new Set(['supujacreations@gmail.com', 'admin@newswangroup.com']);
@@ -250,6 +251,12 @@ export async function assignRoleTemplate(userId, roleId) {
     delete nextAccess.role_template_name;
     Object.assign(nextAccess, permissions, { role_template_id: template.id, role_template_name: template.name });
 
+    await assertTenantModuleSeatsAvailable(
+      db,
+      target.tenant_id || target.module_access?._tenantId,
+      [{ beforeUser: target, afterUser: { ...target, module_access: nextAccess } }]
+    );
+
     const updateTarget = payload => {
       let query = db.from('user_roles').update(payload).eq('user_id', target.user_id);
       if (target.company) query = query.eq('company', target.company);
@@ -300,6 +307,27 @@ export async function updateRoleTemplate(input) {
 
     if (findError) throw new Error(databaseError(findError));
     if (!existing) throw new Error('Role template not found in this workspace.');
+
+    // Pre-validate module seat limits across all workspace users currently holding this role template
+    const { data: preAssignedUsers } = await db.from('user_roles')
+      .select('*')
+      .contains('module_access', { role_template_id: roleId });
+    const scopedAssigned = (preAssignedUsers || []).filter(u => sameWorkspace(actor, u));
+    if (scopedAssigned.length > 0) {
+      const proposedChanges = scopedAssigned.map(u => {
+        const nextAccess = { ...(u.module_access || {}) };
+        for (const moduleDef of MODULES_CONFIG) delete nextAccess[moduleDef.id];
+        for (const flag of GLOBAL_PERMISSION_KEYS) delete nextAccess[flag];
+        delete nextAccess.can_import_export;
+        Object.assign(nextAccess, permissions, { role_template_id: roleId, role_template_name: name });
+        return { beforeUser: u, afterUser: { ...u, module_access: nextAccess } };
+      });
+      await assertTenantModuleSeatsAvailable(
+        db,
+        actor.tenant_id || actor.module_access?._tenantId || scopedAssigned[0]?.tenant_id,
+        proposedChanges
+      );
+    }
 
     const { data, error } = await db.from('crm_role_templates')
       .update({ name, description, permissions })

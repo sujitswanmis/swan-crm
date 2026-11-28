@@ -202,6 +202,62 @@ const KeepAliveTab = React.memo(
   }
 );
 
+const ModuleComingSoonCard = React.memo(function ModuleComingSoonCard({ icon: Icon, title, description, onBackHome }) {
+  return (
+    <div
+      className="card"
+      style={{
+        maxWidth: '520px',
+        margin: '3rem auto',
+        padding: '2.5rem 2rem',
+        textAlign: 'center',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '0.85rem'
+      }}
+    >
+      <div
+        style={{
+          width: '56px',
+          height: '56px',
+          borderRadius: '14px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'color-mix(in srgb, var(--accent-color) 12%, var(--bg-surface))',
+          border: '1px solid color-mix(in srgb, var(--accent-color) 28%, transparent)',
+          color: 'var(--accent-color)'
+        }}
+      >
+        <Icon size={26} />
+      </div>
+      <span
+        style={{
+          fontSize: '0.72rem',
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          padding: '0.2rem 0.65rem',
+          borderRadius: '999px',
+          backgroundColor: 'color-mix(in srgb, var(--accent-color) 12%, var(--bg-surface))',
+          color: 'var(--accent-color)',
+          border: '1px solid color-mix(in srgb, var(--accent-color) 25%, transparent)'
+        }}
+      >
+        In Development
+      </span>
+      <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</h2>
+      <p style={{ margin: 0, fontSize: '0.88rem', lineHeight: 1.5, color: 'var(--text-secondary)', maxWidth: '38ch' }}>
+        {description}
+      </p>
+      <button type="button" className="btn-primary" onClick={onBackHome} style={{ marginTop: '0.5rem' }}>
+        Back to Home Workspace
+      </button>
+    </div>
+  );
+});
+
 export function isModuleVisibleOnPlatform(tabId, moduleAccess = {}, userRole = '', userEmail = '') {
   if (checkIsMasterAdmin(moduleAccess, userRole, userEmail)) return true;
   if (!isUserPlatformAllowed(moduleAccess, userRole, null, userEmail)) return false;
@@ -7679,8 +7735,8 @@ export default function CRMContainer({
             </button>
             
             {activeTab !== 'ai' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flexShrink: 0, overflow: 'hidden' }}>
-                <h1 className="spc-header-title" suppressHydrationWarning style={{ fontSize: '0.96rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', margin: 0, minWidth: 0, flexShrink: 0, letterSpacing: '-0.015em' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0, flexShrink: 1, overflow: 'hidden' }}>
+                <h1 className="spc-header-title" suppressHydrationWarning style={{ fontSize: '0.96rem', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', margin: 0, minWidth: 0, flexShrink: 1, letterSpacing: '-0.015em' }}>
                   {activeTab === 'home' && 'Home Workspace'}
                   {activeTab === 'dashboard' && (
                     activeAnalyticsChannelPage ? `Analytics Dashboard • ${activeAnalyticsChannelPage.label}` : 'Analytics Dashboard'
@@ -7742,22 +7798,22 @@ export default function CRMContainer({
                   {activeTab === 'admin_message_config' && 'Admin Messaging Config'}
                   {activeTab === 'settings' && 'Enterprise Settings'}
                   {(activeTab === 'saas_master' || activeTab === 'saas_studio') && (
-                    saasSubTab === 'pricing' ? '👑 SaaS Master — Dynamic Pricing & Catalog' :
-                    saasSubTab === 'billing' ? '👑 SaaS Master — Master Invoices & Billing Ledger' :
-                    saasSubTab === 'requests' ? '👑 SaaS Master — Pending Approvals & Requests' :
-                    saasSubTab === 'trials' ? '👑 SaaS Master — Trials, Renewals & Expiry Audit' :
-                    saasSubTab === 'analytics' ? '👑 SaaS Master — Client Module Matrix & Usage Quotas' :
-                    '👑 SaaS Master — Client Workspaces & Subscriptions'
+                    saasSubTab === 'pricing' ? 'SaaS Master — Dynamic Pricing & Catalog' :
+                    saasSubTab === 'billing' ? 'SaaS Master — Master Invoices & Billing Ledger' :
+                    saasSubTab === 'requests' ? 'SaaS Master — Pending Approvals & Requests' :
+                    saasSubTab === 'trials' ? 'SaaS Master — Trials, Renewals & Expiry Audit' :
+                    saasSubTab === 'analytics' ? 'SaaS Master — Client Module Matrix & Usage Quotas' :
+                    'SaaS Master — Client Workspaces & Subscriptions'
                   )}
                   {activeTab === 'config_master' && (
-                    configMasterSubTab === 'notifications' ? '⚙️ Config Master — User Notifications' :
-                    configMasterSubTab === 'messages' ? '⚙️ Config Master — Platform Messaging & OTPs' :
-                    configMasterSubTab === 'status' ? '⚙️ Config Master — System Health & Server Logs' :
-                    configMasterSubTab === 'automation' ? '⚙️ Config Master — Automation & Webhook API' :
-                    configMasterSubTab === 'tenant_integrations' ? '⚙️ Config Master — Tenant API & Integrations' :
-                    configMasterSubTab === 'navigation' ? '⚙️ Config Master — Page Navigation Rules' :
-                    configMasterSubTab === 'offline_rule' ? '⚙️ Config Master — Offline Rules & Sync Policy' :
-                    '⚙️ Config Master — Public User Management'
+                    configMasterSubTab === 'notifications' ? 'Config Master — User Notifications' :
+                    configMasterSubTab === 'messages' ? 'Config Master — Platform Messaging & OTPs' :
+                    configMasterSubTab === 'status' ? 'Config Master — System Health & Server Logs' :
+                    configMasterSubTab === 'automation' ? 'Config Master — Automation & Webhook API' :
+                    configMasterSubTab === 'tenant_integrations' ? 'Config Master — Tenant API & Integrations' :
+                    configMasterSubTab === 'navigation' ? 'Config Master — Page Navigation Rules' :
+                    configMasterSubTab === 'offline_rule' ? 'Config Master — Offline Rules & Sync Policy' :
+                    'Config Master — Public User Management'
                   )}
                   {!['home', 'dashboard', 'leads', 'orders', 'mrp', 'mrp_against', 'recruiter', 'joining', 'attendance', 'checklist', 'delegation', 'field_force', 'registration', 'report', 'aiadmin', 'aiknowledgebase', 'callcenter', 'calladmin', 'aicallcenter', 'team', 'user_management_new', 'client_registration', 'client_report', 'workplace', 'public_users', 'party', 'channel_ops', 'channel-operations', 'location_territory', 'location_master', 'whatsapp_official', 'whatsapp_unofficial', 'sms_config', 'rcs_config', 'email_config', 'admin_message_config', 'settings', 'saas_master', 'saas_studio', 'config_master'].includes(activeTab) && (
                     activeTab ? activeTab.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Dashboard'
@@ -7788,16 +7844,6 @@ export default function CRMContainer({
                 transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
                 boxShadow: 'var(--shadow-xs)',
                 flexShrink: 0
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.borderColor = 'var(--accent-color)';
-                e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
-                e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border-light)';
-                e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
-                e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
               }}
               title="Quick Spotlight Search (Ctrl + K)"
             >
@@ -7900,18 +7946,6 @@ export default function CRMContainer({
                   transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
                   boxShadow: 'var(--shadow-xs)'
                 }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--accent-color)';
-                  e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
-                  e.currentTarget.style.color = 'var(--accent-color)';
-                  e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--border-light)';
-                  e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
-                  e.currentTarget.style.color = 'var(--text-primary)';
-                  e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
-                }}
                 title="Toggle CRM Softphone"
               >
                 <PhoneCall size={17} />
@@ -7927,6 +7961,7 @@ export default function CRMContainer({
                     type="button"
                     onClick={() => setShowNotifications(!showNotifications)}
                     className="header-icon-btn"
+                    data-open={showNotifications ? 'true' : undefined}
                     style={{
                       width: '36px',
                       height: '36px',
@@ -7941,22 +7976,6 @@ export default function CRMContainer({
                       transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
                       boxShadow: 'var(--shadow-xs)',
                       position: 'relative'
-                    }}
-                    onMouseOver={(e) => {
-                      if (!showNotifications) {
-                        e.currentTarget.style.borderColor = 'var(--accent-color)';
-                        e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
-                        e.currentTarget.style.color = 'var(--accent-color)';
-                        e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-                      }
-                    }}
-                    onMouseOut={(e) => {
-                      if (!showNotifications) {
-                        e.currentTarget.style.borderColor = 'var(--border-light)';
-                        e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
-                        e.currentTarget.style.color = 'var(--text-primary)';
-                        e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
-                      }
                     }}
                     title="Notifications & Alerts"
                   >
@@ -8004,7 +8023,7 @@ export default function CRMContainer({
                   border: '1px solid var(--border-light)',
                   borderRadius: '16px',
                   boxShadow: '0 25px 50px -12px rgba(0,0,0,0.35), 0 0 0 1px rgba(0,0,0,0.08)',
-                  zIndex: 10000,
+                  zIndex: 'var(--z-modal, 10000)',
                   display: 'flex',
                   flexDirection: 'column',
                   overflow: 'hidden',
@@ -8037,6 +8056,7 @@ export default function CRMContainer({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       <button
                         type="button"
+                        data-flat="true"
                         onClick={() => setShowNotificationPreferencesModal(true)}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.3rem', display: 'flex', alignItems: 'center', borderRadius: '6px' }}
                         title="Alert & Notification Preferences"
@@ -8045,6 +8065,7 @@ export default function CRMContainer({
                       </button>
                       <button
                         type="button"
+                        data-flat="true"
                         onClick={() => setShowNotifications(false)}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.3rem', display: 'flex', alignItems: 'center', borderRadius: '6px' }}
                         title="Close"
@@ -8109,15 +8130,16 @@ export default function CRMContainer({
                     overflowX: 'auto'
                   }}>
                     {[
-                      { id: 'all', label: 'All', icon: '🔔', count: (dueFollowUps?.length || 0) + (userChecklistSlots?.length || 0) + (userDelegationTasks?.length || 0) + (userRecruiterAlerts?.length || 0) + (userComplaintAlerts?.length || 0) + (userBroadcastAlerts?.length || 0) },
-                      { id: 'checklist', label: 'Checklist', icon: '📋', count: userChecklistSlots.length },
-                      { id: 'delegation', label: 'Delegation', icon: '🎯', count: userDelegationTasks.length },
-                      { id: 'leads', label: 'Leads', icon: '📞', count: dueFollowUps.length },
-                      { id: 'recruiter', label: 'Recruiter', icon: '👥', count: userRecruiterAlerts.length },
-                      { id: 'complaints', label: 'Complaints', icon: '🛠️', count: userComplaintAlerts.length },
-                      { id: 'notices', label: 'Notices', icon: '📢', count: userBroadcastAlerts.length }
+                      { id: 'all', label: 'All', Icon: Bell, count: (dueFollowUps?.length || 0) + (userChecklistSlots?.length || 0) + (userDelegationTasks?.length || 0) + (userRecruiterAlerts?.length || 0) + (userComplaintAlerts?.length || 0) + (userBroadcastAlerts?.length || 0) },
+                      { id: 'checklist', label: 'Checklist', Icon: CheckSquare, count: userChecklistSlots.length },
+                      { id: 'delegation', label: 'Delegation', Icon: Target, count: userDelegationTasks.length },
+                      { id: 'leads', label: 'Leads', Icon: PhoneCall, count: dueFollowUps.length },
+                      { id: 'recruiter', label: 'Recruiter', Icon: Users, count: userRecruiterAlerts.length },
+                      { id: 'complaints', label: 'Complaints', Icon: AlertTriangle, count: userComplaintAlerts.length },
+                      { id: 'notices', label: 'Notices', Icon: Megaphone, count: userBroadcastAlerts.length }
                     ].map(tab => {
                       const isActive = notifMainTab === tab.id;
+                      const TabIcon = tab.Icon;
                       return (
                         <button
                           key={tab.id}
@@ -8139,7 +8161,8 @@ export default function CRMContainer({
                             transition: 'all 0.15s'
                           }}
                         >
-                          <span>{tab.icon} {tab.label}</span>
+                          <TabIcon size={13} style={{ flexShrink: 0 }} />
+                          <span>{tab.label}</span>
                           {tab.count > 0 && (
                             <span style={{
                               fontSize: '0.68rem',
@@ -8226,10 +8249,14 @@ export default function CRMContainer({
                                   color: '#ffffff',
                                   fontSize: '0.76rem',
                                   fontWeight: 700,
-                                  cursor: 'pointer'
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
                                 }}
                               >
-                                Fill Checklist 👉
+                                <span>Fill Checklist</span>
+                                <ChevronRight size={13} />
                               </button>
                             </div>
                           </div>
@@ -8318,10 +8345,14 @@ export default function CRMContainer({
                                     color: '#ffffff',
                                     fontSize: '0.76rem',
                                     fontWeight: 700,
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.25rem'
                                   }}
                                 >
-                                  View Task 👉
+                                  <span>View Task</span>
+                                  <ChevronRight size={13} />
                                 </button>
                               </div>
                             </div>
@@ -8687,10 +8718,14 @@ export default function CRMContainer({
                                   color: '#ffffff',
                                   fontSize: '0.76rem',
                                   fontWeight: 700,
-                                  cursor: 'pointer'
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
                                 }}
                               >
-                                View Candidate 👉
+                                <span>View Candidate</span>
+                                <ChevronRight size={13} />
                               </button>
                             </div>
                           </div>
@@ -8772,10 +8807,14 @@ export default function CRMContainer({
                                   color: '#ffffff',
                                   fontSize: '0.76rem',
                                   fontWeight: 700,
-                                  cursor: 'pointer'
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
                                 }}
                               >
-                                Open Ticket 👉
+                                <span>Open Ticket</span>
+                                <ChevronRight size={13} />
                               </button>
                             </div>
                           </div>
@@ -8841,9 +8880,10 @@ export default function CRMContainer({
                             <button
                               type="button"
                               onClick={() => { setChecklistSubTab('my_checklists'); handleTabChange('checklist'); setShowNotifications(false); }}
-                              style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
+                              style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
                             >
-                              Go to Checklist 👉
+                              <span>Go to Checklist</span>
+                              <ChevronRight size={13} />
                             </button>
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
@@ -8884,9 +8924,10 @@ export default function CRMContainer({
                             <button
                               type="button"
                               onClick={() => { setDelegationSubTab('to_me'); handleTabChange('delegation'); setShowNotifications(false); }}
-                              style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
+                              style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
                             >
-                              Go to Delegation 👉
+                              <span>Go to Delegation</span>
+                              <ChevronRight size={13} />
                             </button>
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
@@ -8931,9 +8972,10 @@ export default function CRMContainer({
                           <button
                             type="button"
                             onClick={() => setNotifMainTab('leads')}
-                            style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
+                            style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
                           >
-                            View Filter Grid 👉
+                            <span>View Filter Grid</span>
+                            <ChevronRight size={13} />
                           </button>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
@@ -8980,9 +9022,10 @@ export default function CRMContainer({
                             <button
                               type="button"
                               onClick={() => { setActiveTab('recruiter'); setShowNotifications(false); }}
-                              style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
+                              style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
                             >
-                              Go to Recruiter 👉
+                              <span>Go to Recruiter</span>
+                              <ChevronRight size={13} />
                             </button>
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
@@ -9028,9 +9071,10 @@ export default function CRMContainer({
                             <button
                               type="button"
                               onClick={() => { setActiveTab('channel_ops'); setChannelOpsSubTab('complaints'); setShowNotifications(false); }}
-                              style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer' }}
+                              style={{ background: 'none', border: 'none', color: 'var(--accent-color)', fontSize: '0.74rem', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.2rem' }}
                             >
-                              Go to Complaints 👉
+                              <span>Go to Complaints</span>
+                              <ChevronRight size={13} />
                             </button>
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
@@ -9090,6 +9134,7 @@ export default function CRMContainer({
                 type="button"
                 onClick={() => setShowThemeMenu(!showThemeMenu)}
                 className="header-icon-btn"
+                data-open={showThemeMenu ? 'true' : undefined}
                 aria-label="Change color theme"
                 aria-expanded={showThemeMenu}
                 style={{
@@ -9106,22 +9151,6 @@ export default function CRMContainer({
                   transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
                   boxShadow: 'var(--shadow-xs)'
                 }}
-                onMouseOver={(e) => {
-                  if (!showThemeMenu) {
-                    e.currentTarget.style.borderColor = 'var(--accent-color)';
-                    e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)';
-                    e.currentTarget.style.color = 'var(--accent-color)';
-                    e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-                  }
-                }}
-                onMouseOut={(e) => {
-                  if (!showThemeMenu) {
-                    e.currentTarget.style.borderColor = 'var(--border-light)';
-                    e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
-                    e.currentTarget.style.color = 'var(--text-primary)';
-                    e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
-                  }
-                }}
                 title="Change Color Theme"
               >
                 <Palette size={17} />
@@ -9134,13 +9163,13 @@ export default function CRMContainer({
                   right: 0,
                   width: '220px',
                   maxWidth: 'calc(100vw - 32px)',
-                  backgroundColor: 'var(--bg-surface)',
+                  backgroundColor: 'color-mix(in srgb, var(--bg-surface) 94%, transparent)',
                   backdropFilter: 'blur(16px)',
                   WebkitBackdropFilter: 'blur(16px)',
                   border: '1px solid var(--border-light)',
                   borderRadius: '12px',
                   boxShadow: 'var(--shadow-xl)',
-                  zIndex: 10000,
+                  zIndex: 'var(--z-modal, 10000)',
                   overflow: 'hidden'
                 }}>
                   <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-light)', fontWeight: '700', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.86rem', letterSpacing: '-0.01em' }}>
@@ -9150,6 +9179,8 @@ export default function CRMContainer({
                     {THEMES.map(theme => (
                       <button
                         key={theme.id}
+                        data-flat="true"
+                        className="theme-menu-item"
                         aria-pressed={currentTheme === theme.id}
                         onClick={() => {
                           applyTheme(theme.id);
@@ -9171,8 +9202,6 @@ export default function CRMContainer({
                           fontWeight: currentTheme === theme.id ? '700' : '500',
                           transition: 'background 0.15s'
                         }}
-                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)'}
-                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = currentTheme === theme.id ? 'var(--nav-active-bg)' : 'transparent'}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                           <span>{theme.icon}</span>
@@ -9191,7 +9220,8 @@ export default function CRMContainer({
               <button
                 type="button"
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="spc-header-profile"
+                className="spc-header-profile header-profile-btn"
+                data-open={showProfileMenu ? 'true' : undefined}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -9205,18 +9235,6 @@ export default function CRMContainer({
                   transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
                   boxShadow: 'var(--shadow-xs)',
                   minHeight: '36px'
-                }}
-                onMouseOver={(e) => {
-                  if (!showProfileMenu) {
-                    e.currentTarget.style.borderColor = 'var(--accent-color)';
-                    e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-                  }
-                }}
-                onMouseOut={(e) => {
-                  if (!showProfileMenu) {
-                    e.currentTarget.style.borderColor = 'var(--border-light)';
-                    e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
-                  }
                 }}
                 title="User Profile"
               >
@@ -9273,13 +9291,13 @@ export default function CRMContainer({
                   right: 0,
                   width: '280px',
                   maxWidth: 'calc(100vw - 20px)',
-                  backgroundColor: 'var(--bg-surface)',
+                  backgroundColor: 'color-mix(in srgb, var(--bg-surface) 94%, transparent)',
                   backdropFilter: 'blur(16px)',
                   WebkitBackdropFilter: 'blur(16px)',
                   border: '1px solid var(--border-light)',
                   borderRadius: '14px',
                   boxShadow: 'var(--shadow-xl)',
-                  zIndex: 10000,
+                  zIndex: 'var(--z-modal, 10000)',
                   overflow: 'hidden'
                 }}>
                   {/* Avatar Upload Card */}
@@ -9453,6 +9471,8 @@ export default function CRMContainer({
                     <div style={{ borderTop: '1px solid var(--border-light)', marginTop: '0.5rem', paddingTop: '0.25rem' }}>
                       <button
                         type="button"
+                        data-flat="true"
+                        className="profile-menu-item"
                         onClick={() => {
                           setShowProfileMenu(false);
                           setShowNotificationPreferencesModal(true);
@@ -9472,16 +9492,14 @@ export default function CRMContainer({
                           textAlign: 'left',
                           transition: 'background 0.15s'
                         }}
-                        onMouseOver={e => e.currentTarget.style.backgroundColor = 'var(--nav-active-bg)'}
-                        onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
                         <Bell size={16} style={{ color: 'var(--accent-color)' }} /> Notification Preferences
                       </button>
                       <button 
+                        data-flat="true"
+                        className="profile-menu-item profile-menu-item-danger"
                         onClick={handleLogout}
                         style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '0.85rem', fontWeight: 600, textAlign: 'left', transition: 'background 0.15s' }}
-                        onMouseOver={e => e.currentTarget.style.backgroundColor = '#fef2f2'}
-                        onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
                         <LogOut size={16} /> Logout
                       </button>
@@ -9545,8 +9563,10 @@ export default function CRMContainer({
             padding: activeTab === 'ai' ? '0' : 'var(--content-padding, 0.5rem)', 
             display: 'flex', 
             flexDirection: 'column', 
+            flex: 1,
+            minHeight: 0,
             height: '100%',
-            overflow: (activeTab === 'ai' || activeTab === 'leads') ? 'hidden' : 'auto'
+            overflow: 'hidden'
           }}
         >
           
@@ -9745,9 +9765,30 @@ export default function CRMContainer({
               </KeepAliveTab>
 
               {/* Placeholders */}
-              {activeTab === 'orders' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Order Management (Coming Soon)</h2><p>This module is under development.</p></div>}
-              {activeTab === 'mrp' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>MRP System (Coming Soon)</h2><p>This module is under development.</p></div>}
-              {activeTab === 'mrp_against' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>MRP Against (Coming Soon)</h2><p>This module is under development.</p></div>}
+              {activeTab === 'orders' && (
+                <ModuleComingSoonCard
+                  icon={Truck}
+                  title="Order Management"
+                  description="This module is under active development and will be available soon."
+                  onBackHome={() => handleTabChange('home')}
+                />
+              )}
+              {activeTab === 'mrp' && (
+                <ModuleComingSoonCard
+                  icon={Package}
+                  title="MRP System"
+                  description="Material requirement planning tools are under development and will be available soon."
+                  onBackHome={() => handleTabChange('home')}
+                />
+              )}
+              {activeTab === 'mrp_against' && (
+                <ModuleComingSoonCard
+                  icon={Layers}
+                  title="MRP Against"
+                  description="Order-linked material allocation views are under development and will be available soon."
+                  onBackHome={() => handleTabChange('home')}
+                />
+              )}
 
               {/* Recruiter */}
               <KeepAliveTab 
@@ -9771,7 +9812,14 @@ export default function CRMContainer({
               </KeepAliveTab>
 
               {/* Placeholders */}
-              {activeTab === 'joining' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>Joining Process (Coming Soon)</h2><p>This module is under development.</p></div>}
+              {activeTab === 'joining' && (
+                <ModuleComingSoonCard
+                  icon={UserCheck}
+                  title="Joining Process"
+                  description="Employee onboarding & joining workflows are under development and will be available soon."
+                  onBackHome={() => handleTabChange('home')}
+                />
+              )}
 
               {/* Smart Attendance & Regularization */}
               <KeepAliveTab 
@@ -10291,8 +10339,22 @@ export default function CRMContainer({
               </KeepAliveTab>
 
               {/* Placeholders */}
-              {activeTab === 'sms_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>SMS Configuration (Coming Soon)</h2><p>Gateway and API settings for standard SMS campaigns.</p></div>}
-              {activeTab === 'rcs_config' && <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}><h2>RCS Configuration (Coming Soon)</h2><p>API setup and webhook configurations for RCS messaging.</p></div>}
+              {activeTab === 'sms_config' && (
+                <ModuleComingSoonCard
+                  icon={MessageSquare}
+                  title="SMS Configuration"
+                  description="Gateway and API settings for standard SMS campaigns are under development."
+                  onBackHome={() => handleTabChange('home')}
+                />
+              )}
+              {activeTab === 'rcs_config' && (
+                <ModuleComingSoonCard
+                  icon={Send}
+                  title="RCS Configuration"
+                  description="API setup and webhook configurations for RCS messaging are under development."
+                  onBackHome={() => handleTabChange('home')}
+                />
+              )}
 
               {/* Email Config */}
               <KeepAliveTab 
@@ -10449,7 +10511,7 @@ export default function CRMContainer({
           borderRadius: '14px',
           border: '2px solid var(--accent-color)',
           boxShadow: '0 20px 30px -8px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0,0,0,0.06)',
-          zIndex: 999999,
+          zIndex: 'var(--z-toast, 11000)',
           padding: '1.1rem',
           display: 'flex',
           flexDirection: 'column',
@@ -10474,6 +10536,7 @@ export default function CRMContainer({
             </div>
             <button
               type="button"
+              data-flat="true"
               onClick={() => setActiveCornerToast(null)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.2rem', borderRadius: '4px' }}
               title="Close"
@@ -10542,10 +10605,14 @@ export default function CRMContainer({
                   fontSize: '0.78rem',
                   fontWeight: 700,
                   cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.15)'
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.25rem'
                 }}
               >
-                {activeCornerToast.type === 'checklist' ? 'Fill Checklist 👉' : (activeCornerToast.type === 'delegation' ? 'View Task 👉' : 'Open 👉')}
+                <span>{activeCornerToast.type === 'checklist' ? 'Fill Checklist' : (activeCornerToast.type === 'delegation' ? 'View Task' : 'Open')}</span>
+                <ChevronRight size={13} />
               </button>
             </div>
           </div>
@@ -10559,7 +10626,7 @@ export default function CRMContainer({
           inset: 0,
           backgroundColor: 'rgba(0, 0, 0, 0.65)',
           backdropFilter: 'blur(5px)',
-          zIndex: 999999,
+          zIndex: 'var(--z-critical-modal, 12000)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -10593,6 +10660,7 @@ export default function CRMContainer({
               </div>
               <button
                 type="button"
+                data-flat="true"
                 onClick={() => setActiveCenterModal(null)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '0.4rem', borderRadius: '6px' }}
                 title="Close"
@@ -10671,10 +10739,14 @@ export default function CRMContainer({
                   fontSize: '0.88rem',
                   fontWeight: 700,
                   cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
                 }}
               >
-                {activeCenterModal.type === 'checklist' ? 'Fill Checklist Now 👉' : (activeCenterModal.type === 'delegation' ? 'Open Delegated Task 👉' : 'View Now 👉')}
+                <span>{activeCenterModal.type === 'checklist' ? 'Fill Checklist Now' : (activeCenterModal.type === 'delegation' ? 'Open Delegated Task' : 'View Now')}</span>
+                <ChevronRight size={15} />
               </button>
             </div>
           </div>
@@ -10689,7 +10761,7 @@ export default function CRMContainer({
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 99999,
+            zIndex: 'var(--z-critical-modal, 12000)',
             backgroundColor: 'rgba(15, 23, 42, 0.72)',
             backdropFilter: 'blur(5px)',
             display: 'flex',
@@ -10747,6 +10819,7 @@ export default function CRMContainer({
               </div>
               <button
                 type="button"
+                data-flat="true"
                 onClick={() => setFieldGpsTamperAlert(null)}
                 style={{
                   background: 'transparent',
@@ -10770,8 +10843,8 @@ export default function CRMContainer({
                   alignItems: 'center',
                   gap: '0.75rem',
                   padding: '0.75rem 0.9rem',
-                  backgroundColor: '#fef2f2',
-                  border: '1px solid #fecaca',
+                  backgroundColor: 'color-mix(in srgb, #ef4444 12%, var(--bg-surface, #ffffff))',
+                  border: '1px solid color-mix(in srgb, #ef4444 35%, transparent)',
                   borderRadius: '10px',
                   marginBottom: '1rem'
                 }}
@@ -10794,10 +10867,10 @@ export default function CRMContainer({
                   {(fieldGpsTamperAlert.userName || 'FE').charAt(0).toUpperCase()}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#991b1b', wordBreak: 'break-word' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary, #991b1b)', wordBreak: 'break-word' }}>
                     {fieldGpsTamperAlert.userName}
                   </div>
-                  <div style={{ fontSize: '0.76rem', color: '#b91c1c', marginTop: '1px' }}>
+                  <div style={{ fontSize: '0.76rem', color: '#ef4444', marginTop: '1px' }}>
                     {fieldGpsTamperAlert.alertType === 'GPS_TOGGLE_OFF' ? '📴 Device GPS Turned OFF' : '🚫 Location Permission Revoked'}
                   </div>
                 </div>
